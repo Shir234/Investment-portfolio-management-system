@@ -190,7 +190,7 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
   
 # handle outliers: Use Z-score to identify data points that deviate significantly from the mean - rolling eondow of 28 days
 class OutlierHandler(BaseEstimator, TransformerMixin):
-  def __init__(self,threshold=3, window=28, exclude_columns=['Buy', 'Sell']):
+  def __init__(self,threshold=3, window=28, exclude_columns=['Buy', 'Sell', 'Close']):
     self.threshold = threshold
     self.window = window
     self.exclude_columns = exclude_columns
@@ -215,9 +215,10 @@ class OutlierHandler(BaseEstimator, TransformerMixin):
   
 # Handle highly correlated features
 class CorrelationHandler(BaseEstimator, TransformerMixin):
-  def __init__(self, threshold=0.95):
+  def __init__(self, threshold=0.95, keep_columns=['Close']):
     self.threshold = threshold
     self.columns_to_drop = None
+    self.keep_columns = keep_columns
 
   def fit(self, X, y=None):
     # handle high correlation of continues columns
@@ -230,6 +231,10 @@ class CorrelationHandler(BaseEstimator, TransformerMixin):
       target_corr = X.corr()['Transaction_Sharpe']
       nan_corr_columns = target_corr[target_corr.isna()].index.tolist()
       self.columns_to_drop.extend(nan_corr_columns)
+    
+    for col in self.keep_columns:
+       if col in self.columns_to_drop:
+          self.columns_to_drop.remove(col)
 
     if 'Transaction_Sharpe' in self.columns_to_drop:
       self.columns_to_drop.remove('Transaction_Sharpe')
@@ -883,6 +888,7 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
   best_prediction = ensemble_results[best_method]['prediction']
 
   results_df = pd.DataFrame({
+    'Close' : X_test.Close,
     'Buy': X_test.Buy,
     'Sell': X_test.Sell,
     'Actual_Sharpe': Y_test,
