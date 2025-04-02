@@ -888,6 +888,7 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
   best_prediction = ensemble_results[best_method]['prediction']
 
   results_df = pd.DataFrame({
+    'Ticker' : ticker_symbol,
     'Close' : X_test.Close,
     'Buy': X_test.Buy,
     'Sell': X_test.Sell,
