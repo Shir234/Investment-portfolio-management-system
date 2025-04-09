@@ -7,7 +7,6 @@ This script will:
 - Install all the required packages
 - Create basic folders for your project structure
 
-
 Run the script with: python setup.py
 
 After running the setup:
@@ -101,6 +100,7 @@ def create_requirements_file():
         "xgboost",
         "lightgbm",
         "ipykernel",  # For Jupyter notebook support in VS Code
+        "pandas-datareader",  # Added for FRED data access
     ]
     
     with open(requirements_path, "w") as f:

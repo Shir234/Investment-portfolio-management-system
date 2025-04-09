@@ -30,7 +30,7 @@ import datetime
 # ===============================================================================
 os.makedirs('results', exist_ok=True)
 # Get current date in YYYYMMDD format
-current_date = datetime.now().strftime("%Y%m%d")
+current_date = datetime.datetime.now().strftime("%Y%m%d")
 # Create date folder inside results
 date_folder = f'results/{current_date}'
 os.makedirs(date_folder, exist_ok=True)
@@ -899,6 +899,7 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
   # run first pipeline, fetch data
   pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate)
   data = pipeline.fit_transform(pd.DataFrame())
+  data.to_csv(f'{date_folder}/{ticker_symbol}_data.csv')
 
   # run seconed pipeline, clean and proecess
   pipeline_clean = create_data_cleaning_pipeline()
@@ -908,61 +909,64 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
   data_clean.to_csv(f'{date_folder}/{ticker_symbol}_clean_data.csv')
 
 
-  # Split the data to train and test, create train and val the models
-  X = data_clean.drop(columns=['Transaction_Sharpe'])
-  Y = data_clean['Transaction_Sharpe']
-  train_size = 0.8
-  split_idx = int(len(data_clean)*train_size)
+#   # Split the data to train and test, create train and val the models
+#   X = data_clean.drop(columns=['Transaction_Sharpe'])
+#   Y = data_clean['Transaction_Sharpe']
+#   train_size = 0.8
+#   split_idx = int(len(data_clean)*train_size)
 
-  X_train_val = X.iloc[:split_idx]
-  Y_train_val = Y.iloc[:split_idx]
+#   X_train_val = X.iloc[:split_idx]
+#   Y_train_val = Y.iloc[:split_idx]
 
-  X_test = X.iloc[split_idx:]
-  Y_test = Y.iloc[split_idx:]
+#   X_test = X.iloc[split_idx:]
+#   Y_test = Y.iloc[split_idx:]
 
-  results = train_and_validate_models(X_train_val, Y_train_val)
+#   results = train_and_validate_models(X_train_val, Y_train_val)
 
-  # Ensamble -> Three ensambles pipeline (Linearly Weighted, Equal Weights, GBDT)
-  # Run the pipeline
-  ensemble_results = ensemble_pipeline(results, X_train_val, X_test, Y_train_val, Y_test)
+#   # Ensamble -> Three ensambles pipeline (Linearly Weighted, Equal Weights, GBDT)
+#   # Run the pipeline
+#   ensemble_results = ensemble_pipeline(results, X_train_val, X_test, Y_train_val, Y_test)
 
-  # Convert dictionary to DataFrame and save to CSV
-  df = pd.DataFrame.from_dict(ensemble_results, orient='index')
-  df.index.name = 'Method Name'  # Set the index name
-  ###df.to_csv(f'{ticker_symbol}_results.csv')
-  df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
+#   # Convert dictionary to DataFrame and save to CSV
+#   df = pd.DataFrame.from_dict(ensemble_results, orient='index')
+#   df.index.name = 'Method Name'  # Set the index name
+#   ###df.to_csv(f'{ticker_symbol}_results.csv')
+#   df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
 
-  #print(f"Results saved to '{ticker_symbol}_results.csv'")
+#   #print(f"Results saved to '{ticker_symbol}_results.csv'")
 
-  best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
-  best_prediction = ensemble_results[best_method]['prediction']
+#   best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
+#   best_prediction = ensemble_results[best_method]['prediction']
 
-  results_df = pd.DataFrame({
-    'Ticker' : ticker_symbol,
-    'Close' : X_test.Close,
-    'Buy': X_test.Buy,
-    'Sell': X_test.Sell,
-    'Actual_Sharpe': Y_test,
-    'Best_Prediction': best_prediction
-    })
+#   results_df = pd.DataFrame({
+#     'Ticker' : ticker_symbol,
+#     'Close' : X_test.Close,
+#     'Buy': X_test.Buy,
+#     'Sell': X_test.Sell,
+#     'Actual_Sharpe': Y_test,
+#     'Best_Prediction': best_prediction
+#     })
 
   ###results_df.to_csv(f'{ticker_symbol}_ensamble_prediction_results.csv')
-  results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
+#   results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
 
 # ===============================================================================
 # Final loop - call the pipeline for each ticker symbol
 # ===============================================================================
+# stakeholder_data = pd.read_csv('final_tickers_score.csv')
+# top_10 = stakeholder_data.head(15)['Ticker'].tolist()
+# last_10 = stakeholder_data.tail(10)['Ticker'].tolist()
 
-def is_valid_ticker(ticker):
-  try:
-    ticker_data = yf.Ticker(ticker)
-    if not ticker_data.info or 'symbol' not in ticker_data.info:
-      print(f"Ticker {ticker} is not valid.")
-      return False
-    return True
-  except Exception as e:
-    print(f"Error validating ticker {ticker}: {e}")
-    return False
+# def is_valid_ticker(ticker):
+#   try:
+#     ticker_data = yf.Ticker(ticker)
+#     if not ticker_data.info or 'symbol' not in ticker_data.info:
+#       print(f"Ticker {ticker} is not valid.")
+#       return False
+#     return True
+#   except Exception as e:
+#     print(f"Error validating ticker {ticker}: {e}")
+#     return False
 
 # def get_top_valid_tickers(tickers, top_n=20):
 #   valid_tickers = []
@@ -976,109 +980,5 @@ def is_valid_ticker(ticker):
 
 # top_10_valid_tickers = get_top_valid_tickers(top_10, top_n=10)
 
-# for ticker in top_10_valid_tickers:
-#   full_pipeline_for_single_stock(ticker, "2020-01-01", "2024-01-01")
+full_pipeline_for_single_stock('OPK', "2020-01-01", "2024-01-01")
 
-def get_all_valid_tickers(tickers):
-   """
-   Return all valid tickers from the given list
-   """
-
-   valid_tickers = []
-   total_tickers = len(tickers)
-
-   print(f"Validating {total_tickers} tickers...")
-
-   for i, ticker in enumerate(tickers):
-      if is_valid_ticker(ticker):
-         print(f"Ticker {ticker} is valid. Adding to processing list.")
-         valid_tickers.append(ticker)
-      else:
-         print(f"Ticker {ticker} is invalid. Skipping.")
-    
-   print(f"Validation complete. Found {len(valid_tickers)} valid tickers out of {total_tickers}.")
-   return valid_tickers
-
-"""
-1 read the data
-2 get all the tickers
-3 validate and get only valid tickers
-4 run the pipeline on each valid ticker
-"""
-stakeholder_data = pd.read_csv('final_tickers_score.csv')
-# Get all tickers from data
-all_tickers = stakeholder_data['Ticker'].tolist()
-# Get all valid tickers
-valid_tickers = get_all_valid_tickers(all_tickers)
-
-for ticker in valid_tickers:
-   try:
-      print(f"\nProcessing ticker: {ticker}")
-      full_pipeline_for_single_stock(ticker, "2020-01-01", "2024-01-01")
-      print(f"Successfully processed {ticker}")
-   except Exception as e:
-      print(f"Error processing ticker {ticker}: {e}")
-      
-
-
-         
-      
-
-
-
-
-# ===============================================================================
-# RUN ALL IN ORDER ON ONE STOCK
-# ===============================================================================
-# Pipeline 1 - 
-# ticker_symbol = "OPK"
-# start_date = "2020-01-01"
-# end_date = "2024-01-01"
-# risk_free_rate = 0.02  # 2% annual risk-free rate, you can adjust this value
-
-# pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate)
-# data = pipeline.fit_transform(pd.DataFrame())
-# data.to_csv(f'{ticker_symbol}_processed_data.csv')
-# print(data.info())
-
-# # Pipeline 2 - 
-# pipeline_clean = create_data_cleaning_pipeline()
-# data_clean = pipeline_clean.fit_transform(data)
-# data_clean.to_csv(f'{ticker_symbol}_clean_data.csv')
-# print(data_clean.info())
-
-# # Check data edge values
-# max(data_clean['Transaction_Sharpe'])
-# min(data_clean['Transaction_Sharpe'])
-
-# # Split the data to train and test
-# print(f"Data_clean shape before splitting: {data_clean.shape}")
-# # Define the features
-# X = data_clean.drop(columns=['Transaction_Sharpe'])
-# # Define the target variable
-# Y = data_clean['Transaction_Sharpe']
-# # Define pct for test / train+validation
-# train_size = 0.8
-# # Calculate the index where to split the data
-# split_idx = int(len(data_clean)*train_size)
-# print(f"Split index: {split_idx}")
-
-# # Split the data to test and train/validation sets
-# X_train_val = X.iloc[:split_idx]
-# Y_train_val = Y.iloc[:split_idx]
-
-# X_test = X.iloc[split_idx:]
-# Y_test = Y.iloc[split_idx:]
-
-# results = train_and_validate_models(X_train_val, Y_train_val)
-
-# print(f"X_train_val shape: {X_train_val.shape}")
-# print(f"Y_train_val shape: {Y_train_val.shape}")
-# print(f"X_test shape: {X_test.shape}")
-# print(f"Y_test shape: {Y_test.shape}")
-
-# # Print train/val results
-# for model_name, model_data in results.items():
-#   print(model_name)
-#   for item in model_data.items():
-#     print(item)

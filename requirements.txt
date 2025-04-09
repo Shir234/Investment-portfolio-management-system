@@ -10,3 +10,4 @@ scikeras
 xgboost
 lightgbm
 ipykernel
+pandas-datareader
