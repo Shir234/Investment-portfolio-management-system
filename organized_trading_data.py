@@ -116,7 +116,7 @@ def process_transactions(df, latest_date):
 
     return processed_df
 
-def Finalaize_scores(df):
+def Finalize_scores(df):
     """
     Calculate final score for each ticker by summing all transaction scores
     
@@ -166,4 +166,4 @@ processed_df = process_transactions(df, latest_date)
 
 
 # Calculate Final Score For Each Ticker Symbol
-final_scores = Finalaize_scores(processed_df)
+final_scores = Finalize_scores(processed_df)

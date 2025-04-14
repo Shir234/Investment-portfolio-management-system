@@ -67,7 +67,7 @@ class DataFetcher(BaseEstimator, TransformerMixin):
 
 # add market indicators
 class IndicatorCalculator(BaseEstimator, TransformerMixin):
-    def __init__(self, include_prime_rate=True, prime_start="2020-01-01", prime_end="2024-01-01"):
+    def __init__(self, include_prime_rate=True, prime_start="2019-01-01", prime_end="2024-01-01"):
         self.indicators = [
             'psar', 'mfi', 'mvp'
         ]
@@ -89,7 +89,13 @@ class IndicatorCalculator(BaseEstimator, TransformerMixin):
           self.prime_data = pdr.get_data_fred('PRIME', start, end)
           #####MAYBE SHOULD DO FFILL HERE BUT I WANT TO DO IT IN THE SECOND PIPELINE
           # Forward fill to handle missing dates
-          self.prime_data = self.prime_data.fillna(method='ffill').fillna(method='bfill')
+        #   self.prime_data = self.prime_data.fillna(method='ffill').fillna(method='bfill')
+
+          # Step 1: First apply forward fill
+          self.prime_data = self.prime_data.fillna(method='ffill')
+        
+          # Step 2: Then apply backward fill
+          self.prime_data = self.prime_data.fillna(method='bfill')
           print(f"Prime rate data loaded with {len(self.prime_data)} records")
        except Exception as e:
           print(f"Error fetching prime rate data in fetch: {e}")

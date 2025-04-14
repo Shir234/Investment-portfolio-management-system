@@ -30,7 +30,7 @@ import datetime
 # ===============================================================================
 os.makedirs('results', exist_ok=True)
 # Get current date in YYYYMMDD format
-current_date = datetime.now().strftime("%Y%m%d")
+current_date = datetime.datetime.now().strftime("%Y%m%d")
 # Create date folder inside results
 date_folder = f'results/{current_date}'
 os.makedirs(date_folder, exist_ok=True)
@@ -63,11 +63,11 @@ class DataFetcher(BaseEstimator, TransformerMixin):
         print(f"Error fetching data for ticker {self.ticker_symbol}: {e}")
 
         return pd.DataFrame() # return an empty df if an error occurs
-
+      
 
 # add market indicators
 class IndicatorCalculator(BaseEstimator, TransformerMixin):
-    def __init__(self, include_prime_rate=True, prime_start="2020-01-01", prime_end="2024-01-01"):
+    def __init__(self, include_prime_rate=True, prime_start="2019-01-01", prime_end="2024-01-01"):
         self.indicators = [
             'psar', 'mfi', 'mvp'
         ]
@@ -238,9 +238,9 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
 
     return X_
   
-# handle outliers: Use Z-score to identify data points that deviate significantly from the mean - rolling eondow of 28 days
+# handle outliers: Use Z-score to identify data points that deviate significantly from the mean - rolling window of 28 days
 class OutlierHandler(BaseEstimator, TransformerMixin):
-  def __init__(self,threshold=3, window=28, exclude_columns=['Buy', 'Sell', 'Close']):
+  def __init__(self,threshold=3, window=28, exclude_columns=['Buy', 'Sell', 'Close', 'Prime_Rate']):
     self.threshold = threshold
     self.window = window
     self.exclude_columns = exclude_columns
@@ -276,7 +276,7 @@ class CorrelationHandler(BaseEstimator, TransformerMixin):
     upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
     self.columns_to_drop = [col for col in upper.columns if any(upper[col] > self.threshold)]
 
-    # check all columns correlation with the target variable, if nan - remove (doesnt help for prediction later)
+    # check all columns correlation with the target variable, if nan - remove (doesn't help for prediction later)
     if 'Transaction_Sharpe' in X.columns:
       target_corr = X.corr()['Transaction_Sharpe']
       nan_corr_columns = target_corr[target_corr.isna()].index.tolist()
@@ -1014,7 +1014,7 @@ valid_tickers = get_all_valid_tickers(all_tickers)
 for ticker in valid_tickers:
    try:
       print(f"\nProcessing ticker: {ticker}")
-      full_pipeline_for_single_stock(ticker, "2020-01-01", "2024-01-01")
+      full_pipeline_for_single_stock(ticker, "2013-01-01", "2024-01-01")
       print(f"Successfully processed {ticker}")
    except Exception as e:
       print(f"Error processing ticker {ticker}: {e}")
