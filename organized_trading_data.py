@@ -116,21 +116,40 @@ def process_transactions(df, latest_date):
 
     return processed_df
 
-def Finalize_scores(df):
-    """
-    Calculate final score for each ticker by summing all transaction scores
+# def Finalize_scores(df):
+#     """
+#     Calculate final score for each ticker by summing all transaction scores
     
-    Args:
-        df (pandas.DataFrame): DataFrame with Transaction_Score column
+#     Args:
+#         df (pandas.DataFrame): DataFrame with Transaction_Score column
         
-    Returns:
-        pandas.DataFrame: DataFrame with ticker symbols and their final scores
-    """
+#     Returns:
+#         pandas.DataFrame: DataFrame with ticker symbols and their final scores
+#     """
+#     # Calculate transaction score for each row
+#     final_scores = df.groupby('Ticker')['Transaction_Score'].sum().reset_index()
+#     final_scores = final_scores.sort_values(by='Transaction_Score', ascending=False)
+#     final_scores.to_csv('final_tickers_score.csv', index=False)
+
+#     return final_scores
+
+
+def Finalize_scores(df):
     # Calculate transaction score for each row
     final_scores = df.groupby('Ticker')['Transaction_Score'].sum().reset_index()
     final_scores = final_scores.sort_values(by='Transaction_Score', ascending=False)
+    
+    # Save locally
     final_scores.to_csv('final_tickers_score.csv', index=False)
-
+    
+    # Save to Google Drive folder (replace with your actual path)s
+    drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results"
+    try:
+        final_scores.to_csv(drive_path + 'final_tickers_score.csv', index=False)
+        print(f"File saved to Google Drive at {drive_path}")
+    except Exception as e:
+        print(f"Error saving to Google Drive: {e}")
+    
     return final_scores
 
 # Main Code - Data Loading and Processing

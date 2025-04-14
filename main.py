@@ -896,6 +896,7 @@ def ensemble_pipeline(models_results, X_train, X_test, Y_train, Y_test):
 # Full Pipeline For Single Stock
 # ===============================================================================
 def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
+  drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results"
   # run first pipeline, fetch data
   pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate)
   data = pipeline.fit_transform(pd.DataFrame())
@@ -905,8 +906,8 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
   data_clean = pipeline_clean.fit_transform(data)
 
 #   data_clean.to_csv(f'{ticker_symbol}_clean_data.csv')
-  data_clean.to_csv(f'{date_folder}/{ticker_symbol}_clean_data.csv')
-
+#   data_clean.to_csv(f'{date_folder}/{ticker_symbol}_clean_data.csv')
+  data_clean.to_csv(drive_path + f'{date_folder}/{ticker_symbol}_clean_data.csv')
 
   # Split the data to train and test, create train and val the models
   X = data_clean.drop(columns=['Transaction_Sharpe'])
@@ -930,7 +931,8 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
   df = pd.DataFrame.from_dict(ensemble_results, orient='index')
   df.index.name = 'Method Name'  # Set the index name
   ###df.to_csv(f'{ticker_symbol}_results.csv')
-  df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
+#   df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
+  df.to_csv(drive_path + f'{date_folder}/{ticker_symbol}_results.csv')
 
   #print(f"Results saved to '{ticker_symbol}_results.csv'")
 
@@ -947,7 +949,8 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
     })
 
   ###results_df.to_csv(f'{ticker_symbol}_ensamble_prediction_results.csv')
-  results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
+  #results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
+  results_df.to_csv(drive_path + f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
 
 # ===============================================================================
 # Final loop - call the pipeline for each ticker symbol
