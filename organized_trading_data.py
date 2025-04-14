@@ -143,7 +143,7 @@ def Finalize_scores(df):
     final_scores.to_csv('final_tickers_score.csv', index=False)
     
     # Save to Google Drive folder (replace with your actual path)s
-    drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results"
+    drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\filter/"
     try:
         final_scores.to_csv(drive_path + 'final_tickers_score.csv', index=False)
         print(f"File saved to Google Drive at {drive_path}")

@@ -896,7 +896,13 @@ def ensemble_pipeline(models_results, X_train, X_test, Y_train, Y_test):
 # Full Pipeline For Single Stock
 # ===============================================================================
 def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
-  drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results"
+  drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/"
+    # Create date folder inside Google Drive path
+  drive_date_folder = os.path.join(drive_path, current_date)
+
+    # Create directory if it doesn't exist
+  os.makedirs(drive_date_folder,exist_ok=True)
+
   # run first pipeline, fetch data
   pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate)
   data = pipeline.fit_transform(pd.DataFrame())
@@ -905,9 +911,22 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
   pipeline_clean = create_data_cleaning_pipeline()
   data_clean = pipeline_clean.fit_transform(data)
 
+
 #   data_clean.to_csv(f'{ticker_symbol}_clean_data.csv')
-#   data_clean.to_csv(f'{date_folder}/{ticker_symbol}_clean_data.csv')
-  data_clean.to_csv(drive_path + f'{date_folder}/{ticker_symbol}_clean_data.csv')
+  data_clean.to_csv(f'{date_folder}/{ticker_symbol}_clean_data.csv')
+#   data_clean.to_csv(drive_path + f'{date_folder}/{ticker_symbol}_clean_data.csv')
+
+# Save to Google Drive with date folder
+  try:
+      data_clean.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_clean_data.csv"))
+      print(f"Saved clean data for {ticker_symbol} to Google Drive dated folder")
+  except Exception as e:
+      print(f"Error saving to Google Drive: {e}")
+      # Fallback to local save
+      os.makedirs(current_date, exist_ok=True)  # Create local date folder if needed
+      data_clean.to_csv(os.path.join(current_date, f"{ticker_symbol}_clean_data.csv"))
+
+
 
   # Split the data to train and test, create train and val the models
   X = data_clean.drop(columns=['Transaction_Sharpe'])
@@ -927,30 +946,57 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
   # Run the pipeline
   ensemble_results = ensemble_pipeline(results, X_train_val, X_test, Y_train_val, Y_test)
 
+# '''' previous ver of saving - local '''
   # Convert dictionary to DataFrame and save to CSV
-  df = pd.DataFrame.from_dict(ensemble_results, orient='index')
-  df.index.name = 'Method Name'  # Set the index name
-  ###df.to_csv(f'{ticker_symbol}_results.csv')
-#   df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
-  df.to_csv(drive_path + f'{date_folder}/{ticker_symbol}_results.csv')
+#   df = pd.DataFrame.from_dict(ensemble_results, orient='index')
+#   df.index.name = 'Method Name'  # Set the index name
+#   ###df.to_csv(f'{ticker_symbol}_results.csv')
+  df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
+#   df.to_csv(drive_path + f'{date_folder}/{ticker_symbol}_results.csv')
 
-  #print(f"Results saved to '{ticker_symbol}_results.csv'")
+#   #print(f"Results saved to '{ticker_symbol}_results.csv'")
 
-  best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
-  best_prediction = ensemble_results[best_method]['prediction']
+#   best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
+#   best_prediction = ensemble_results[best_method]['prediction']
 
-  results_df = pd.DataFrame({
-    'Ticker' : ticker_symbol,
-    'Close' : X_test.Close,
-    'Buy': X_test.Buy,
-    'Sell': X_test.Sell,
-    'Actual_Sharpe': Y_test,
-    'Best_Prediction': best_prediction
-    })
+#   results_df = pd.DataFrame({
+#     'Ticker' : ticker_symbol,
+#     'Close' : X_test.Close,
+#     'Buy': X_test.Buy,
+#     'Sell': X_test.Sell,
+#     'Actual_Sharpe': Y_test,
+#     'Best_Prediction': best_prediction
+#     })
 
-  ###results_df.to_csv(f'{ticker_symbol}_ensamble_prediction_results.csv')
-  #results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
-  results_df.to_csv(drive_path + f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
+#   ###results_df.to_csv(f'{ticker_symbol}_ensamble_prediction_results.csv')
+  results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
+#   results_df.to_csv(drive_path + f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
+
+# Save results to Google Drive with date folder
+  try:
+      df = pd.DataFrame.from_dict(ensemble_results, orient='index')
+      df.index.name = 'Method Name'
+      df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_results.csv"))
+    
+      best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
+      best_prediction = ensemble_results[best_method]['prediction']
+    
+      results_df = pd.DataFrame({
+          'Ticker': ticker_symbol,
+          'Close': X_test.Close,
+          'Buy': X_test.Buy,
+          'Sell': X_test.Sell,
+          'Actual_Sharpe': Y_test,
+          'Best_Prediction': best_prediction
+      })
+    
+      results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensamble_prediction_results.csv"))
+      print(f"Saved results for {ticker_symbol} to Google Drive dated folder")
+  except Exception as e:
+      print(f"Error saving results to Google Drive: {e}")
+      # Fallback to local save
+      results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensamble_prediction_results.csv"))
+
 
 # ===============================================================================
 # Final loop - call the pipeline for each ticker symbol
