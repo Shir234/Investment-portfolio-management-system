@@ -173,51 +173,56 @@ class TransactionMetricsCalculator(BaseEstimator, TransformerMixin):
 
     def transform(self, X):
         data = X.copy()
-        volatility_list = []
-        returns_list = []
-        sharpe_ratio_list = []
-        duration_list = []
+
+        # Initialize the transaction metrics columns
+        data['Transaction_Volatility'] = np.nan
+        data['Transaction_Returns'] = np.nan
+        data['Transaction_Sharpe'] = np.nan
+        data['Transaction_Duration'] = np.nan
+        
         last_buy_index = None
         last_buy_price = None
+        in_active_position = False
 
+        # Process the data in a single pass
         for i in range(len(data)):
+            # Record buy signal
             if not np.isnan(data['Buy'].iloc[i]):
                 last_buy_index = i
                 last_buy_price = data['Close'].iloc[i]
+                in_active_position = True
 
-            if not np.isnan(data['Sell'].iloc[i]) and last_buy_index is not None:
-                sell_date = data.index[i]
+            # Calculate metrics based on the last known buy signal
+            # (even after a sell signal, until the next buy)
+            if last_buy_index is not None:
                 buy_date = data.index[last_buy_index]
-                duration = (sell_date - buy_date).days
+                current_date = data.index[i]
+                duration = (current_date - buy_date).days
 
                 # Calculate raw return for this transaction
                 returns = (data['Close'].iloc[i] - last_buy_price) / last_buy_price
 
-                ###volatility = data['Close'].iloc[last_buy_index:i+1].std()
                 # Calculate volatility (standard deviation of daily returns) for this transaction
                 daily_returns = data['Close'].iloc[last_buy_index:i+1].pct_change().dropna()
-                volatility = daily_returns.std()
+                volatility = daily_returns.std() if len(daily_returns) > 1 else 0
 
                 # Calculate Sharpe ratio for this transaction
-                # Assuming risk_free_rate is annual
                 transaction_risk_free_rate = self.risk_free_rate * (duration / 365)
                 sharpe_ratio = (returns - transaction_risk_free_rate) / volatility if volatility != 0 else 0                        # all in the same scale: returns is the return ratio, the vplatility is pct
 
-                volatility_list.append(volatility)
-                returns_list.append(returns)
-                sharpe_ratio_list.append(sharpe_ratio)
-                duration_list.append(duration)
+                # Store the metrics for every day while in a position
+                data.loc[data.index[i], 'Transaction_Volatility'] = volatility
+                data.loc[data.index[i], 'Transaction_Returns'] = returns
+                data.loc[data.index[i], 'Transaction_Sharpe'] = sharpe_ratio
+                data.loc[data.index[i], 'Transaction_Duration'] = duration
 
-                last_buy_index = None
-                last_buy_price = None
-
-        data['Transaction_Volatility'] = pd.Series(volatility_list, index=data.index[data['Sell'].notna()])
-        data['Transaction_Returns'] = pd.Series(returns_list, index=data.index[data['Sell'].notna()])
-        data['Transaction_Sharpe'] = pd.Series(sharpe_ratio_list, index=data.index[data['Sell'].notna()])
-        # transaction duration in days
-        data['Transaction_Duration'] = pd.Series(duration_list, index=data.index[data['Sell'].notna()])
+                # If this is a sell day, mark that we're no longer in an active position
+                # but continue calculating using the same buy reference point
+                if not np.isnan(data['Sell'].iloc[i]):
+                    in_active_position = False
 
         return data
+    
 
 # ===============================================================================
 # Data Cleaning Classes
@@ -246,7 +251,17 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
   
 # handle outliers: Use Z-score to identify data points that deviate significantly from the mean - rolling eondow of 28 days
 class OutlierHandler(BaseEstimator, TransformerMixin):
-  def __init__(self,threshold=3, window=28, exclude_columns=['Buy', 'Sell', 'Close']):
+  def __init__(self,threshold=3, window=28, exclude_columns=[
+    # Price data
+    'Open', 'High', 'Low', 'Close',
+    # Signal columns
+    'Buy', 'Sell', 'Signal', 'Signal_Shift',
+    # Transaction metrics
+    'Transaction_Sharpe', 'Transaction_Returns', 'Transaction_Volatility', 'Transaction_Duration',
+    # External data
+    'Prime_Rate'
+    ]):
+     
     self.threshold = threshold
     self.window = window
     self.exclude_columns = exclude_columns
@@ -902,13 +917,6 @@ def ensemble_pipeline(models_results, X_train, X_test, Y_train, Y_test):
 # Full Pipeline For Single Stock
 # ===============================================================================
 def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
-  ### DRIVE SAVING - NEW
-  drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/"
-  # Create date folder inside Google Drive path
-  drive_date_folder = os.path.join(drive_path, current_date)
-  # Create directory if it doesn't exist
-  os.makedirs(drive_date_folder,exist_ok=True)
-
   # run first pipeline, fetch data
   pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate)
   data = pipeline.fit_transform(pd.DataFrame())
@@ -920,16 +928,6 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
 
 #   data_clean.to_csv(f'{ticker_symbol}_clean_data.csv')
   data_clean.to_csv(f'{date_folder}/{ticker_symbol}_clean_data.csv')
-# Save to Google Drive with date folder
-  try:
-      data_clean.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_clean_data.csv"))
-      print(f"Saved clean data for {ticker_symbol} to Google Drive dated folder")
-  except Exception as e:
-      print(f"Error saving to Google Drive: {e}")
-      # Fallback to local save
-      os.makedirs(current_date, exist_ok=True)  # Create local date folder if needed
-      data_clean.to_csv(os.path.join(current_date, f"{ticker_symbol}_clean_data.csv"))
-
 
   # Split the data to train and test, create train and val the models
   X = data_clean.drop(columns=['Transaction_Sharpe'])
@@ -949,56 +947,28 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
   # Run the pipeline
   ensemble_results = ensemble_pipeline(results, X_train_val, X_test, Y_train_val, Y_test)
 
-# Save results to Google Drive with date folder
-  try:
-      print(f"TRYING TO SAVE RESULTS")
-      df = pd.DataFrame.from_dict(ensemble_results, orient='index')
-      df.index.name = 'Method Name'
-      df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
-      df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_results.csv"))
-    
-      best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
-      best_prediction = ensemble_results[best_method]['prediction']
-    
-      results_df = pd.DataFrame({
-          'Ticker': ticker_symbol,
-          'Close': X_test.Close,
-          'Buy': X_test.Buy,
-          'Sell': X_test.Sell,
-          'Actual_Sharpe': Y_test,
-          'Best_Prediction': best_prediction
-      })
-      print(f"TRYING TO SAVE ENSEMBLE RESULTS")
-      results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
-      results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensamble_prediction_results.csv"))
-      print(f"Saved results for {ticker_symbol} to Google Drive dated folder")
-  except Exception as e:
-      print(f"Error saving results to Google Drive: {e}")
-      # Fallback to local save
-      results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensamble_prediction_results.csv"))
+  # Convert dictionary to DataFrame and save to CSV
+  df = pd.DataFrame.from_dict(ensemble_results, orient='index')
+  df.index.name = 'Method Name'  # Set the index name
+  ###df.to_csv(f'{ticker_symbol}_results.csv')
+  df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
 
-#   # Convert dictionary to DataFrame and save to CSV
-#   df = pd.DataFrame.from_dict(ensemble_results, orient='index')
-#   df.index.name = 'Method Name'  # Set the index name
-#   ###df.to_csv(f'{ticker_symbol}_results.csv')
-#   df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
+  #print(f"Results saved to '{ticker_symbol}_results.csv'")
 
-#   #print(f"Results saved to '{ticker_symbol}_results.csv'")
+  best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
+  best_prediction = ensemble_results[best_method]['prediction']
 
-#   best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
-#   best_prediction = ensemble_results[best_method]['prediction']
+  results_df = pd.DataFrame({
+    'Ticker' : ticker_symbol,
+    'Close' : X_test.Close,
+    'Buy': X_test.Buy,
+    'Sell': X_test.Sell,
+    'Actual_Sharpe': Y_test,
+    'Best_Prediction': best_prediction
+    })
 
-#   results_df = pd.DataFrame({
-#     'Ticker' : ticker_symbol,
-#     'Close' : X_test.Close,
-#     'Buy': X_test.Buy,
-#     'Sell': X_test.Sell,
-#     'Actual_Sharpe': Y_test,
-#     'Best_Prediction': best_prediction
-#     })
-
-  ###results_df.to_csv(f'{ticker_symbol}_ensamble_prediction_results.csv')
-#   results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
+  ##results_df.to_csv(f'{ticker_symbol}_ensamble_prediction_results.csv')
+  results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
 
 # ===============================================================================
 # Final loop - call the pipeline for each ticker symbol
@@ -1031,4 +1001,5 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
 # top_10_valid_tickers = get_top_valid_tickers(top_10, top_n=10)
 
 full_pipeline_for_single_stock('OPK', "2020-01-01", "2024-01-01")
+
 
