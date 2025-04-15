@@ -897,10 +897,10 @@ def ensemble_pipeline(models_results, X_train, X_test, Y_train, Y_test):
 # ===============================================================================
 def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
   drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/"
-    # Create date folder inside Google Drive path
+  # Create date folder inside Google Drive path
   drive_date_folder = os.path.join(drive_path, current_date)
 
-    # Create directory if it doesn't exist
+  # Create directory if it doesn't exist
   os.makedirs(drive_date_folder,exist_ok=True)
 
   # run first pipeline, fetch data
@@ -911,10 +911,8 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
   pipeline_clean = create_data_cleaning_pipeline()
   data_clean = pipeline_clean.fit_transform(data)
 
-
-#   data_clean.to_csv(f'{ticker_symbol}_clean_data.csv')
+  # Save locally
   data_clean.to_csv(f'{date_folder}/{ticker_symbol}_clean_data.csv')
-#   data_clean.to_csv(drive_path + f'{date_folder}/{ticker_symbol}_clean_data.csv')
 
 # Save to Google Drive with date folder
   try:
@@ -925,8 +923,6 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
       # Fallback to local save
       os.makedirs(current_date, exist_ok=True)  # Create local date folder if needed
       data_clean.to_csv(os.path.join(current_date, f"{ticker_symbol}_clean_data.csv"))
-
-
 
   # Split the data to train and test, create train and val the models
   X = data_clean.drop(columns=['Transaction_Sharpe'])
@@ -941,41 +937,16 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
   Y_test = Y.iloc[split_idx:]
 
   results = train_and_validate_models(X_train_val, Y_train_val)
-
   # Ensamble -> Three ensambles pipeline (Linearly Weighted, Equal Weights, GBDT)
   # Run the pipeline
   ensemble_results = ensemble_pipeline(results, X_train_val, X_test, Y_train_val, Y_test)
 
-# '''' previous ver of saving - local '''
-  # Convert dictionary to DataFrame and save to CSV
-#   df = pd.DataFrame.from_dict(ensemble_results, orient='index')
-#   df.index.name = 'Method Name'  # Set the index name
-#   ###df.to_csv(f'{ticker_symbol}_results.csv')
-  df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
-#   df.to_csv(drive_path + f'{date_folder}/{ticker_symbol}_results.csv')
-
-#   #print(f"Results saved to '{ticker_symbol}_results.csv'")
-
-#   best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
-#   best_prediction = ensemble_results[best_method]['prediction']
-
-#   results_df = pd.DataFrame({
-#     'Ticker' : ticker_symbol,
-#     'Close' : X_test.Close,
-#     'Buy': X_test.Buy,
-#     'Sell': X_test.Sell,
-#     'Actual_Sharpe': Y_test,
-#     'Best_Prediction': best_prediction
-#     })
-
-#   ###results_df.to_csv(f'{ticker_symbol}_ensamble_prediction_results.csv')
-  results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
-#   results_df.to_csv(drive_path + f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
-
 # Save results to Google Drive with date folder
   try:
+      print(f"TRYING TO SAVE RESULTS")
       df = pd.DataFrame.from_dict(ensemble_results, orient='index')
       df.index.name = 'Method Name'
+      df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
       df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_results.csv"))
     
       best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
@@ -989,14 +960,15 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
           'Actual_Sharpe': Y_test,
           'Best_Prediction': best_prediction
       })
-    
+
+      print(f"TRYING TO SAVE ENSEMBLE RESULTS")
+      results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
       results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensamble_prediction_results.csv"))
       print(f"Saved results for {ticker_symbol} to Google Drive dated folder")
   except Exception as e:
       print(f"Error saving results to Google Drive: {e}")
       # Fallback to local save
       results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensamble_prediction_results.csv"))
-
 
 # ===============================================================================
 # Final loop - call the pipeline for each ticker symbol
@@ -1012,27 +984,12 @@ def is_valid_ticker(ticker):
   except Exception as e:
     print(f"Error validating ticker {ticker}: {e}")
     return False
-
-# def get_top_valid_tickers(tickers, top_n=20):
-#   valid_tickers = []
-#   for ticker in tickers:
-#     if is_valid_ticker(ticker):
-#       valid_tickers.append(ticker)
-#     if len(valid_tickers) == top_n:
-#       break
-
-#   return valid_tickers
-
-# top_10_valid_tickers = get_top_valid_tickers(top_10, top_n=10)
-
-# for ticker in top_10_valid_tickers:
-#   full_pipeline_for_single_stock(ticker, "2020-01-01", "2024-01-01")
+  
 
 def get_all_valid_tickers(tickers):
    """
    Return all valid tickers from the given list
    """
-
    valid_tickers = []
    total_tickers = len(tickers)
 
@@ -1067,67 +1024,4 @@ for ticker in valid_tickers:
       print(f"Successfully processed {ticker}")
    except Exception as e:
       print(f"Error processing ticker {ticker}: {e}")
-      
-
-
-         
-      
-
-
-
-
-# ===============================================================================
-# RUN ALL IN ORDER ON ONE STOCK
-# ===============================================================================
-# Pipeline 1 - 
-# ticker_symbol = "OPK"
-# start_date = "2020-01-01"
-# end_date = "2024-01-01"
-# risk_free_rate = 0.02  # 2% annual risk-free rate, you can adjust this value
-
-# pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate)
-# data = pipeline.fit_transform(pd.DataFrame())
-# data.to_csv(f'{ticker_symbol}_processed_data.csv')
-# print(data.info())
-
-# # Pipeline 2 - 
-# pipeline_clean = create_data_cleaning_pipeline()
-# data_clean = pipeline_clean.fit_transform(data)
-# data_clean.to_csv(f'{ticker_symbol}_clean_data.csv')
-# print(data_clean.info())
-
-# # Check data edge values
-# max(data_clean['Transaction_Sharpe'])
-# min(data_clean['Transaction_Sharpe'])
-
-# # Split the data to train and test
-# print(f"Data_clean shape before splitting: {data_clean.shape}")
-# # Define the features
-# X = data_clean.drop(columns=['Transaction_Sharpe'])
-# # Define the target variable
-# Y = data_clean['Transaction_Sharpe']
-# # Define pct for test / train+validation
-# train_size = 0.8
-# # Calculate the index where to split the data
-# split_idx = int(len(data_clean)*train_size)
-# print(f"Split index: {split_idx}")
-
-# # Split the data to test and train/validation sets
-# X_train_val = X.iloc[:split_idx]
-# Y_train_val = Y.iloc[:split_idx]
-
-# X_test = X.iloc[split_idx:]
-# Y_test = Y.iloc[split_idx:]
-
-# results = train_and_validate_models(X_train_val, Y_train_val)
-
-# print(f"X_train_val shape: {X_train_val.shape}")
-# print(f"Y_train_val shape: {Y_train_val.shape}")
-# print(f"X_test shape: {X_test.shape}")
-# print(f"Y_test shape: {Y_test.shape}")
-
-# # Print train/val results
-# for model_name, model_data in results.items():
-#   print(model_name)
-#   for item in model_data.items():
-#     print(item)
+    
