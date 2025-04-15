@@ -167,49 +167,53 @@ class TransactionMetricsCalculator(BaseEstimator, TransformerMixin):
 
     def transform(self, X):
         data = X.copy()
-        volatility_list = []
-        returns_list = []
-        sharpe_ratio_list = []
-        duration_list = []
+
+        # Initialize the transaction metrics columns
+        data['Transaction_Volatility'] = np.nan
+        data['Transaction_Returns'] = np.nan
+        data['Transaction_Sharpe'] = np.nan
+        data['Transaction_Duration'] = np.nan
+        
         last_buy_index = None
         last_buy_price = None
+        in_active_position = False
 
+        # Process the data in a single pass
         for i in range(len(data)):
+            # Record buy signal
             if not np.isnan(data['Buy'].iloc[i]):
                 last_buy_index = i
                 last_buy_price = data['Close'].iloc[i]
+                in_active_position = True
 
-            if not np.isnan(data['Sell'].iloc[i]) and last_buy_index is not None:
-                sell_date = data.index[i]
+            # Calculate metrics based on the last known buy signal
+            # (even after a sell signal, until the next buy)
+            if last_buy_index is not None:
                 buy_date = data.index[last_buy_index]
-                duration = (sell_date - buy_date).days
+                current_date = data.index[i]
+                duration = (current_date - buy_date).days
 
                 # Calculate raw return for this transaction
                 returns = (data['Close'].iloc[i] - last_buy_price) / last_buy_price
 
-                ###volatility = data['Close'].iloc[last_buy_index:i+1].std()
                 # Calculate volatility (standard deviation of daily returns) for this transaction
                 daily_returns = data['Close'].iloc[last_buy_index:i+1].pct_change().dropna()
-                volatility = daily_returns.std()
+                volatility = daily_returns.std() if len(daily_returns) > 1 else 0
 
                 # Calculate Sharpe ratio for this transaction
-                # Assuming risk_free_rate is annual
                 transaction_risk_free_rate = self.risk_free_rate * (duration / 365)
                 sharpe_ratio = (returns - transaction_risk_free_rate) / volatility if volatility != 0 else 0                        # all in the same scale: returns is the return ratio, the vplatility is pct
 
-                volatility_list.append(volatility)
-                returns_list.append(returns)
-                sharpe_ratio_list.append(sharpe_ratio)
-                duration_list.append(duration)
+                # Store the metrics for every day while in a position
+                data.loc[data.index[i], 'Transaction_Volatility'] = volatility
+                data.loc[data.index[i], 'Transaction_Returns'] = returns
+                data.loc[data.index[i], 'Transaction_Sharpe'] = sharpe_ratio
+                data.loc[data.index[i], 'Transaction_Duration'] = duration
 
-                last_buy_index = None
-                last_buy_price = None
-
-        data['Transaction_Volatility'] = pd.Series(volatility_list, index=data.index[data['Sell'].notna()])
-        data['Transaction_Returns'] = pd.Series(returns_list, index=data.index[data['Sell'].notna()])
-        data['Transaction_Sharpe'] = pd.Series(sharpe_ratio_list, index=data.index[data['Sell'].notna()])
-        # transaction duration in days
-        data['Transaction_Duration'] = pd.Series(duration_list, index=data.index[data['Sell'].notna()])
+                # If this is a sell day, mark that we're no longer in an active position
+                # but continue calculating using the same buy reference point
+                if not np.isnan(data['Sell'].iloc[i]):
+                    in_active_position = False
 
         return data
 
@@ -219,7 +223,7 @@ class TransactionMetricsCalculator(BaseEstimator, TransformerMixin):
 # ===============================================================================
 # use forward fill then backward filll (normal in financial data) on all continues columns
 class MissingValueHandler(BaseEstimator, TransformerMixin):
-  def __init__(self, fill_columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'PSAR', 'MFI', 'MVP']):
+  def __init__(self, fill_columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'PSAR', 'MFI', 'MVP', ]):
     self.fill_columns = fill_columns
 
   def fit(self, X, y=None):
@@ -240,7 +244,16 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
   
 # handle outliers: Use Z-score to identify data points that deviate significantly from the mean - rolling window of 28 days
 class OutlierHandler(BaseEstimator, TransformerMixin):
-  def __init__(self,threshold=3, window=28, exclude_columns=['Buy', 'Sell', 'Close', 'Prime_Rate']):
+  def __init__(self,threshold=3, window=28, exclude_columns=[
+    # Price data
+    'Open', 'High', 'Low', 'Close',
+    # Signal columns
+    'Buy', 'Sell', 'Signal', 'Signal_Shift',
+    # Transaction metrics
+    'Transaction_Sharpe', 'Transaction_Returns', 'Transaction_Volatility', 'Transaction_Duration',
+    # External data
+    'Prime_Rate'
+    ]):
     self.threshold = threshold
     self.window = window
     self.exclude_columns = exclude_columns
