@@ -121,11 +121,10 @@ def merge_ticker_data(base_directory, date_folder, validate=True):
             print(f"WARNING: Row count mismatch! {merged_row_count} != {total_rows_original}")
             print(f"Difference: {abs(merged_row_count - total_rows_original)} rows")
         else:
-            print("✓ Row counts match perfectly")
+            print("Success: Row counts match perfectly")  # Replaced \u2713 with plain text
             
         print(f"Total nulls in merged data: {merged_null_count}")
         
-        # Check nulls by column
         null_by_column = merged_data.isnull().sum()
         columns_with_nulls = null_by_column[null_by_column > 0]
         if not columns_with_nulls.empty:
@@ -133,21 +132,20 @@ def merge_ticker_data(base_directory, date_folder, validate=True):
             for col, count in columns_with_nulls.items():
                 print(f"  - {col}: {count} nulls ({count/len(merged_data)*100:.2f}%)")
         else:
-            print("✓ No null values found in any column")
+            print("Success: No null values found in any column")  # Replaced \u2713 with plain text
             
-        # Check for duplicate rows
         duplicate_count = merged_data.duplicated().sum()
         if duplicate_count > 0:
             print(f"\nWARNING: Found {duplicate_count} duplicate rows")
         else:
-            print("✓ No duplicate rows found")
+            print("Success: No duplicate rows found")  # Replaced \u2713 with plain text
             
         print("------------------------\n")
     
     return merged_data
 
 # Example usage:
-selected_date = "20250402"
-merged_results = merge_ticker_data("results", selected_date, validate=True)
+selected_date = "20250415"
+merged_results = merge_ticker_data("E:\Afeka\FinalProject\Project/", selected_date, validate=True)
 # If validation passes, save the merged data
 merged_results.to_csv(f"{selected_date}_all_tickers_results.csv", index=False)
