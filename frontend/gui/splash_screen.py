@@ -3,7 +3,6 @@ from PyQt5.QtGui import QPixmap, QFont, QColor
 from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QPoint
 from PyQt5.QtWidgets import QApplication, QGraphicsOpacityEffect
 
-
 class SplashScreen(QWidget):  # Changed from QSplashScreen to QWidget
     def __init__(self):
         super().__init__()
@@ -79,7 +78,8 @@ class SplashScreen(QWidget):  # Changed from QSplashScreen to QWidget
     def finish_fade(self, next_window):
         """Complete the transition by showing the next window directly"""
         self.close()
-        
-        # Simply show the window without fade effect
-        # This will ensure the window displays properly
         next_window.show()
+
+    def finish(self, window):
+        """Initiate fade-out transition to the main window"""
+        self.fade_out(window)

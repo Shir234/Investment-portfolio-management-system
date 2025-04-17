@@ -4,11 +4,12 @@ import os
 # Add the parent directory to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from PyQt5.QtWidgets import QApplication, QGraphicsOpacityEffect
+from PyQt5.QtWidgets import QApplication, QGraphicsOpacityEffect, QFileDialog
 from PyQt5.QtGui import QPalette, QColor, QIcon
 from PyQt5.QtCore import Qt, QTimer
 from gui.main_window import MainWindow
 from gui.splash_screen import SplashScreen
+from gui.input_panel import InputPanel
 from data.data_manager import DataManager
 
 def set_dark_mode(app):
@@ -106,20 +107,22 @@ def main():
     splash = SplashScreen()
     splash.show()
     
-    # Construct the absolute path to the CSV file
-    csv_path = os.path.join(os.path.dirname(__file__), '20250415_all_tickers_results.csv')
+    # Prompt user to select the CSV file
+    csv_path, _ = QFileDialog.getOpenFileName(None, "Select CSV File", "", "CSV Files (*.csv)")
+    if not csv_path:
+        print("No file selected")
+        sys.exit(1)
     
-    # Initialize data manager with the absolute path
-    data_manager = DataManager(csv_path)
+    # Load data with the selected file
+    data_manager = DataManager(csv_path=csv_path)
     
-    # Create main window but don't show it yet
+    # Initialize and show the main window
     window = MainWindow(data_manager)
-    window.setWindowIcon(app_icon)
     
-    # Start fade transition after 4 seconds
-    QTimer.singleShot(3500, lambda: splash.fade_out(window))
+    # Close splash screen after main window is shown
+    splash.finish(window)
     
-    # Start the event loop
+    # Execute the application
     sys.exit(app.exec_())
 
 if __name__ == '__main__':

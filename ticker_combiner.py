@@ -32,7 +32,7 @@ def merge_ticker_data(base_directory, date_folder, validate=True):
         files = os.listdir(date_path)
         print(f"Found {len(files)} files in {date_path}")
         
-        csv_files = [f for f in files if f.endswith('_ensamble_prediction_results.csv')]
+        csv_files = [f for f in files if f.endswith('_ensemble_prediction_results.csv')]
         if not csv_files:
             print(f"No matching CSV files found in {date_path}")
             return pd.DataFrame()
