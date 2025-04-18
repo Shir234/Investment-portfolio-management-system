@@ -22,6 +22,7 @@ os.makedirs(date_folder, exist_ok=True)
 # Full Pipeline For Single Stock
 # ===============================================================================
 def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
+    print(f"IN FULL PIPELINE FOR TICKER {ticker_symbol}")
     drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/"
     # Create date folder inside Google Drive path
     drive_date_folder = os.path.join(drive_path, current_date)
@@ -146,23 +147,57 @@ def get_all_valid_tickers(tickers):
    print(f"Validation complete. Found {len(valid_tickers)} valid tickers out of {total_tickers}.")
    return valid_tickers
 
+
+
+def load_valid_tickers(file_path="valid_tickers.csv"):
+    """
+    Loads valid tickers from a CSV file
+    Parameters:
+    - file_path (str): Path to the CSV file containing valid tickers
+        
+    Returns:
+    - list: List of valid ticker symbols
+    """
+    if not os.path.exists(file_path):
+        print(f"Error: File {file_path} not found.")
+        return []
+    
+    try:
+        df = pd.read_csv(file_path)
+        tickers = df['Ticker'].tolist()
+        print(f"Loaded {len(tickers)} valid tickers from {file_path}")
+        return tickers
+    except Exception as e:
+        print(f"Error loading tickers from {file_path}: {e}")
+        return []
 """
 1 read the data
 2 get all the tickers
 3 validate and get only valid tickers
 4 run the pipeline on each valid ticker
 """
-stakeholder_data = pd.read_csv('final_tickers_score.csv')
-# Get all tickers from data
-all_tickers = stakeholder_data['Ticker'].tolist()
-# Get all valid tickers
-valid_tickers = get_all_valid_tickers(all_tickers)
+# stakeholder_data = pd.read_csv('valid_tickers.csv')
+valid_tickers = load_valid_tickers("valid_tickers.csv")
+
+# # Get all tickers from data
+# all_tickers = stakeholder_data['Ticker'].tolist()
+# # Get all valid tickers
+# valid_tickers = get_all_valid_tickers(all_tickers)
+
 
 for ticker in valid_tickers:
-   try:
+    try:
       print(f"\nProcessing ticker: {ticker}")
       full_pipeline_for_single_stock(ticker, "2013-01-01", "2024-01-01")
       print(f"Successfully processed {ticker}")
-   except Exception as e:
+    except Exception as e:
       print(f"Error processing ticker {ticker}: {e}")
+   
+# for ticker in valid_tickers:
+#    try:
+#       print(f"\nProcessing ticker: {ticker}")
+#       full_pipeline_for_single_stock(ticker, "2013-01-01", "2024-01-01")
+#       print(f"Successfully processed {ticker}")
+#    except Exception as e:
+      # print(f"Error processing ticker {ticker}: {e}")
     

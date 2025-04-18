@@ -163,8 +163,9 @@ filtered_df_snp500.to_csv('sp500_filtered_data.csv', index=False)
 
 # Calculate the scores (referenced today)
 latest_date = '2023-09-13'  # Hardcoded as YYYY-MM-DD
-processed_df = process_transactions(df, latest_date)
+processed_df = process_transactions(filtered_df_snp500, latest_date)
 
 
 # Calculate Final Score For Each Ticker Symbol
 final_scores = Finalize_scores(processed_df)
+

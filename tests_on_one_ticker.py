@@ -699,6 +699,6 @@ def full_pipeline_for_single_stock(ticker_symbol, start_date, end_date, risk_fre
   results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensamble_prediction_results.csv')
 
 
-full_pipeline_for_single_stock('OPK', "2023-12-01", "2024-01-01")
+full_pipeline_for_single_stock('OPK', "2013-01-01", "2024-01-01")
 
 
