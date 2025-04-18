@@ -2,16 +2,17 @@ import pandas as pd
 import os
 from datetime import datetime
 
-def merge_ticker_data(base_directory, date_folder, validate=True):
+def merge_ticker_data(base_directory, date_folder, validate=True, sort_by_date=True):
     """
     Merge prediction results from multiple tickers in a specific date folder into a single DataFrame
-    with validation to ensure data integrity.
+    with validation to ensure data integrity, and optional sorting by date..
     
     Parameters:
     base_directory (str): Path to the base results directory
     date_folder (str): Name of the specific date subfolder (e.g., '20250327')
     validate (bool): Whether to perform validation checks on the merged data
-    
+    sort_by_date (bool): Whether to sort the merged data by date
+
     Returns:
     pd.DataFrame: Merged data from all ticker files in the specified date folder
     """
@@ -108,6 +109,16 @@ def merge_ticker_data(base_directory, date_folder, validate=True):
     print(f"Merging data from {len(all_tickers_data)} ticker files")
     merged_data = pd.concat(all_tickers_data, ignore_index=True)
     
+    # Sort the data by date if requested
+    if sort_by_date and 'Date' in merged_data.columns:
+        print("Sorting merged data by Date")
+        # Convert Date column to datetime if it's not already
+        if not pd.api.types.is_datetime64_any_dtype(merged_data['Date']):
+            merged_data['Date'] = pd.to_datetime(merged_data['Date'])
+        # Sort by date
+        merged_data = merged_data.sort_values('Date')
+        print(f"Data sorted - first date: {merged_data['Date'].min()}, last date: {merged_data['Date'].max()}")
+    
     # Perform validation checks
     if validate:
         merged_row_count = len(merged_data)
@@ -145,6 +156,8 @@ def merge_ticker_data(base_directory, date_folder, validate=True):
     return merged_data
 
 # Example usage:
+selected_date = "20250402"
+merged_results = merge_ticker_data("results", selected_date, validate=True, sort_by_date=True)
 selected_date = "20250415"
 merged_results = merge_ticker_data("E:\Afeka\FinalProject\Project/", selected_date, validate=True)
 # If validation passes, save the merged data
