@@ -6,6 +6,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import RFECV
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.linear_model import LassoCV
+from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+
 """
 Feature selection code!
 ------------------------
@@ -178,7 +180,7 @@ def select_best_features(X_train, Y_train, threshold=0.8, method='importance'):
 
 def evaluate_feature_sets(X_train, Y_train, X_test, Y_test):
     """
-    Compare performance of different feature selection methods.
+    Compare performance of different feature selection methods using multiple model types.
     Parameters:
     -----------
     X_train : DataFrame, Training features
@@ -187,7 +189,7 @@ def evaluate_feature_sets(X_train, Y_train, X_test, Y_test):
     Y_test : Series, Test target
         
     Returns:
-    results_df : DataFrame, Results comparing different feature sets
+    Dictionary containing detailed results and best feature information
     """
     
     # Define feature selection methods
@@ -197,11 +199,20 @@ def evaluate_feature_sets(X_train, Y_train, X_test, Y_test):
         'RFECV': select_best_features(X_train, Y_train, method='rfecv'),
         'Lasso': select_best_features(X_train, Y_train, method='lasso')
     }
+
+    # Define different model types to evaluate feature sets
+    models = {
+        'XGBoost': XGBRegressor(n_estimators=100, learning_rate=0.05, random_state=42),
+        'RandomForest': RandomForestRegressor(n_estimators=100, random_state=42),
+        'Linear': LassoCV(cv=3, random_state=42)  # Using LassoCV as a linear model
+    }
     
     results = []
-    
-    # Evaluate each feature set
+
+    # Evaluate each feature set with each model type
     for method_name, features in methods.items():
+        print(f"Evaluating feature set: {method_name} with {len(features)} features")
+
         # Subset the data
         X_train_subset = X_train[features]
         X_test_subset = X_test[features]
@@ -210,41 +221,90 @@ def evaluate_feature_sets(X_train, Y_train, X_test, Y_test):
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train_subset)
         X_test_scaled = scaler.transform(X_test_subset)
-        
-        # Create and train an XGBoost regressor on the scaled training data
-        model = XGBRegressor(n_estimators=100, learning_rate=0.05, random_state=42)
-        model.fit(X_train_scaled, Y_train)
-        
-        # Make predictions
-        y_pred = model.predict(X_test_scaled)
-        
-        # Calculate metrics
-        mse = mean_squared_error(Y_test, y_pred)
-        rmse = np.sqrt(mse)
-        r2 = r2_score(Y_test, y_pred)
-        
-        # Store results
-        results.append({
-            'Method': method_name,
-            'Num_Features': len(features),
-            'Features': features,
-            'MSE': mse,
-            'RMSE': rmse,
-            'R2': r2
-        })
+
+        # Test with each model type
+        for model_name, model in models.items():
+            try:
+                # Create and train the model
+                print(f"  Testing with {model_name}...")
+                model.fit(X_train_scaled, Y_train)
+                
+                # Make predictions
+                y_pred = model.predict(X_test_scaled)
+                
+                # Calculate metrics
+                mse = mean_squared_error(Y_test, y_pred)
+                rmse = np.sqrt(mse)
+                r2 = r2_score(Y_test, y_pred)
+                
+                # Store results
+                results.append({
+                    'Feature_Method': method_name,
+                    'Model': model_name,
+                    'Num_Features': len(features),
+                    'Features': features,
+                    'MSE': mse,
+                    'RMSE': rmse,
+                    'R2': r2
+                })
+                
+            except Exception as e:
+                print(f"  Error with {model_name}: {e}")
+                # Add error entry
+                results.append({
+                    'Feature_Method': method_name,
+                    'Model': model_name,
+                    'Num_Features': len(features),
+                    'Features': features,
+                    'MSE': float('inf'),
+                    'RMSE': float('inf'),
+                    'R2': float('-inf'),
+                    'Error': str(e)
+                })
     
     # Convert to DataFrame
-    results_df = pd.DataFrame(results)
+    detailed_results = pd.DataFrame(results)
+
+    # Calculate average performance across models for each feature selection method
+    avg_results = detailed_results.groupby('Feature_Method').agg({
+        'RMSE': 'mean',
+        'MSE': 'mean', 
+        'R2': 'mean',
+        'Num_Features': 'first'
+    }).reset_index()
+
+    # Find best method based on average RMSE
+    best_method = avg_results.loc[avg_results['RMSE'].idxmin(), 'Feature_Method']
+    best_features = methods[best_method]
+
+    print(f"\nBest feature selection method across all models: {best_method}")
+    print(f"Number of features: {len(best_features)}")
+    print(f"Average RMSE: {avg_results.loc[avg_results['Feature_Method'] == best_method, 'RMSE'].values[0]:.6f}")
     
-    """
-    Returns a DataFrame with columns:
-        - 'Method': Name of the feature selection method
-        - 'Num_Features': Number of features selected
-        - 'Features': List of the actual features selected
-        - 'MSE': Mean Squared Error on test data
-        - 'RMSE': Root Mean Squared Error on test data
-        - 'R2': R² score on test data
-    """
-    return results_df
+    return {
+        'detailed_results': detailed_results,
+        'average_results': avg_results,
+        'best_method': best_method,
+        'best_features': best_features
+    }
 
 
+def validate_feature_consistency(X_train_original, X_train_selected, selected_features):
+    """
+    Validate that feature selection is consistent
+    """
+    
+    # Check all selected features exist in original dataset
+    for feature in selected_features:
+        if feature not in X_train_original.columns:
+            raise ValueError(f"Selected feature {feature} not in original dataset")
+    
+    # Check dimensions are as expected
+    if X_train_selected.shape[1] != len(selected_features):
+        raise ValueError(f"Selected data has {X_train_selected.shape[1]} columns but {len(selected_features)} features were selected")
+    
+    # Check column order matches
+    if not all(X_train_selected.columns == selected_features):
+        print("Warning: Column order in selected data doesn't match feature list order")
+    
+    print(f"Feature consistency validation passed: {len(selected_features)} features used")
