@@ -1,5 +1,6 @@
 import numpy as np
-from sklearn.preprocessing import StandardScaler
+import pandas as pd
+from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.svm import SVR
@@ -56,14 +57,14 @@ def create_models():
                 'max_depth': randint(3, 8),
                 'min_samples_split': randint(2, 11),
                 'min_samples_leaf': randint(1, 5),
-                'max_features': ['auto', 'sqrt', 0.5]
+                'max_features': ['sqrt', 0.5]
             }),
             'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
                 'n_estimators': randint(100, 300),
-                'max_depth': randint(3, 8),
+                'max_depth': randint(3, 6),
                 'learning_rate': uniform(0.01, 0.1),
                 'subsample': uniform(0.7, 0.3),
-                'min_samples_split': randint(2, 11)
+                'min_samples_split': randint(5, 15)
             }),
             'LSTM': (None, {})
             # 'SVR': (SVR(), {
@@ -119,15 +120,18 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
     log_data_stats(logger, Y_train_val, "Y_train_val for models", include_stats=True)
 
     # Create global scalers for final output
-    feature_scaler = StandardScaler()
-    target_scaler = StandardScaler()
+    feature_scaler = RobustScaler()
+    target_scaler = RobustScaler()
 
     # Fit the global scalers on all training data for later use with test data
     feature_scaler.fit(X_train_val)
     target_scaler.fit(Y_train_val.values.reshape(-1, 1))
 
-    # Pre-scale the entire training set once
-    X_train_val_scaled = feature_scaler.transform(X_train_val)
+    X_train_val_scaled = pd.DataFrame(
+        feature_scaler.transform(X_train_val),
+        columns=X_train_val.columns,
+        index=X_train_val.index
+    )
     Y_train_val_scaled = target_scaler.transform(Y_train_val.values.reshape(-1, 1)).flatten()
 
     # Log scaling info
@@ -172,12 +176,11 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
             logger.info(f"\nFold {fold + 1} for {model_name}:")
 
             # Split the data
-            X_train_fold = X_train_val_scaled[train_idx]  # Use the PRE-SCALED data
-            X_val_fold = X_train_val_scaled[val_idx]      # Use the PRE-SCALED data
-            
-            Y_train_fold = Y_train_val_scaled[train_idx]  # Use the PRE-SCALED data
-            Y_val_fold = Y_train_val_scaled[val_idx]      # Use the PRE-SCALED data
+            X_train_fold = X_train_val_scaled.iloc[train_idx]
+            X_val_fold = X_train_val_scaled.iloc[val_idx]
 
+            Y_train_fold = Y_train_val_scaled[train_idx]
+            Y_val_fold = Y_train_val_scaled[val_idx]
             # Original Y values for computing metrics
             Y_val_original = Y_train_val.iloc[val_idx].values
 
@@ -271,7 +274,11 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
     # After all folds, retrain best model on all data using global scalers
     # This ensures the final model can be used with the global scalers
     logger.info("\nRetraining all models on full dataset using global scalers...")
-    X_train_val_scaled = feature_scaler.transform(X_train_val)
+    X_train_val_scaled = pd.DataFrame(
+        feature_scaler.transform(X_train_val),
+        columns=X_train_val.columns,
+        index=X_train_val.index
+    )
     Y_train_val_scaled = target_scaler.transform(Y_train_val.values.reshape(-1, 1)).flatten()
 
     # For each model (except LSTM which is handled separately)
@@ -279,11 +286,9 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
         if model_name != 'LSTM' and result.get('best_params') and len(result['best_params']) > 0:
             try:
                 logger.info(f"Retraining {model_name} on full dataset...")
-            
                 # Get best parameters
                 best_fold_idx = np.argmin(result['best_mse_scores'])
                 best_params = result['best_params'][best_fold_idx]
-                
                 # Create a new model instance with the best parameters
                 base_model = create_models()[model_name][0]
                 for param, value in best_params.items():
@@ -325,6 +330,14 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
 # ===============================================================================
 # LSTM Support Functions
 # ===============================================================================
+def create_rolling_window_data(X, y, time_steps=5):
+    X_rolled, y_rolled = [], []
+    for i in range(len(X) - time_steps + 1):
+        X_rolled.append(X[i:i + time_steps])
+        y_rolled.append(y[i + time_steps - 1])
+    return np.array(X_rolled), np.array(y_rolled)
+
+
 def train_lstm_model(X_train, y_train, X_val, y_val, params):
     """
     Train an LSTM model with specified parameters
@@ -346,15 +359,21 @@ def train_lstm_model(X_train, y_train, X_val, y_val, params):
         batch_size = params.get('batch_size', 32)
         units = params.get('units', 50)
         learning_rate = params.get('learning_rate', 0.01)
+        time_steps = 5
 
-        # Reshape data for LSTM [samples, time steps, features]
-        features_count = X_train.shape[1]
-        X_train_reshaped = X_train.reshape(-1, 1, features_count)
-        X_val_reshaped = X_val.reshape(-1, 1, features_count)
+        # # Reshape data for LSTM [samples, time steps, features]
+        # features_count = X_train.shape[1]
+        # X_train_reshaped = X_train.reshape(-1, 1, features_count)
+        # X_val_reshaped = X_val.reshape(-1, 1, features_count)
+
+        # Create rolling window data
+        X_train_rolled, y_train_rolled = create_rolling_window_data(X_train, y_train, time_steps)
+        X_val_rolled, y_val_rolled = create_rolling_window_data(X_val, y_val, time_steps)
 
         # Create and compile model
         model = Sequential([
-            LSTM(units, activation='relu', input_shape=(1, features_count)),
+            LSTM(units, activation='relu', input_shape=(time_steps, X_train.shape[1]), return_sequences=False),
+            Dropout(0.2),  # Add dropout for regularization
             Dense(1)
         ])
         model.compile(optimizer=Adam(learning_rate=learning_rate), loss='mse')
@@ -363,18 +382,17 @@ def train_lstm_model(X_train, y_train, X_val, y_val, params):
 
         # Train model
         history = model.fit(
-            X_train_reshaped, y_train,
+            X_train_rolled, y_train_rolled,
             epochs=epochs,
             batch_size=batch_size,
-            validation_data=(X_val_reshaped, y_val),
+            validation_data=(X_val_rolled, y_val_rolled),
             callbacks=[early_stopping],
             verbose=0
         )
 
         # Predict and evaluate
-        y_pred = model.predict(X_val_reshaped)
-        y_pred = y_pred.flatten()  # Flatten to match y_val shape
-        mse = mean_squared_error(y_val, y_pred)
+        y_pred = model.predict(X_val_rolled).flatten()
+        mse = mean_squared_error(y_val_rolled, y_pred)
         rmse = np.sqrt(mse)
 
         return model, mse, rmse, y_pred
@@ -433,11 +451,11 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
             Y_val_fold = Y_train_val.iloc[val_idx]
 
             # Scale features and target using fold-specific scalers
-            fold_feature_scaler = StandardScaler()
+            fold_feature_scaler = RobustScaler()
             X_train_scaled = fold_feature_scaler.fit_transform(X_train_fold)
             X_val_scaled = fold_feature_scaler.transform(X_val_fold)
             
-            fold_target_scaler = StandardScaler()
+            fold_target_scaler = RobustScaler()
             Y_train_scaled = fold_target_scaler.fit_transform(Y_train_fold.values.reshape(-1, 1)).flatten()
             Y_val_scaled = fold_target_scaler.transform(Y_val_fold.values.reshape(-1, 1)).flatten()
 

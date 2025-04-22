@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler
 from xgboost import XGBRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import RFECV
@@ -30,7 +30,7 @@ def analyze_feature_importance(X_train, Y_train, model_type='xgboost'):
     """
 
     # Scale the features
-    scaler = StandardScaler()
+    scaler = RobustScaler()
     X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index)
     feature_importance = None
     
@@ -138,7 +138,7 @@ def select_best_features(X_train, Y_train, threshold=0.8, method='importance'):
         Gets the selected features using the support_ attribute, which is a boolean array indicating which features were selected
         """
         # Scale the features
-        scaler = StandardScaler()
+        scaler = RobustScaler()
         X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index)
         # Create a model for RFECV
         estimator = RandomForestRegressor(n_estimators=100, random_state=42)
@@ -161,7 +161,7 @@ def select_best_features(X_train, Y_train, threshold=0.8, method='importance'):
         The key property of Lasso is that it performs feature selection automatically by forcing some coefficients to be exactly zero
         """
         # Scale the features
-        scaler = StandardScaler()
+        scaler = RobustScaler()
         X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index)
         # Create and fit LassoCV model
         lasso = LassoCV(cv=5, random_state=42, max_iter=10000)
@@ -233,7 +233,7 @@ def evaluate_feature_sets(X_train, Y_train):
                     y_fold_train, y_fold_val = Y_train.iloc[train_idx], Y_train.iloc[val_idx]
                     
                     # Scale using only training fold
-                    scaler = StandardScaler()
+                    scaler = RobustScaler()
                     X_fold_train_scaled = scaler.fit_transform(X_fold_train)
                     X_fold_val_scaled = scaler.transform(X_fold_val)
                     
