@@ -1,12 +1,14 @@
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.svm import SVR
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from scipy.stats import uniform, randint
+from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from tensorflow.keras.optimizers import Adam
@@ -30,31 +32,80 @@ def create_models():
         models = {
             'SVR': (SVR(), {
                 'kernel': ['rbf', 'linear'],
-                'C': [0.1, 1, 10],
-                'epsilon': [0.01, 0.1]
+                'C': uniform(0.1, 100),  # Range from 0.1 to 100.1
+                'epsilon': uniform(0.01, 0.1),  # Range from 0.01 to 0.11
+                'gamma': ['scale', 'auto'] + list(uniform(0.01, 0.5).rvs(3))  # Mix of fixed and random values
             }),
             'XGBoost': (XGBRegressor(random_state=42), {
-                    'n_estimators': [100, 200],
-                    'max_depth': [3, 5, 7],
-                    'learning_rate': [0.01, 0.1]
+                'n_estimators': randint(100, 300),  # Range from 100 to 300
+                'max_depth': randint(3, 10),  # Range from 3 to 9
+                'learning_rate': uniform(0.01, 0.1),  # Range from 0.01 to 0.11
+                'subsample': uniform(0.7, 0.3),  # Range from 0.7 to 1.0
+                'colsample_bytree': uniform(0.7, 0.3)  # Range from 0.7 to 1.0
             }),
             'LightGBM': (LGBMRegressor(random_state=42, verbose=-1), {
-                    'n_estimators': [100, 200],
-                    'max_depth': [3, 5, 7],
-                    'learning_rate': [0.01, 0.1],
-                    'force_row_wise': [True]
+                'n_estimators': randint(100, 300),
+                'max_depth': randint(3, 8),
+                'learning_rate': uniform(0.01, 0.1),
+                'subsample': uniform(0.7, 0.3),
+                'colsample_bytree': uniform(0.7, 0.3),
+                'force_row_wise': [True]
             }),
             'RandomForest': (RandomForestRegressor(random_state=42), {
-                    'n_estimators': [100, 200],
-                    'max_depth': [3, 5, 7],
-                    'min_samples_split': [2, 5, 10]
+                'n_estimators': randint(100, 300),
+                'max_depth': randint(3, 8),
+                'min_samples_split': randint(2, 11),
+                'min_samples_leaf': randint(1, 5),
+                'max_features': ['auto', 'sqrt', 0.5]
             }),
             'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
-                    'n_estimators': [100, 200],
-                    'max_depth': [3, 5, 7],
-                    'learning_rate': [0.01, 0.1]
+                'n_estimators': randint(100, 300),
+                'max_depth': randint(3, 8),
+                'learning_rate': uniform(0.01, 0.1),
+                'subsample': uniform(0.7, 0.3),
+                'min_samples_split': randint(2, 11)
             }),
             'LSTM': (None, {})
+            # 'SVR': (SVR(), {
+            #     'kernel': ['rbf', 'linear'],
+            #     'C': [0.1, 1, 10, 100],
+            #     'epsilon': [0.01, 0.05, 0.1],
+            #     'gamma': ['scale', 'auto', 0.1]
+            # }),
+            # 'XGBoost': (XGBRegressor(random_state=42), {
+            #         # 'n_estimators': [100, 200],
+            #         # 'max_depth': [3, 5, 7],
+            #         # 'learning_rate': [0.01, 0.1]
+            #         'n_estimators': [100, 200, 300],
+            #         'max_depth': [3, 5, 7, 9],
+            #         'learning_rate': [0.01, 0.05, 0.1],
+            #         'subsample': [0.7, 0.9, 1.0],
+            #         'colsample_bytree': [0.7, 0.9, 1.0]
+            # }),
+            # 'LightGBM': (LGBMRegressor(random_state=42, verbose=-1), {
+            #         'n_estimators': [100, 200],
+            #         'max_depth': [3, 5, 7],
+            #         'learning_rate': [0.01, 0.05, 0.1],
+            #         'subsample': [0.7, 0.9, 1.0],
+            #         'colsample_bytree': [0.7, 0.9, 1.0],
+            #         'force_row_wise': [True]
+
+            # }),
+            # 'RandomForest': (RandomForestRegressor(random_state=42), {
+            #         'n_estimators': [100, 200],
+            #         'max_depth': [3, 5, 7],
+            #         'min_samples_split': [2, 5, 10],
+            #         'min_samples_leaf' : [1, 2, 4],
+            #         'max_features' : ['auto', 'sqrt', 0.5]
+            # }),
+            # 'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
+            #         'n_estimators': [100, 200],
+            #         'max_depth': [3, 5, 7],
+            #         'learning_rate': [0.01, 0.05, 0.1],
+            #         'subsample': [0.7, 0.9, 1.0],
+            #         'colsample_bytree': [0.7, 0.9, 1.0]
+            # }),
+            # 'LSTM': (None, {})
         }
         return models
     except Exception as e:
@@ -75,14 +126,18 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
     feature_scaler.fit(X_train_val)
     target_scaler.fit(Y_train_val.values.reshape(-1, 1))
 
+    # Pre-scale the entire training set once
+    X_train_val_scaled = feature_scaler.transform(X_train_val)
+    Y_train_val_scaled = target_scaler.transform(Y_train_val.values.reshape(-1, 1)).flatten()
+
     # Log scaling info
     X_scaled_sample = feature_scaler.transform(X_train_val.iloc[:5])
     Y_scaled_sample = target_scaler.transform(Y_train_val.iloc[:5].values.reshape(-1, 1))
-    print("\nScaling Information:")
-    print(f"X scale sample - Before: {X_train_val.iloc[0, :5].values}")
-    print(f"X scale sample - After: {X_scaled_sample[0, :5]}")
-    print(f"Y scale sample - Before: {Y_train_val.iloc[:5].values}")
-    print(f"Y scale sample - After: {Y_scaled_sample.flatten()}")
+    logger.info("\nScaling Information:")
+    logger.info(f"X scale sample - Before: {X_train_val.iloc[0, :5].values}")
+    logger.info(f"X scale sample - After: {X_scaled_sample[0, :5]}")
+    logger.info(f"Y scale sample - Before: {Y_train_val.iloc[:5].values}")
+    logger.info(f"Y scale sample - After: {Y_scaled_sample.flatten()}")
 
     # Time series cross-validation with 5 folds, to ensure temporal order (sequence of events in time)
     tscv = TimeSeriesSplit(n_splits=5)                                   
@@ -91,7 +146,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
 
     # Iterate each model
     for model_name, (model, params_grid) in models.items():    
-        print(f"\n{'-'*30}\nTraining {model_name}\n{'-'*30}")                     
+        logger.info(f"\n{'-'*30}\nTraining {model_name}\n{'-'*30}")                     
 
         best_mse_scores = []                                                               # lists to store scores and parameters for the models
         best_rmse_scores = []
@@ -103,7 +158,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
 
         # Reshape the data for LSTM model
         if model_name == 'LSTM':
-            print(f"Handling LSTM model separately with special reshaping")
+            logger.info(f"Handling LSTM model separately with special reshaping")
             results[model_name] = train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, target_scaler)
             continue
 
@@ -112,66 +167,75 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
             model.set_params(max_iter=1000)  # Limit iterations
 
         # Each fold: split the data and to train and val (using the tcsv indices) then scale
+        # For each fold, use the pre-scaled data with the global scalers
         for fold, (train_idx, val_idx) in enumerate(tscv.split(X_train_val)): 
-            print(f"\nFold {fold + 1} for {model_name}:")
+            logger.info(f"\nFold {fold + 1} for {model_name}:")
 
             # Split the data
-            X_train_fold, X_val_fold = X_train_val.iloc[train_idx], X_train_val.iloc[val_idx]
-            Y_train_fold, Y_val_fold = Y_train_val.iloc[train_idx], Y_train_val.iloc[val_idx]
-
-            print(f"  Train fold shapes: X={X_train_fold.shape}, Y={Y_train_fold.shape}")
-            print(f"  Validation fold shapes: X={X_val_fold.shape}, Y={Y_val_fold.shape}")
-
-            # Scale features and target using fold-specific scalers
-            fold_feature_scaler = StandardScaler()
-            X_train_scaled = fold_feature_scaler.fit_transform(X_train_fold)
-            X_val_scaled = fold_feature_scaler.transform(X_val_fold)
+            X_train_fold = X_train_val_scaled[train_idx]  # Use the PRE-SCALED data
+            X_val_fold = X_train_val_scaled[val_idx]      # Use the PRE-SCALED data
             
-            fold_target_scaler = StandardScaler()
-            Y_train_scaled = fold_target_scaler.fit_transform(Y_train_fold.values.reshape(-1, 1)).flatten()
-            Y_val_scaled = fold_target_scaler.transform(Y_val_fold.values.reshape(-1, 1)).flatten()
+            Y_train_fold = Y_train_val_scaled[train_idx]  # Use the PRE-SCALED data
+            Y_val_fold = Y_train_val_scaled[val_idx]      # Use the PRE-SCALED data
 
-            print(f"  Train scaled shapes: X={X_train_scaled.shape}, Y={Y_train_scaled.shape}")
-            print(f"  Validation scaled shapes: X={X_val_scaled.shape}, Y={Y_val_scaled.shape}")
+            # Original Y values for computing metrics
+            Y_val_original = Y_train_val.iloc[val_idx].values
+
+            logger.info(f"  Train fold shapes: X={X_train_fold.shape}, Y={Y_train_fold.shape}")
+            logger.info(f"  Validation fold shapes: X={X_val_fold.shape}, Y={Y_val_fold.shape}")
 
             # Grid search
-            print(f"  Running GridSearchCV for {model_name} on fold {fold + 1}...")
+            logger.info(f"  Running GridSearchCV for {model_name} on fold {fold + 1}...")
             # Reduce the number of CV splits for SVR to speed up
             cv_splits = 2 if model_name == 'SVR' else 3
 
-            grid_search = GridSearchCV(
+            # grid_search = GridSearchCV(
+            #     estimator=model,
+            #     param_grid=params_grid,
+            #     scoring='neg_mean_squared_error',
+            #     cv=cv_splits,
+            #     n_jobs=-1,
+            #     verbose=1
+            # )
+
+            n_iter = 30 if model_name in ['XGBoost', 'LightGBM', 'RandomForest', 'GradientBoosting'] else 15
+            random_search = RandomizedSearchCV(
                 estimator=model,
-                param_grid=params_grid,
+                param_distributions=params_grid,
+                n_iter=n_iter,  # More iterations for complex models
                 scoring='neg_mean_squared_error',
                 cv=cv_splits,
                 n_jobs=-1,
-                verbose=1
+                verbose=1,
+                random_state=42  # For reproducibility
             )
 
             try:
+                random_search.fit(X_train_fold, Y_train_fold)
+                best_params.append(random_search.best_params_)
                 # Train the model for every combination of parameters on each training set of the fold
                 # Save the best params
-                grid_search.fit(X_train_scaled, Y_train_scaled)               
-                best_params.append(grid_search.best_params_)
-                print(f"  Best parameters: {grid_search.best_params_}")
+                # grid_search.fit(X_train_fold, Y_train_fold)               
+                # best_params.append(grid_search.best_params_)
+                logger.info(f"  Best parameters: {random_search.best_params_}")
 
                 # Validate using the best model
-                best_model_fold = grid_search.best_estimator_
-                Y_pred_scaled  = best_model_fold.predict(X_val_scaled)                                
+                best_model_fold = random_search.best_estimator_
+                Y_pred_scaled  = best_model_fold.predict(X_val_fold)                                
             
                 # Convert predictions back to original scale
-                Y_pred = fold_target_scaler.inverse_transform(Y_pred_scaled.reshape(-1, 1)).flatten()
-                Y_val_original = Y_val_fold.values       
+                Y_pred = target_scaler.inverse_transform(Y_pred_scaled.reshape(-1, 1)).flatten()
 
                 # Scale verification
                 min_ratio, max_ratio = verify_prediction_scale(logger, Y_val_original, Y_pred, f"{model_name} fold {fold+1}")
-                
+
                 # Calculate performance metrics (on original scale)
                 mse = mean_squared_error(Y_val_original, Y_pred)
                 rmse = np.sqrt(mse)
+                mae = mean_absolute_error(Y_val_original, Y_pred)
                 best_mse_scores.append(mse)
                 best_rmse_scores.append(rmse)
-                print(f"  Fold {fold + 1} - MSE: {mse:.4f}, RMSE: {rmse:.4f}")
+                logger.info(f"  Fold {fold + 1} - MSE: {mse:.4f}, RMSE: {rmse:.4f},  MAE: {mae:.4f}")
 
                 # Update best model
                 if mse < best_score:
@@ -179,11 +243,11 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
                     best_model = best_model_fold
                     best_model_prediction = Y_pred
                     Y_val_best= Y_val_original
-                    print(f"  New best model found with MSE: {mse:.4f}")
+                    logger.info(f"  New best model found with MSE: {mse:.4f}")
 
 
             except Exception as e:
-                print(f"  Error in {model_name} training on fold {fold + 1}: {e}")
+                logger.error(f"  Error in {model_name} training on fold {fold + 1}: {e}")
                 continue
             
         # Save the best model for each model type, the results and the parameters
@@ -196,17 +260,17 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
             'Y_val_best' : Y_val_best
         }
 
-        print(f"\nSummary for {model_name}:")
+        logger.info(f"\nSummary for {model_name}:")
         if best_mse_scores:
             avg_mse = np.mean(best_mse_scores)
             avg_rmse = np.mean(best_rmse_scores)
-            print(f"  Average MSE: {avg_mse:.4f}, Average RMSE: {avg_rmse:.4f}")
+            logger.info(f"  Average MSE: {avg_mse:.4f}, Average RMSE: {avg_rmse:.4f}")
         else:
-            print(f"  No successful folds for {model_name}")
+            logger.info(f"  No successful folds for {model_name}")
         
     # After all folds, retrain best model on all data using global scalers
     # This ensures the final model can be used with the global scalers
-    print("\nRetraining all models on full dataset using global scalers...")
+    logger.info("\nRetraining all models on full dataset using global scalers...")
     X_train_val_scaled = feature_scaler.transform(X_train_val)
     Y_train_val_scaled = target_scaler.transform(Y_train_val.values.reshape(-1, 1)).flatten()
 
@@ -214,7 +278,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
     for model_name, result in results.items():
         if model_name != 'LSTM' and result.get('best_params') and len(result['best_params']) > 0:
             try:
-                print(f"Retraining {model_name} on full dataset...")
+                logger.info(f"Retraining {model_name} on full dataset...")
             
                 # Get best parameters
                 best_fold_idx = np.argmin(result['best_mse_scores'])
@@ -234,17 +298,17 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
                 retrain_mse = mean_squared_error(Y_train_val, Y_retrain_pred)
                 retrain_rmse = np.sqrt(retrain_mse)
 
-                print(f"  Retrained {model_name} - MSE: {retrain_mse:.4f}, RMSE: {retrain_rmse:.4f}")
+                logger.info(f"  Retrained {model_name} - MSE: {retrain_mse:.4f}, RMSE: {retrain_rmse:.4f}")
                 verify_prediction_scale(logger, Y_train_val, Y_retrain_pred, f"{model_name} retrained")
                 
             
                 # Replace the best model
                 results[model_name]['best_model'] = base_model
-                print(f"  Successfully retrained {model_name}")
+                logger.info(f"  Successfully retrained {model_name}")
                 
             except Exception as e:
-                print(f"  Error retraining {model_name}: {e}")
-                print("  Keeping the best fold model instead")
+                logger.error(f"  Error retraining {model_name}: {e}")
+                logger.error("  Keeping the best fold model instead")
                 # Keep the fold model if retraining fails
                 pass
 
@@ -295,12 +359,15 @@ def train_lstm_model(X_train, y_train, X_val, y_val, params):
         ])
         model.compile(optimizer=Adam(learning_rate=learning_rate), loss='mse')
 
+        early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+
         # Train model
         history = model.fit(
             X_train_reshaped, y_train,
             epochs=epochs,
             batch_size=batch_size,
             validation_data=(X_val_reshaped, y_val),
+            callbacks=[early_stopping],
             verbose=0
         )
 
@@ -343,11 +410,17 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
         Y_val_best = None
 
         # Define LSTM parameter grid
+        # lstm_param_grid = [
+        #     {'epochs': 50, 'batch_size': 32, 'units': 50, 'learning_rate': 0.01, 'dropout': 0.0},
+        #     {'epochs': 100, 'batch_size': 32, 'units': 50, 'learning_rate': 0.01, 'dropout': 0.2},
+        #     {'epochs': 50, 'batch_size': 64, 'units': 100, 'learning_rate': 0.01, 'dropout': 0.0},
+        # ]
+
         lstm_param_grid = [
-            {'epochs': 50, 'batch_size': 32, 'units': 50, 'learning_rate': 0.01},
-            {'epochs': 100, 'batch_size': 32, 'units': 50, 'learning_rate': 0.01},
-            {'epochs': 50, 'batch_size': 64, 'units': 50, 'learning_rate': 0.01},
-            {'epochs': 50, 'batch_size': 32, 'units': 100, 'learning_rate': 0.01}
+            {'epochs': 50, 'batch_size': 32, 'units': 50, 'learning_rate': 0.01, 'dropout': 0.0},
+            {'epochs': 100, 'batch_size': 32, 'units': 50, 'learning_rate': 0.01, 'dropout': 0.2},
+            {'epochs': 50, 'batch_size': 64, 'units': 100, 'learning_rate': 0.01, 'dropout': 0.0},
+            {'epochs': 75, 'batch_size': 32, 'units': 75, 'learning_rate': 0.005, 'dropout': 0.1}
         ]
 
         for fold, (train_idx, val_idx) in enumerate(tscv.split(X_train_val)):

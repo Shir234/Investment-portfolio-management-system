@@ -57,8 +57,9 @@ def linearly_weighted_ensemble(models_results, X_test, target_scaler, feature_sc
     # Convert DataFrame to NumPy array if necessary
     # scaler = StandardScaler()
     # X_test = scaler.fit_transform(X_test)
+
     # Scale using the passed scaler
-    X_test = feature_scaler.transform(X_test)
+    X_test_scaled = feature_scaler.transform(X_test)
     if hasattr(X_test, 'values'):
         X_test = X_test.values
 
@@ -73,11 +74,11 @@ def linearly_weighted_ensemble(models_results, X_test, target_scaler, feature_sc
         # Prepare predictions based on model type
         if model_name.strip() == 'LSTM':
             # Reshape for LSTM
-            X_test_lstm = prepare_lstm_data(X_test, time_steps=1)
+            X_test_lstm = prepare_lstm_data(X_test_scaled, time_steps=1)
             model_pred = result['best_model'].predict(X_test_lstm)
         else:
             # For other models
-            model_pred = result['best_model'].predict(X_test)
+            model_pred = result['best_model'].predict(X_test_scaled)
 
         # Ensure 1D prediction
         model_predictions.append(model_pred.reshape(-1))
@@ -128,7 +129,7 @@ def equal_weighted_ensemble(models_results, X_test, target_scaler, feature_scale
                 model_pred = result['best_model'].predict(X_test_lstm)
             else:
                 # For other models
-                model_pred = result['best_model'].predict(X_test)
+                model_pred = result['best_model'].predict(X_test_scaled)
 
             # Ensure 1D prediction
             model_predictions.append(model_pred.reshape(-1))
@@ -165,12 +166,7 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, featu
     Returns: 
     - GBDT ensemble prediction for test data.
     """
-    
-    # # Scale the data
-    # scaler = StandardScaler()
-    # X_train_scaled = scaler.fit_transform(X_train)
-    # X_test_scaled = scaler.transform(X_test)  # Use transform here, not fit_transform
-   
+
     # Scale the data using the provided global scalers
     X_train_scaled = feature_scaler.transform(X_train)
     X_test_scaled = feature_scaler.transform(X_test)  # Use transform here, not fit_transform
@@ -215,15 +211,22 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, featu
     X_test_meta = np.column_stack(test_meta_features)
 
     # Train GBDT on meta-features
+    # gb_model = GradientBoostingRegressor(
+    #     n_estimators=200,
+    #     learning_rate=0.05,
+    #     max_depth=5,
+    #     min_samples_split=10,
+    #     min_samples_leaf=5,
+    #     subsample=0.8,
+    #     random_state=42
+    # )
+    #TODO -> grok change
     gb_model = GradientBoostingRegressor(
-        n_estimators=200,
-        learning_rate=0.05,
-        max_depth=5,
-        min_samples_split=10,
-        min_samples_leaf=5,
-        subsample=0.8,
+        n_estimators=100, 
+        learning_rate=0.01, 
+        max_depth=3, 
         random_state=42
-    )
+     )
 
     # Fit on training meta-features
     gb_model.fit(X_meta_train_stacked, Y_meta_train)

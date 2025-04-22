@@ -178,15 +178,13 @@ def select_best_features(X_train, Y_train, threshold=0.8, method='importance'):
     
     return selected_features
 
-def evaluate_feature_sets(X_train, Y_train, X_test, Y_test):
+def evaluate_feature_sets(X_train, Y_train):
     """
     Compare performance of different feature selection methods using multiple model types.
     Parameters:
     -----------
     X_train : DataFrame, Training features
     Y_train : Series, Target variable
-    X_test : DataFrame, Test features
-    Y_test : Series, Test target
         
     Returns:
     Dictionary containing detailed results and best feature information
@@ -207,6 +205,9 @@ def evaluate_feature_sets(X_train, Y_train, X_test, Y_test):
         'Linear': LassoCV(cv=3, random_state=42)  # Using LassoCV as a linear model
     }
     
+    # Create time series cross-validation for evaluation
+    tscv = TimeSeriesSplit(n_splits=5)
+    
     results = []
 
     # Evaluate each feature set with each model type
@@ -215,27 +216,46 @@ def evaluate_feature_sets(X_train, Y_train, X_test, Y_test):
 
         # Subset the data
         X_train_subset = X_train[features]
-        X_test_subset = X_test[features]
         
-        # Scale the features
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train_subset)
-        X_test_scaled = scaler.transform(X_test_subset)
 
         # Test with each model type
         for model_name, model in models.items():
             try:
                 # Create and train the model
                 print(f"  Testing with {model_name}...")
-                model.fit(X_train_scaled, Y_train)
+
+                # Scale per fold to avoid data leakage
+                cv_scores = []
                 
-                # Make predictions
-                y_pred = model.predict(X_test_scaled)
+                for train_idx, val_idx in tscv.split(X_train_subset):
+                    # Get fold data
+                    X_fold_train, X_fold_val = X_train_subset.iloc[train_idx], X_train_subset.iloc[val_idx]
+                    y_fold_train, y_fold_val = Y_train.iloc[train_idx], Y_train.iloc[val_idx]
+                    
+                    # Scale using only training fold
+                    scaler = StandardScaler()
+                    X_fold_train_scaled = scaler.fit_transform(X_fold_train)
+                    X_fold_val_scaled = scaler.transform(X_fold_val)
+                    
+                    # Train and evaluate
+                    model.fit(X_fold_train_scaled, y_fold_train)
+                    y_fold_pred = model.predict(X_fold_val_scaled)
+                    
+                    # Score
+                    mse = mean_squared_error(y_fold_val, y_fold_pred)
+                    rmse = np.sqrt(mse)
+                    r2 = r2_score(y_fold_val, y_fold_pred)
+                    
+                    cv_scores.append({
+                        'MSE': mse,
+                        'RMSE': rmse,
+                        'R2': r2
+                    })
                 
-                # Calculate metrics
-                mse = mean_squared_error(Y_test, y_pred)
-                rmse = np.sqrt(mse)
-                r2 = r2_score(Y_test, y_pred)
+                # Average cross-validation scores
+                avg_mse = np.mean([score['MSE'] for score in cv_scores])
+                avg_rmse = np.mean([score['RMSE'] for score in cv_scores])
+                avg_r2 = np.mean([score['R2'] for score in cv_scores])
                 
                 # Store results
                 results.append({
@@ -243,9 +263,9 @@ def evaluate_feature_sets(X_train, Y_train, X_test, Y_test):
                     'Model': model_name,
                     'Num_Features': len(features),
                     'Features': features,
-                    'MSE': mse,
-                    'RMSE': rmse,
-                    'R2': r2
+                    'MSE': avg_mse,
+                    'RMSE': avg_rmse,
+                    'R2': avg_r2
                 })
                 
             except Exception as e:

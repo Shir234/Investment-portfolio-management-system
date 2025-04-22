@@ -22,23 +22,12 @@ current_date = datetime.datetime.now().strftime("%Y%m%d")
 date_folder = f'results/{current_date}'
 os.makedirs(date_folder, exist_ok=True)
 
-# # Read the data (get all the valid tickers)
-# valid_tickers = load_valid_tickers(logger, "valid_tickers.csv")
-
-# # Run the pipeline on each valid ticker
-# for ticker in valid_tickers:
-#     try:
-#       print(f"\nProcessing ticker: {ticker}")
-#       full_pipeline_for_single_stock(logger, ticker, "2013-01-01", "2024-01-01")
-#       print(f"Successfully processed {ticker}")
-#     except Exception as e:
-#       print(f"Error processing ticker {ticker}: {e}")
 
 if __name__ == "__main__":
     import yfinance as yf
     
     # Call the main pipeline function
-    pipeline_results = run_pipeline()
+    pipeline_results = run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers.csv", start_date="2013-01-01", end_date="2024-01-01")
     
     # Exit with appropriate code
     if pipeline_results['successful'] > 0:

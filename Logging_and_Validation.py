@@ -20,8 +20,6 @@ def log_data_stats(logger, data, name, include_stats=True, log_shape=True, log_h
         return
     
     logger.info(f"\n--- {name} Information ---")
-
-    print(f"\n--- {name} Information ---")
     
     if log_shape:
         if hasattr(data, 'shape'):
@@ -31,7 +29,16 @@ def log_data_stats(logger, data, name, include_stats=True, log_shape=True, log_h
         try:
             stats = data.describe()
             logger.info(f"\nSummary Statistics:\n{stats}")
-            logger.info(f"\nData Types: {data.dtypes.value_counts()}")
+
+            # Handle PyArrow dtypes in newer pandas versions
+            try:
+                # For newer pandas (2.0+) with PyArrow dtypes
+                dtype_counts = data.dtypes.astype(str).value_counts()
+                logger.info(f"\nData Types: {dtype_counts}")
+            except Exception:
+                # Fallback to just logging the dtypes without counts
+                logger.info(f"\nData Types:\n{data.dtypes}")
+
             logger.info(f"Missing Values: {data.isna().sum().sum()}")
         except Exception as e:
             logger.error(f"Could not generate statistics: {e}")
