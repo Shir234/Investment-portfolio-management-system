@@ -14,13 +14,12 @@ def parse_date(date_str):
 def calculate_transaction_score(transaction, latest_date):
     """
     Calculate the transaction score based on stakeholder weight, transaction magnitude, and temporal decay
-    
-    Args:
-        transaction: A row from the transactions DataFrame
-        latest_date: Reference date for temporal decay calculation (format: 'YYYY-MM-DD')
+    Parameters:
+    - transaction: A row from the transactions DataFrame
+    - latest_date: Reference date for temporal decay calculation (format: 'YYYY-MM-DD')
         
     Returns:
-        float: Calculated transaction score
+    - float: Calculated transaction score
     """
     # 1. Stakeholder Weight
     stakeholder_weights = {
@@ -76,14 +75,14 @@ def calculate_transaction_score(transaction, latest_date):
 def filter_sp500_tickers(df, tickers):
     """
     Filter DataFrame to keep only S&P 500 tickers
-
-    Args:
-        df (pandas.DataFrame): Input DataFrame
-        tickers (list): List of S&P 500 ticker symbols
+    Parameters:
+    - df (pandas.DataFrame): Input DataFrame
+    - tickers (list): List of S&P 500 ticker symbols
 
     Returns:
-        pandas.DataFrame: Filtered DataFrame with only S&P 500 tickers
+    - pandas.DataFrame: Filtered DataFrame with only S&P 500 tickers
     """
+
     # Filter the DataFrame to keep only S&P 500 tickers
     filtered_df = df[df['Ticker'].isin(tickers)]
 
@@ -97,14 +96,14 @@ def filter_sp500_tickers(df, tickers):
 def process_transactions(df, latest_date):
     """
     Calculate transaction score for all transactions
-    
-    Args:
-        df (pandas.DataFrame): Input DataFrame with transactions
-        latest_date (str): Reference date for score calculation (format: 'YYYY-MM-DD')
+    Parameters:
+    - df (pandas.DataFrame): Input DataFrame with transactions
+    - latest_date (str): Reference date for score calculation (format: 'YYYY-MM-DD')
         
     Returns:
-        pandas.DataFrame: DataFrame with added Transaction_Score column
+    - pandas.DataFrame: DataFrame with added Transaction_Score column
     """
+
     # Create a copy, avoid modifying the original data
     processed_df = df.copy()
 
@@ -115,23 +114,6 @@ def process_transactions(df, latest_date):
     )
 
     return processed_df
-
-# def Finalize_scores(df):
-#     """
-#     Calculate final score for each ticker by summing all transaction scores
-    
-#     Args:
-#         df (pandas.DataFrame): DataFrame with Transaction_Score column
-        
-#     Returns:
-#         pandas.DataFrame: DataFrame with ticker symbols and their final scores
-#     """
-#     # Calculate transaction score for each row
-#     final_scores = df.groupby('Ticker')['Transaction_Score'].sum().reset_index()
-#     final_scores = final_scores.sort_values(by='Transaction_Score', ascending=False)
-#     final_scores.to_csv('final_tickers_score.csv', index=False)
-
-#     return final_scores
 
 
 def Finalize_scores(df):
@@ -181,8 +163,9 @@ filtered_df_snp500.to_csv('sp500_filtered_data.csv', index=False)
 
 # Calculate the scores (referenced today)
 latest_date = '2023-09-13'  # Hardcoded as YYYY-MM-DD
-processed_df = process_transactions(df, latest_date)
+processed_df = process_transactions(filtered_df_snp500, latest_date)
 
 
 # Calculate Final Score For Each Ticker Symbol
 final_scores = Finalize_scores(processed_df)
+
