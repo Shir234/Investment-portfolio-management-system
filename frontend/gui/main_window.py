@@ -33,3 +33,7 @@ class MainWindow(QMainWindow):
         """Method to refresh the dashboard, called by InputPanel"""
         self.dashboard_panel.update_dashboard()
         self.recommendation_panel.update_recommendations()
+
+    def update_recommendations(self):
+        """Method to refresh the recommendations, called by InputPanel"""
+        self.recommendation_panel.update_recommendations()

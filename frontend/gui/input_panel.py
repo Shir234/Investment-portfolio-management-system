@@ -2,11 +2,11 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QSlider, QDoubleSpinBox, QCalendarWidget, QPushButton,
                              QGroupBox, QMessageBox)
 from PyQt5.QtCore import Qt, QDate
-from trading_logic import get_portfolio_history
+from trading_logic import get_portfolio_history, get_orders
 from data.trading_connector import execute_trading_strategy
 import logging
+from datetime import date
 
-# Set up logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class InputPanel(QWidget):
@@ -18,16 +18,13 @@ class InputPanel(QWidget):
         
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        
-        # Risk Level Input
         risk_group = QGroupBox("Risk Level")
         risk_group.setStyleSheet("color: #ffffff;")
         risk_layout = QVBoxLayout()
-        
         self.risk_slider = QSlider(Qt.Horizontal)
         self.risk_slider.setMinimum(1)
         self.risk_slider.setMaximum(10)
-        self.risk_slider.setValue(5)
+        self.risk_slider.setValue(1)  # Default to conservative for testing
         self.risk_slider.setSingleStep(1)
         self.risk_slider.setPageStep(1)
         self.risk_slider.setTickPosition(QSlider.TicksBelow)
@@ -50,39 +47,30 @@ class InputPanel(QWidget):
                 background: #555555;
             }
         """)
-        
-        self.risk_label = QLabel("Risk Level: 5 (Moderate)")
+        self.risk_label = QLabel("Risk Level: 1 (Very Conservative)")
         self.risk_label.setStyleSheet("color: #ffffff;")
         self.risk_slider.valueChanged.connect(self.update_risk_label)
-        
         risk_layout.addWidget(self.risk_label)
         risk_layout.addWidget(self.risk_slider)
         risk_group.setLayout(risk_layout)
         layout.addWidget(risk_group)
-        
-        # Investment Amount
         amount_group = QGroupBox("Investment Amount")
         amount_group.setStyleSheet("color: #ffffff;")
         amount_layout = QHBoxLayout()
-        
         self.amount_spin = QDoubleSpinBox()
         self.amount_spin.setRange(100, 1000000)
         self.amount_spin.setValue(10000)
         self.amount_spin.setPrefix("$")
         self.amount_spin.setSingleStep(1000)
         self.amount_spin.setStyleSheet("QDoubleSpinBox { background-color: #3c3f41; color: #ffffff; border: 1px solid #555555; }")
-        
         amount_layout.addWidget(QLabel("Amount:"))
         amount_layout.addWidget(self.amount_spin)
         amount_group.setLayout(amount_layout)
         layout.addWidget(amount_group)
-        
-        # Investment Window Selection
         window_group = QGroupBox("Investment Window")
         window_group.setStyleSheet("color: #ffffff;")
         window_layout = QVBoxLayout()
-        
-        if self.data_manager:
+        if self.data_manager and self.data_manager.data is not None and not self.data_manager.data.empty:
             try:
                 min_date, max_date = self.data_manager.get_date_range()
                 if min_date and max_date:
@@ -100,42 +88,43 @@ class InputPanel(QWidget):
                 window_layout.addWidget(date_range_label)
                 min_date, max_date = None, None
         else:
-            date_range_label = QLabel("Data manager not initialized.")
+            date_range_label = QLabel("Data manager not initialized or data is empty.")
             date_range_label.setStyleSheet("color: red; font-style: italic;")
             window_layout.addWidget(date_range_label)
             min_date, max_date = None, None
-            
         start_label = QLabel("Start Date:")
         self.start_calendar = QCalendarWidget()
         self.start_calendar.setStyleSheet("QCalendarWidget { background-color: #2b2b2b; color: #ffffff; } QCalendarWidget QToolButton { color: #ffffff; }")
-        
         end_label = QLabel("End Date:")
         self.end_calendar = QCalendarWidget()
         self.end_calendar.setStyleSheet("QCalendarWidget { background-color: #2b2b2b; color: #ffffff; } QCalendarWidget QToolButton { color: #ffffff; }")
-        
         if min_date and max_date:
             min_qdate = QDate(min_date.year, min_date.month, min_date.day)
             max_qdate = QDate(max_date.year, max_date.month, max_date.day)
             self.start_calendar.setMinimumDate(min_qdate)
             self.start_calendar.setMaximumDate(max_qdate)
-            self.start_calendar.setSelectedDate(min_qdate)
+            self.start_calendar.setSelectedDate(QDate(2021, 10, 18))  # Default to user-preferred start
             self.end_calendar.setMinimumDate(min_qdate)
             self.end_calendar.setMaximumDate(max_qdate)
-            self.end_calendar.setSelectedDate(max_qdate)
-        
+            self.end_calendar.setSelectedDate(QDate(2021, 12, 31))  # Default to user-preferred end
+        else:
+            default_min_date = QDate(2021, 1, 1)
+            default_max_date = QDate(2023, 12, 31)
+            self.start_calendar.setMinimumDate(default_min_date)
+            self.start_calendar.setMaximumDate(default_max_date)
+            self.start_calendar.setSelectedDate(QDate(2021, 10, 18))
+            self.end_calendar.setMinimumDate(default_min_date)
+            self.end_calendar.setMaximumDate(default_max_date)
+            self.end_calendar.setSelectedDate(QDate(2021, 12, 31))
         window_layout.addWidget(start_label)
         window_layout.addWidget(self.start_calendar)
         window_layout.addWidget(end_label)
         window_layout.addWidget(self.end_calendar)
         window_group.setLayout(window_layout)
         layout.addWidget(window_group)
-        
-        # Portfolio Value Display
         self.portfolio_value_label = QLabel("Current Portfolio Value: N/A")
         self.portfolio_value_label.setStyleSheet("color: #ffffff; font-weight: bold;")
         layout.addWidget(self.portfolio_value_label)
-        
-        # Update Button
         self.update_button = QPushButton("Update Portfolio")
         self.update_button.clicked.connect(self.update_portfolio)
         layout.addWidget(self.update_button)
@@ -150,46 +139,63 @@ class InputPanel(QWidget):
         self.risk_label.setText(f"Risk Level: {value} ({risk_levels[value]})")
         
     def update_portfolio(self):
-        logging.debug("Starting update_portfolio")
         try:
+            if self.data_manager.data is None or self.data_manager.data.empty:
+                raise ValueError("No data loaded. Please ensure a valid CSV file is selected.")
             investment_amount = self.amount_spin.value()
-            risk_level = self.risk_slider.value() * 10  # Converts 1-10 to 10-100
-            start_date = self.start_calendar.selectedDate().toPyDate()
-            end_date = self.end_calendar.selectedDate().toPyDate()
-            
-            logging.debug(f"Inputs: investment_amount={investment_amount}, risk_level={risk_level}, start_date={start_date}, end_date={end_date}")
-            
-            if end_date < start_date:
-                logging.warning("Invalid date range detected")
-                QMessageBox.critical(self, "Invalid Date Range", "End date cannot be earlier than start date.")
-                return
-            
-            logging.debug("Calling execute_trading_strategy")
-            success = execute_trading_strategy(
-                investment_amount,
-                risk_level,
-                start_date,
-                end_date,
-                data_manager=self.data_manager
+            risk_level = self.risk_slider.value()
+            start_qdate = self.start_calendar.selectedDate()
+            end_qdate = self.end_calendar.selectedDate()
+            start_date = date(start_qdate.year(), start_qdate.month(), start_qdate.day())
+            end_date = date(end_qdate.year(), end_qdate.month(), end_qdate.day())
+            logging.info(f"Selected UI date range: {start_date} to {end_date}")
+            min_date, max_date = self.data_manager.get_date_range()
+            # Warn if signals are excluded
+            signals_after_end = len(self.data_manager.data[
+                (self.data_manager.data['date'].dt.date > end_date) & 
+                (self.data_manager.data['Best_Prediction'] >= 0.5)
+            ])
+            if signals_after_end > 0:
+                QMessageBox.warning(self, "Narrow Date Range",
+                                   f"The selected end date ({end_date}) excludes {signals_after_end} "
+                                   f"signals with Best_Prediction >= 0.5. Consider extending to {max_date.date()}.")
+            # Warn if date range is short
+            if (end_date - start_date).days < 365:
+                logging.warning(f"Date range {start_date} to {end_date} is less than 1 year.")
+                QMessageBox.warning(self, "Short Date Range",
+                                   "The selected date range is less than 1 year. Some strategies may require a longer period.")
+            mode = "automatic"
+            success, suggestions = execute_trading_strategy(
+                investment_amount=investment_amount,
+                risk_level=risk_level,
+                start_date=start_date,
+                end_date=end_date,
+                data_manager=self.data_manager,
+                mode=mode,
+                reset_state=True
             )
-            
-            logging.debug(f"execute_trading_strategy returned: {success}")
-            if success:
-                portfolio_history = get_portfolio_history()
-                logging.debug(f"Portfolio history: {portfolio_history}")
-                if portfolio_history:
-                    latest_value = portfolio_history[-1]['portfolio_value']
-                    self.portfolio_value_label.setText(f"Current Portfolio Value: ${latest_value:,.2f}")
-                else:
-                    self.portfolio_value_label.setText("Current Portfolio Value: N/A")
-                if self.main_window:
-                    logging.debug("Updating dashboard")
-                    self.main_window.update_dashboard()
+            if not success:
+                raise ValueError("Trading strategy execution failed. Check risk level or date range.")
+            portfolio_history = get_portfolio_history()
+            orders = get_orders()
+            if portfolio_history:
+                latest_value = portfolio_history[-1]['portfolio_value']
+                self.portfolio_value_label.setText(f"Current Portfolio Value: ${latest_value:,.2f}")
             else:
-                logging.error("Trading strategy execution failed")
-                QMessageBox.critical(self, "Error", 
-                    "Failed to execute trading strategy.\n"
-                    "Check parameters and console for details.")
+                self.portfolio_value_label.setText("Current Portfolio Value: $0.00")
+            if orders and len(orders) < 5 and risk_level <= 3:
+                QMessageBox.warning(self, "Few Trades Generated",
+                                   f"Only {len(orders)} trades generated for conservative strategy. "
+                                   "The prediction model may have insufficient positive signals. "
+                                   "Consider increasing risk level or retraining the model.")
+            elif not orders:
+                QMessageBox.warning(self, "No Trades Generated",
+                                   "No trades were generated. Try increasing the risk level, "
+                                   "extending the date range, or retraining the prediction model.")
+            if mode == "semi-automatic":
+                self.main_window.suggestions = suggestions
+            self.main_window.update_dashboard()
+            self.main_window.update_recommendations()
         except Exception as e:
-            logging.error(f"Error in update_portfolio: {e}", exc_info=True)
-            QMessageBox.critical(self, "Unexpected Error", f"An error occurred: {str(e)}\nCheck console for details.")
+            logging.error(f"Error in update_portfolio: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to update portfolio: {str(e)}")
