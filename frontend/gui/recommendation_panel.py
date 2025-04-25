@@ -4,6 +4,11 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt5.QtCore import Qt
 from trading_logic import get_orders, get_portfolio_history
 import pandas as pd
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class RecommendationPanel(QWidget):
     def __init__(self, data_manager, parent=None):
@@ -22,7 +27,7 @@ class RecommendationPanel(QWidget):
         
         # Recommendations table
         self.table = QTableWidget()
-        self.table.setColumnCount(11)  # Added column for Portfolio Value After
+        self.table.setColumnCount(11)  # Includes Portfolio Value After
         self.table.setHorizontalHeaderLabels([
             "Date", "Ticker", "Action", "Shares", "Price", 
             "Investment Amount", "Previous Shares", "New Shares", "Sharpe", 
@@ -54,16 +59,19 @@ class RecommendationPanel(QWidget):
         portfolio_df = pd.DataFrame(portfolio_history)
         if not portfolio_df.empty:
             portfolio_df['date'] = pd.to_datetime(portfolio_df['date']).dt.date
-            portfolio_map = portfolio_df.set_index('date')['portfolio_value'].to_dict()
+            logger.debug(f"Portfolio DataFrame columns: {portfolio_df.columns}")
+            portfolio_map = portfolio_df.set_index('date')['value'].to_dict()  # Changed 'portfolio_value' to 'value'
         else:
             portfolio_map = {}
+            logger.debug("Portfolio history is empty")
 
         self.table.setRowCount(0)
         for order in order_history:
             row_position = self.table.rowCount()
             self.table.insertRow(row_position)
             order_date = pd.to_datetime(order['date']).date()
-            portfolio_value = portfolio_map.get(order_date, order['capital_after'])
+            # Use portfolio value or default to 0.0 if not available
+            portfolio_value = portfolio_map.get(order_date, 0.0)  # Replaced 'capital_after' with 0.0
             self.table.setItem(row_position, 0, QTableWidgetItem(str(order['date'])))
             self.table.setItem(row_position, 1, QTableWidgetItem(order['ticker']))
             self.table.setItem(row_position, 2, QTableWidgetItem(order['action']))
@@ -73,7 +81,7 @@ class RecommendationPanel(QWidget):
             self.table.setItem(row_position, 6, QTableWidgetItem(str(order['previous_shares'])))
             self.table.setItem(row_position, 7, QTableWidgetItem(str(order['new_total_shares'])))
             self.table.setItem(row_position, 8, QTableWidgetItem(f"{order['sharpe']:.2f}"))
-            self.table.setItem(row_position, 9, QTableWidgetItem(f"${order['capital_after']:,.2f}"))
+            self.table.setItem(row_position, 9, QTableWidgetItem("N/A"))  # Cash balance not tracked
             self.table.setItem(row_position, 10, QTableWidgetItem(f"${portfolio_value:,.2f}"))
 
         self.table.resizeColumnsToContents()
