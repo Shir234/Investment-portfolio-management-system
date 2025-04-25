@@ -4,7 +4,11 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import pandas as pd
-from trading_logic import get_portfolio_history, get_orders  # Added get_orders
+from trading_logic import get_portfolio_history, get_orders
+import logging
+
+# Suppress matplotlib font logs
+logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 
 class AnalysisDashboard(QWidget):
     def __init__(self, data_manager, parent=None):
@@ -105,7 +109,7 @@ class AnalysisDashboard(QWidget):
         
         df = pd.DataFrame(portfolio_history)
         df['date'] = pd.to_datetime(df['date'])
-        ax.plot(df['date'], df['portfolio_value'], label='Portfolio Value', color='#2a82da')
+        ax.plot(df['date'], df['value'], label='Portfolio Value', color='#2a82da')  # Changed 'portfolio_value' to 'value'
         ax.set_title('Portfolio Performance Over Time', color='white')
         ax.set_xlabel('Date', color='white')
         ax.set_ylabel('Value ($)', color='white')
@@ -117,14 +121,12 @@ class AnalysisDashboard(QWidget):
         
     def plot_portfolio_composition(self):
         ax = self.chart_fig.add_subplot(111)
-        # Use executed trades from orders instead of raw signals
         orders = get_orders()
         if not orders:
             ax.text(0.5, 0.5, 'No trade history available', horizontalalignment='center', color='white')
             self.chart_fig.patch.set_facecolor('#353535')
             return
 
-        # Filter trades within the selected date range
         start_date = pd.to_datetime("2023-01-10")
         end_date = pd.to_datetime("2023-11-01")
         orders_df = pd.DataFrame(orders)
@@ -136,23 +138,18 @@ class AnalysisDashboard(QWidget):
             self.chart_fig.patch.set_facecolor('#353535')
             return
 
-        # Count buy and sell actions
-        buy_count = len(orders_df[orders_df['action'] == 'Buy'])
-        sell_count = len(orders_df[orders_df['action'] == 'Sell'])
-        # Hold count is tricky with executed trades; approximate as days with no trades
-        # For simplicity, calculate as a percentage of total actions
+        buy_count = len(orders_df[orders_df['action'] == 'buy'])  # Changed 'Buy' to 'buy'
+        sell_count = len(orders_df[orders_df['action'] == 'sell'])  # Changed 'Sell' to 'sell'
         total_actions = buy_count + sell_count
         if total_actions == 0:
             ax.text(0.5, 0.5, 'No buy or sell actions recorded', horizontalalignment='center', color='white')
             self.chart_fig.patch.set_facecolor('#353535')
             return
 
-        # Calculate hold as a derived metric (since hold isn't explicitly recorded)
-        # Approximate hold by considering the total number of trading days in the range
         trading_days = (end_date - start_date).days + 1
-        hold_count = trading_days - total_actions  # Days with no trades
+        hold_count = trading_days - total_actions
         if hold_count < 0:
-            hold_count = 0  # Ensure non-negative
+            hold_count = 0
 
         labels = ['Buy', 'Sell', 'Hold']
         sizes = [buy_count, sell_count, hold_count]
@@ -172,13 +169,13 @@ class AnalysisDashboard(QWidget):
         try:
             portfolio_history = get_portfolio_history()
             if portfolio_history:
-                total_value = portfolio_history[-1]['portfolio_value']
+                total_value = portfolio_history[-1]['value']  # Changed 'portfolio_value' to 'value'
             else:
                 total_value = data['Close'].iloc[-1]
             sharpe_ratio = data['Best_Prediction'].mean()
             if portfolio_history:
                 df = pd.DataFrame(portfolio_history)
-                volatility = df['portfolio_value'].pct_change().std()
+                volatility = df['value'].pct_change().std()  # Changed 'portfolio_value' to 'value'
             else:
                 volatility = data['Close'].pct_change().std()
             self.metrics_labels['Total Value'].setText(f"Total Value: ${total_value:,.2f}")

@@ -1,5 +1,12 @@
 import sys
 import os
+import logging
+
+# Suppress matplotlib and NumExpr logs
+os.environ["NUMEXPR_MAX_THREADS"] = "8"
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
+logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 
 # Add the parent directory to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -9,7 +16,6 @@ from PyQt5.QtGui import QPalette, QColor, QIcon
 from PyQt5.QtCore import Qt, QTimer
 from gui.main_window import MainWindow
 from gui.splash_screen import SplashScreen
-from gui.input_panel import InputPanel
 from data.data_manager import DataManager
 
 def set_dark_mode(app):
@@ -31,7 +37,6 @@ def set_dark_mode(app):
     
     app.setPalette(dark_palette)
     
-    # Additional dark mode styles for all components
     app.setStyleSheet("""
         QWidget {
             background-color: #353535;
@@ -97,20 +102,23 @@ def main():
     
     # Construct the absolute path to the logo file
     logo_path = os.path.join(os.path.dirname(__file__), 'logo.JPG')
-    app_icon = QIcon(logo_path)
-    app.setWindowIcon(app_icon)
+    if os.path.exists(logo_path):
+        app_icon = QIcon(logo_path)
+        app.setWindowIcon(app_icon)
+    else:
+        logging.warning(f"Logo file not found at: {logo_path}")
     
     # Apply dark mode
     set_dark_mode(app)
     
     # Show splash screen
-    splash = SplashScreen()f
+    splash = SplashScreen()
     splash.show()
     
     # Prompt user to select the CSV file
     csv_path, _ = QFileDialog.getOpenFileName(None, "Select CSV File", "", "CSV Files (*.csv)")
     if not csv_path:
-        print("No file selected")
+        logging.error("No file selected")
         sys.exit(1)
     
     # Load data with the selected file

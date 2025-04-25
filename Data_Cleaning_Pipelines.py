@@ -44,7 +44,7 @@ class DataFetcher(BaseEstimator, TransformerMixin):
 # TODO -> ADD INDICATORS
 # Add market indicators
 class IndicatorCalculator(BaseEstimator, TransformerMixin):
-    def __init__(self, include_prime_rate=True, prime_start="2019-01-01", prime_end="2024-01-01"):
+    def __init__(self, include_prime_rate=True, prime_start="2013-01-01", prime_end="2024-01-01"):
         self.indicators = [
             # Original indicators
             'psar', 'mfi', 'mvp',     
@@ -78,8 +78,8 @@ class IndicatorCalculator(BaseEstimator, TransformerMixin):
 
             self.prime_data = pdr.get_data_fred('PRIME', start, end)
             # Apply forward fill then backward fill
-            self.prime_data = self.prime_data.fillna(method='ffill')
-            self.prime_data = self.prime_data.fillna(method='bfill')
+            self.prime_data = self.prime_data.ffill()
+            self.prime_data = self.prime_data.bfill()
             print(f"Prime rate data loaded with {len(self.prime_data)} records")
         
         except Exception as e:
@@ -190,7 +190,7 @@ class IndicatorCalculator(BaseEstimator, TransformerMixin):
                     adx = ta.adx(data['High'], data['Low'], data['Close'], length=14)
                     data['ADX'] = adx['ADX_14']
                     data['DI_Plus'] = adx['DMP_14']
-                    data['DI_Minus'] = adx['DMN_14']
+                    # data['DI_Minus'] = adx['DMN_14']
                     # ADX trend strength
                     data['ADX_Trend'] = np.where(data['ADX'] > 25, 1, 0)
                     # TODO -> WHAT IS THIS?
@@ -370,7 +370,7 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
                 X_[col] = X_[col].fillna(-1)
             elif X_[col].dtype in ['float64', 'int64']:
                 # Use forward-fill then backward-fill for time series numeric data
-                X_[col] = X_[col].fillna(method='ffill').fillna(method='bfill')
+                X_[col] = X_[col].ffill().bfill()
             else:
                 # For any other types, use -1
                 X_[col] = X_[col].fillna(-1)
@@ -379,9 +379,28 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
   
 # Handle outliers: Use Z-score to identify data points that deviate significantly from the mean - rolling window of 28 days
 class OutlierHandler(BaseEstimator, TransformerMixin):
-    def __init__(self,threshold=3, window=28, exclude_columns=[
+    # def __init__(self,threshold=3, window=28, exclude_columns=[
+    #     # Price data
+    #     'Open', 'High', 'Low', 'Close', 'Volume',
+    #     # Signal columns
+    #     'Buy', 'Sell', 'Signal', 'Signal_Shift',
+    #     # Binary signals or categorical
+    #     'Is_Month_End', 'Is_Month_Start', 'Is_Quarter_End',
+    #     'Day_of_Week', 'Month', 'Quarter', 
+    #     'Sin_Day', 'Cos_Day', 'Sin_Month', 'Cos_Month',
+    #     'RSI_Overbought', 'RSI_Oversold', 'STOCH_Signal', 
+    #     'MACD_CrossOver', 'ADX_Signal', 'ADX_Trend', 
+    #     'Ichimoku_Signal', 'MVP_Signal',
+    #     # Transaction metrics
+    #     'Transaction_Sharpe', 'Transaction_Returns', 
+    #     'Transaction_Volatility', 'Transaction_Duration',
+    #     # External data
+    #     'Prime_Rate'
+    # ]):
+    #TODO -> grok change
+    def __init__(self,threshold=2.5, window=14, exclude_columns=[
         # Price data
-        'Open', 'High', 'Low', 'Close', 'Volume',
+        'Open', 'High', 'Low', 'Close',
         # Signal columns
         'Buy', 'Sell', 'Signal', 'Signal_Shift',
         # Binary signals or categorical
@@ -390,10 +409,10 @@ class OutlierHandler(BaseEstimator, TransformerMixin):
         'Sin_Day', 'Cos_Day', 'Sin_Month', 'Cos_Month',
         'RSI_Overbought', 'RSI_Oversold', 'STOCH_Signal', 
         'MACD_CrossOver', 'ADX_Signal', 'ADX_Trend', 
-        'Ichimoku_Signal', 'MVP_Signal',
+        'Ichimoku_Signal',
         # Transaction metrics
-        'Transaction_Sharpe', 'Transaction_Returns', 
-        'Transaction_Volatility', 'Transaction_Duration',
+        # 'Transaction_Sharpe', 'Transaction_Returns', 
+        # 'Transaction_Volatility', 'Transaction_Duration',
         # External data
         'Prime_Rate'
     ]):
@@ -429,6 +448,85 @@ class OutlierHandler(BaseEstimator, TransformerMixin):
 
         return X_
   
+
+class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
+    """
+    # TODO: replace the original outlier class:
+    the percentile-based capping plus log transformation approach generally eliminates the need for the z-score based outlier handling in financial data processing. The log transformation helps normalize the distribution, making the data more suitable for many machine learning algorithms without requiring the additional z-score step.
+    Uses a strategy that combines percentile-based capping with log transformation.
+    - Uses percentile-based capping (1st and 99th percentiles) to handle extreme values
+    - Applies log transformation to address skewness in the distribution
+
+    """
+    def __init__(self, target_column='Transaction_Sharpe', lower_percentile=1, upper_percentile=99, exclude_columns=[
+        # Price data - should not be transformed
+        'Open', 'High', 'Low', 'Close', 'Volume',
+        # Signal and binary columns
+        'Signal', 'Signal_Shift', 'Buy', 'Sell',
+        # Categorical time features
+        'Day_of_Week', 'Month', 'Quarter',
+        # Binary indicators
+        'Is_Month_End', 'Is_Month_Start', 'Is_Quarter_End',
+        'ADX_Trend',
+        # Cyclic features (already bounded)
+        'Sin_Day', 'Cos_Day', 'Sin_Month', 'Cos_Month',
+        # External data 
+        'Prime_Rate'
+    ]):
+        self.target_column = target_column
+        self.lower_percentile = lower_percentile
+        self.upper_percentile = upper_percentile
+        self.exclude_columns = exclude_columns
+        self.percentiles = {}  # Store percentiles for each column
+        self.min_vals = {}    # Store minimum values for log transformation
+        self.numeric_columns = []
+
+    def fit(self, X, y=None):
+        # Identify numeric columns to process (excluding binary/categorical)
+        self.numeric_columns = [
+            col for col in X.columns
+            if X[col].dtype in ['float64', 'int64']
+            and not any(exclude in col for exclude in self.exclude_columns)
+        ]
+
+        # Compute percentiles for capping
+        for col in self.numeric_columns:
+            self.percentiles[col] = np.percentile(X[col].dropna(), [self.lower_percentile, self.upper_percentile])
+        return self
+
+    def transform(self, X):
+        X_ = X.copy()
+
+        # Process each numeric column
+        for col in self.numeric_columns:
+            # Cap extreme values
+            p1, p99 = self.percentiles[col]
+            X_[col] = np.clip(X_[col], p1, p99)
+
+            # Apply log transformation (handle negative values)
+            col_data = X_[col]
+            self.min_vals[col] = col_data.min()
+            if self.min_vals[col] < 0:
+                col_shifted = col_data - self.min_vals[col] + 1
+            else:
+                col_shifted = col_data + 1
+            X_[col] = np.log1p(col_shifted)
+
+        return X_
+
+    def inverse_transform(self, X):
+        X_ = X.copy()
+        # Inverse transform each numeric column
+        for col in self.numeric_columns:
+            if col in X_.columns:
+                p1, p99 = self.percentiles[col]
+                col_data = X_[col]
+                # Inverse log transformation
+                col_original = np.expm1(col_data) + self.min_vals[col] - 1
+                # Ensure values remain within capped range
+                X_[col] = np.clip(col_original, p1, p99)
+        return X_
+
 # Handle highly correlated features
 class CorrelationHandler(BaseEstimator, TransformerMixin):
     def __init__(self, threshold=0.95, keep_columns=['Close']):
@@ -479,6 +577,6 @@ def create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_ra
 def create_data_cleaning_pipeline(correlation_threshold = 0.95):
   return Pipeline([
       ('missing_value_handler', MissingValueHandler()),
-      ('outlier_handler', OutlierHandler()),
+      ('outlier_handler', ComprehensiveOutlierHandler()),
       ('correlation_handler', CorrelationHandler(correlation_threshold))
   ])
