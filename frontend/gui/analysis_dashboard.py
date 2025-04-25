@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from trading_logic import get_portfolio_history, get_orders
 import logging
+import numpy as np
 
 # Suppress matplotlib font logs
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
@@ -35,7 +36,8 @@ class AnalysisDashboard(QWidget):
             "Time Series Comparison",
             "Prediction Error Distribution",
             "Performance by Stock",
-            "Heatmap of Ensemble Performance"
+            "Heatmap of Ensemble Performance",
+            "Portfolio vs Max Possible Value"
         ])
         self.graph_combo.setStyleSheet("background-color: #3c3f41; color: #ffffff; selection-background-color: #2a82da;")
         self.graph_combo.currentIndexChanged.connect(self.change_graph_type)
@@ -92,6 +94,8 @@ class AnalysisDashboard(QWidget):
             self.plot_performance_by_stock()
         elif graph_type == "Heatmap of Ensemble Performance":
             self.plot_ensemble_heatmap()
+        elif graph_type == "Portfolio vs Max Possible Value":
+            self.plot_portfolio_vs_max_possible()
         
         self.update_metrics()
         self.chart_canvas.draw()
@@ -108,8 +112,8 @@ class AnalysisDashboard(QWidget):
             return
         
         df = pd.DataFrame(portfolio_history)
-        df['date'] = pd.to_datetime(df['date'])
-        ax.plot(df['date'], df['value'], label='Portfolio Value', color='#2a82da')  # Changed 'portfolio_value' to 'value'
+        df['date'] = pd.to_datetime(df['date'], utc=True)
+        ax.plot(df['date'], df['value'], label='Portfolio Value', color='#2a82da')
         ax.set_title('Portfolio Performance Over Time', color='white')
         ax.set_xlabel('Date', color='white')
         ax.set_ylabel('Value ($)', color='white')
@@ -127,10 +131,10 @@ class AnalysisDashboard(QWidget):
             self.chart_fig.patch.set_facecolor('#353535')
             return
 
-        start_date = pd.to_datetime("2023-01-10")
-        end_date = pd.to_datetime("2023-11-01")
+        start_date = self.data_manager.start_date
+        end_date = self.data_manager.end_date
         orders_df = pd.DataFrame(orders)
-        orders_df['date'] = pd.to_datetime(orders_df['date'])
+        orders_df['date'] = pd.to_datetime(orders_df['date'], utc=True)
         orders_df = orders_df[(orders_df['date'] >= start_date) & (orders_df['date'] <= end_date)]
 
         if orders_df.empty:
@@ -138,8 +142,8 @@ class AnalysisDashboard(QWidget):
             self.chart_fig.patch.set_facecolor('#353535')
             return
 
-        buy_count = len(orders_df[orders_df['action'] == 'buy'])  # Changed 'Buy' to 'buy'
-        sell_count = len(orders_df[orders_df['action'] == 'sell'])  # Changed 'Sell' to 'sell'
+        buy_count = len(orders_df[orders_df['action'] == 'buy'])
+        sell_count = len(orders_df[orders_df['action'] == 'sell'])
         total_actions = buy_count + sell_count
         if total_actions == 0:
             ax.text(0.5, 0.5, 'No buy or sell actions recorded', horizontalalignment='center', color='white')
@@ -164,18 +168,106 @@ class AnalysisDashboard(QWidget):
             ax.text(0.5, 0.5, 'No trade actions to display', horizontalalignment='center', color='white')
         self.chart_fig.patch.set_facecolor('#353535')
         
+    def plot_portfolio_vs_max_possible(self):
+        ax = self.chart_fig.add_subplot(111)
+        portfolio_history = get_portfolio_history()
+        if not portfolio_history:
+            ax.text(0.5, 0.5, 'No portfolio history available', horizontalalignment='center', color='white')
+            self.chart_fig.patch.set_facecolor('#353535')
+            return
+
+        # Actual portfolio value
+        df = pd.DataFrame(portfolio_history)
+        df['date'] = pd.to_datetime(df['date'], utc=True)
+        start_date = self.data_manager.start_date
+        end_date = self.data_manager.end_date
+        df = df[(df['date'] >= start_date) & (df['date'] <= end_date)]
+
+        # Calculate maximum possible portfolio value
+        data = self.data_manager.data
+        data['date'] = pd.to_datetime(data['date'], utc=True)
+        data = data[(data['date'] >= start_date) & (data['date'] <= end_date)]
+        if data.empty:
+            ax.text(0.5, 0.5, 'No data available for the date range', horizontalalignment='center', color='white')
+            self.chart_fig.patch.set_facecolor('#353535')
+            return
+
+        # Simulate optimal strategy: buy top-performing stock each day
+        initial_investment = df['value'].iloc[0] if not df.empty else 10000.0
+        max_portfolio_value = initial_investment
+        max_values = []
+        holdings = {}
+        cash = initial_investment
+        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+
+        for current_date in date_range:
+            # current_date is already UTC-aware from date_range
+            daily_data = data[data['date'].dt.date == current_date.date()].copy()  # Create a copy to avoid warnings
+            if daily_data.empty:
+                max_values.append(max_portfolio_value)
+                continue
+
+            # Calculate returns
+            daily_data.loc[:, 'Return'] = daily_data['Close'].pct_change().shift(-1)
+
+            # Sell holdings if held for at least 5 days
+            for ticker in list(holdings.keys()):
+                holding = holdings[ticker]
+                days_held = (current_date - holding['purchase_date']).days
+                if days_held >= 5:
+                    ticker_data = daily_data[daily_data['Ticker'] == ticker]
+                    if not ticker_data.empty:
+                        sale_value = holding['shares'] * ticker_data.iloc[0]['Close']
+                        cash += sale_value
+                        del holdings[ticker]
+
+            # Buy top stock
+            if not daily_data.empty:
+                top_stock = daily_data.loc[daily_data['Return'].idxmax()] if not daily_data['Return'].isna().all() else None
+                if top_stock is not None and cash >= initial_investment * 0.1:
+                    price = top_stock['Close']
+                    shares = int((initial_investment * 0.1) / price)
+                    cost = shares * price
+                    if cost <= cash:
+                        holdings[top_stock['Ticker']] = {
+                            'shares': shares,
+                            'purchase_date': current_date
+                        }
+                        cash -= cost
+
+            # Calculate current value
+            current_value = cash
+            for ticker, holding in holdings.items():
+                ticker_data = daily_data[daily_data['Ticker'] == ticker]
+                if not ticker_data.empty:
+                    current_value += holding['shares'] * ticker_data.iloc[0]['Close']
+            max_portfolio_value = current_value
+            max_values.append(max_portfolio_value)
+
+        # Plot
+        ax.plot(df['date'], df['value'], label='Actual Portfolio Value', color='#2a82da')
+        ax.plot(date_range, max_values, label='Max Possible Value', color='#ff9900', linestyle='--')
+        ax.set_title('Portfolio Value vs Maximum Possible Value', color='white')
+        ax.set_xlabel('Date', color='white')
+        ax.set_ylabel('Value ($)', color='white')
+        ax.legend()
+        ax.grid(True, color='#444444')
+        ax.tick_params(colors='white')
+        self.chart_fig.patch.set_facecolor('#353535')
+        ax.set_facecolor('#2b2b2b')
+        
     def update_metrics(self):
         data = self.data_manager.data
         try:
             portfolio_history = get_portfolio_history()
             if portfolio_history:
-                total_value = portfolio_history[-1]['value']  # Changed 'portfolio_value' to 'value'
+                total_value = portfolio_history[-1]['value']
             else:
                 total_value = data['Close'].iloc[-1]
             sharpe_ratio = data['Best_Prediction'].mean()
             if portfolio_history:
                 df = pd.DataFrame(portfolio_history)
-                volatility = df['value'].pct_change().std()  # Changed 'portfolio_value' to 'value'
+                volatility = df['value'].pct_change().std()
             else:
                 volatility = data['Close'].pct_change().std()
             self.metrics_labels['Total Value'].setText(f"Total Value: ${total_value:,.2f}")
@@ -326,3 +418,4 @@ class AnalysisDashboard(QWidget):
         ax.tick_params(colors='white')
         self.chart_fig.patch.set_facecolor('#353535')
         ax.set_facecolor('#2b2b2b')
+        

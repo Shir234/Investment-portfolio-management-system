@@ -1,6 +1,8 @@
 import sys
 import os
 import logging
+import pandas as pd
+
 
 # Suppress matplotlib and NumExpr logs
 os.environ["NUMEXPR_MAX_THREADS"] = "8"
@@ -102,6 +104,7 @@ def main():
     
     # Construct the absolute path to the logo file
     logo_path = os.path.join(os.path.dirname(__file__), 'logo.JPG')
+    
     if os.path.exists(logo_path):
         app_icon = QIcon(logo_path)
         app.setWindowIcon(app_icon)
@@ -134,4 +137,5 @@ def main():
     sys.exit(app.exec_())
 
 if __name__ == '__main__':
+
     main()
