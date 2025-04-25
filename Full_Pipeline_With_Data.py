@@ -44,9 +44,9 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         start_time = time.time()
         # TODO -> comment and uncomment if using the machine
         # Shir's Path G:\My Drive\Investment portfolio management system\code_results\results\predictions
-        drive_path = r"G:\My Drive\Investment portfolio management system\code_results\results\predictions/"
+        # drive_path = r"G:\My Drive\Investment portfolio management system\code_results\results\predictions/"
         # machine's Path
-        # drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/"
+        drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/"
         
         # Create date folder inside Google Drive path
         drive_date_folder = os.path.join(drive_path, current_date)
@@ -142,47 +142,47 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
 
         # Model training
         logger.info(f"\n{'-'*30}\nTraining models for {ticker_symbol}\n{'-'*30}")
-        train_results = train_and_validate_models(logger, X_train_val_selected, Y_train_val)
+        train_results = train_and_validate_models(logger, X_train_val_selected, Y_train_val, current_date, ticker_symbol, date_folder)
         model_results = train_results['model_results']
         target_scaler = train_results['target_scaler']
         feature_scaler = train_results['feature_scaler']
 
-        # # Ensemble prediction
-        # logger.info(f"\n{'-'*30}\nRunning ensemble methods for {ticker_symbol}\n{'-'*30}")
-        # ensemble_results = ensemble_pipeline(logger, model_results, X_train_val_selected, X_test_selected, Y_train_val, Y_test, target_scaler, feature_scaler)
+        # Ensemble prediction
+        logger.info(f"\n{'-'*30}\nRunning ensemble methods for {ticker_symbol}\n{'-'*30}")
+        ensemble_results = ensemble_pipeline(logger, model_results, X_train_val_selected, X_test_selected, Y_train_val, Y_test, target_scaler, feature_scaler)
 
-        # # Save results
-        # try:
-        #     logger.info(f"\n{'-'*30}\nSaving results for {ticker_symbol}\n{'-'*30}")
-        #     df = pd.DataFrame.from_dict(ensemble_results, orient='index')
-        #     df.index.name = 'Method Name'
-        #     df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
-        #     df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_results.csv"))
+        # Save results
+        try:
+            logger.info(f"\n{'-'*30}\nSaving results for {ticker_symbol}\n{'-'*30}")
+            df = pd.DataFrame.from_dict(ensemble_results, orient='index')
+            df.index.name = 'Method Name'
+            df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
+            df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_results.csv"))
 
-        #     best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
-        #     best_prediction = ensemble_results[best_method]['prediction']
+            best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
+            best_prediction = ensemble_results[best_method]['prediction']
 
-        #     results_df = pd.DataFrame({
-        #         'Ticker': ticker_symbol,
-        #         'Close': X_test.Close,
-        #         'Buy': X_test.Buy,
-        #         'Sell': X_test.Sell,
-        #         'Actual_Sharpe': Y_test,
-        #         'Best_Prediction': best_prediction
-        #     })
+            results_df = pd.DataFrame({
+                'Ticker': ticker_symbol,
+                'Close': X_test.Close,
+                'Buy': X_test.Buy,
+                'Sell': X_test.Sell,
+                'Actual_Sharpe': Y_test,
+                'Best_Prediction': best_prediction
+            })
 
-        #     log_data_stats(logger, results_df, f"{ticker_symbol} final results", log_head=True)
+            log_data_stats(logger, results_df, f"{ticker_symbol} final results", log_head=True)
             
-        #     results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensemble_prediction_results.csv')
-        #     results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensemble_prediction_results.csv"))
-        #     logger.info(f"Saved results for {ticker_symbol} to Google Drive dated folder")
+            results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensemble_prediction_results.csv')
+            results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensemble_prediction_results.csv"))
+            logger.info(f"Saved results for {ticker_symbol} to Google Drive dated folder")
             
-        #     # Verify final prediction scale
-        #     verify_prediction_scale(logger, Y_test, best_prediction, f"{ticker_symbol} best ensemble method")
+            # Verify final prediction scale
+            verify_prediction_scale(logger, Y_test, best_prediction, f"{ticker_symbol} best ensemble method")
             
-        # except Exception as e:
-        #     logger.error(f"Error saving results to Google Drive: {e}")
-        #     results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensemble_prediction_results.csv"))
+        except Exception as e:
+            logger.error(f"Error saving results to Google Drive: {e}")
+            results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensemble_prediction_results.csv"))
         
         end_time = time.time()
         logger.info(f"\n{'='*50}")

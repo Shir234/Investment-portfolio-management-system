@@ -16,6 +16,10 @@ from tensorflow.keras.optimizers import Adam
 
 from Logging_and_Validation import log_data_stats, verify_prediction_scale
 
+import json
+import os
+from datetime import datetime
+
 # ===============================================================================
 # Model Creation and Training
 # ===============================================================================
@@ -114,7 +118,7 @@ def create_models():
         return {}
     
 
-def train_and_validate_models(logger, X_train_val, Y_train_val):
+def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ticker_symbol, date_folder):
     print(f"\n{'-'*30}\nInitializing model training\n{'-'*30}")
     log_data_stats(logger, X_train_val, "X_train_val for models", include_stats=False)
     log_data_stats(logger, Y_train_val, "Y_train_val for models", include_stats=True)
@@ -316,6 +320,70 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
                 logger.error("  Keeping the best fold model instead")
                 # Keep the fold model if retraining fails
                 pass
+    
+    try:
+        # Prepare data for metrics dataframe
+        metrics_data = []
+
+        for model_name, result in results.items():
+            if not result or 'best_mse_scores' not in result or not result['best_mse_scores']:
+                    logger.info(f"Skipping {model_name} - no valid results")
+                    continue
+            
+            # Calculate metrics
+            avg_mse = np.mean(result['best_mse_scores'])
+            avg_rmse = np.mean(result['best_rmse_scores'])
+            
+            # Find best fold
+            best_fold_idx = np.argmin(result['best_mse_scores'])
+            best_fold_mse = result['best_mse_scores'][best_fold_idx]
+            best_fold_rmse = result['best_rmse_scores'][best_fold_idx]
+
+            # Get best parameters
+            best_fold_params = None
+            if result.get('best_params') and len(result['best_params']) > 0:
+                best_fold_params = str(result['best_params'][best_fold_idx])
+            
+            # Add to metrics data
+            metrics_data.append({
+                'Model': model_name,
+                'Average_MSE': avg_mse,
+                'Average_RMSE': avg_rmse,
+                'Best_Fold_MSE': best_fold_mse,
+                'Best_Fold_RMSE': best_fold_rmse,
+                'Best_Parameters': best_fold_params
+            })
+
+        # Create dataframe
+        metrics_df = pd.DataFrame(metrics_data)
+
+        # Add ranking column
+        metrics_df = metrics_df.sort_values('Average_MSE')
+        metrics_df['Rank'] = range(1, len(metrics_df) + 1)
+        
+        # Save to CSV
+        drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results/"
+        # Create date folder inside Google Drive path
+        drive_date_folder = os.path.join(drive_path, current_date)
+        # Create directory if it doesn't exist
+        os.makedirs(drive_date_folder,exist_ok=True)
+        try:
+            metrics_df.to_csv(f'{date_folder}/{ticker_symbol}_training_validation_results.csv')
+            metrics_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_training_validation_results.csv"))
+            logger.info(f"Saved clean data for {ticker_symbol} to folders")
+        except Exception as e:
+            logger.error(f"Error saving to Google Drive: {e}")
+            os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
+            metrics_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_training_validation_results.csv"))
+                
+        # Print ranking to log
+        logger.info("\nModel Ranking (by Average MSE):")
+        for i, row in metrics_df.iterrows():
+            logger.info(f"{row['Rank']}. {row['Model']} - MSE: {row['Average_MSE']:.4f}, RMSE: {row['Average_RMSE']:.4f}")
+        
+    except Exception as e:
+        logger.error(f"Error saving metrics to CSV: {e}")
+
 
     # Return the scaler as part of the results
     results_with_scaler = {
@@ -324,7 +392,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val):
         'feature_scaler': feature_scaler
     }
 
-    return results_with_scaler  
+    return results_with_scaler
 
 
 # ===============================================================================
