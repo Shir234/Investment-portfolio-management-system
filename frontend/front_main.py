@@ -104,7 +104,7 @@ def main():
     set_dark_mode(app)
     
     # Show splash screen
-    splash = SplashScreen()
+    splash = SplashScreen()f
     splash.show()
     
     # Prompt user to select the CSV file
