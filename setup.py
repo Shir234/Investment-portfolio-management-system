@@ -39,6 +39,69 @@ def print_section(title):
     print(f" {title} ".center(80, "="))
     print("="*80 + "\n")
 
+def configure_tensorflow_settings():
+    """Create a script to configure TensorFlow environment settings."""
+    print_section("Creating TensorFlow Configuration Script")
+    
+    # Create a directory for scripts if it doesn't exist
+    scripts_dir = Path("scripts")
+    os.makedirs(scripts_dir, exist_ok=True)
+    
+    # Create batch file for Windows
+    tf_config_bat = scripts_dir / "configure_tensorflow.bat"
+    with open(tf_config_bat, "w") as f:
+        f.write("@echo off\n")
+        f.write("echo Setting TensorFlow options...\n")
+        f.write("set TF_ENABLE_ONEDNN_OPTS=0\n")
+        f.write("echo TensorFlow environment variables have been set for this session.\n")
+    
+    # Create PowerShell script for Windows
+    tf_config_ps1 = scripts_dir / "configure_tensorflow.ps1"
+    with open(tf_config_ps1, "w") as f:
+        f.write("Write-Host \"Setting TensorFlow options...\"\n")
+        f.write("$env:TF_ENABLE_ONEDNN_OPTS=0\n")
+        f.write("Write-Host \"TensorFlow environment variables have been set for this session.\"\n")
+    
+    # Create shell script for Unix/Linux/MacOS
+    tf_config_sh = scripts_dir / "configure_tensorflow.sh"
+    with open(tf_config_sh, "w") as f:
+        f.write("#!/bin/bash\n")
+        f.write("echo Setting TensorFlow options...\n")
+        f.write("export TF_ENABLE_ONEDNN_OPTS=0\n")
+        f.write("echo TensorFlow environment variables have been set for this session.\n")
+    
+    # Make the shell script executable on Unix systems
+    if platform.system() != "Windows":
+        os.chmod(tf_config_sh, 0o755)
+    
+    print("✓ TensorFlow configuration scripts created")
+    print("  - scripts/configure_tensorflow.bat (Windows Command Prompt)")
+    print("  - scripts/configure_tensorflow.ps1 (Windows PowerShell)")
+    print("  - scripts/configure_tensorflow.sh (Unix/Linux/MacOS)")
+    
+    # Create a wrapper file to run from Python
+    create_tf_config_module()
+
+def create_tf_config_module():
+    """Create a Python module to configure TensorFlow in code."""
+    tf_config_py = Path("tf_config.py")
+    with open(tf_config_py, "w") as f:
+        f.write("""# tf_config.py
+# Configure TensorFlow environment variables
+import os
+
+def configure():
+    \"\"\"Configure TensorFlow environment variables.\"\"\"
+    os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+    print("TensorFlow environment variables configured programmatically.")
+
+# Configure when this module is imported
+configure()
+""")
+    
+    print("✓ Created tf_config.py module")
+    print("  - Import this module before TensorFlow to set environment variables programmatically")
+
 def check_python_version():
     """Check if Python version is compatible."""
     print_section("Checking Python Version")
@@ -157,10 +220,20 @@ def print_next_steps():
     else:
         print("   source venv/bin/activate")
     
-    print("\n2. Run your main Python script:")
+    print("\n2. Configure TensorFlow environment (optional, to suppress warnings):")
+    if platform.system() == "Windows":
+        print("   PowerShell: . .\\scripts\\configure_tensorflow.ps1")
+        print("   Command Prompt: .\\scripts\\configure_tensorflow.bat")
+    else:
+        print("   source ./scripts/configure_tensorflow.sh")
+    
+    print("\n   Alternatively, use the Python module by adding this to your code:")
+    print("   import tf_config  # Import before TensorFlow")
+    
+    print("\n3. Run your main Python script:")
     print("   python main.py")
     
-    print("\n3. To deactivate the virtual environment when finished:")
+    print("\n4. To deactivate the virtual environment when finished:")
     print("   deactivate")
 
 def main():
@@ -193,6 +266,7 @@ def main():
         install_dependencies()
     
     setup_project_structure()
+    configure_tensorflow_settings()
     print_next_steps()
     
     print("\nSetup completed successfully!")

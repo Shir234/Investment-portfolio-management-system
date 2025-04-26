@@ -137,9 +137,9 @@ def create_models():
     
 
 def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ticker_symbol, date_folder):
-    print(f"\n{'-'*30}\nInitializing model training\n{'-'*30}")
-    log_data_stats(logger, X_train_val, "X_train_val for models", include_stats=False)
-    log_data_stats(logger, Y_train_val, "Y_train_val for models", include_stats=True)
+    logger.info(f"\n{'-'*30}\nInitializing model training\n{'-'*30}")
+    # log_data_stats(logger, X_train_val, "X_train_val for models", include_stats=False)
+    # log_data_stats(logger, Y_train_val, "Y_train_val for models", include_stats=True)
 
     # Check if data is already PCA-transformed
     data_is_pca = is_pca_transformed_data(X_train_val)

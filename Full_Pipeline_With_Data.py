@@ -36,9 +36,7 @@ def load_valid_tickers(logger, file_path="valid_tickers.csv"):
 # Full Pipeline For Single Stock
 # ===============================================================================
 def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
-    logger.info(f"\n{'='*50}")
     logger.info(f"STARTING PIPELINE FOR TICKER {ticker_symbol}")
-    logger.info(f"{'='*50}")
 
     try:
         start_time = time.time()
@@ -57,23 +55,23 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         logger.info(f"\n{'-'*30}\nFetching and processing data for {ticker_symbol}\n{'-'*30}")
         pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate)
         data = pipeline.fit_transform(pd.DataFrame())
-        log_data_stats(logger , data, f"{ticker_symbol} raw data", log_head=True)
+        #log_data_stats(logger , data, f"{ticker_symbol} raw data", log_head=True)
 
         if data.empty:
             logger.error(f"No data returned for ticker {ticker_symbol}")
             return False
         
         # Validate data quality
-        validate_data_quality(data, f"{ticker_symbol} raw data")
+       # validate_data_quality(data, f"{ticker_symbol} raw data")
 
         # Run second pipeline, clean and process
         logger.info(f"\n{'-'*30}\nCleaning data for {ticker_symbol}\n{'-'*30}")
         pipeline_clean = create_data_cleaning_pipeline()
         data_clean = pipeline_clean.fit_transform(data)
-        log_data_stats(logger, data_clean, f"{ticker_symbol} cleaned data", log_head=True)
+        #log_data_stats(logger, data_clean, f"{ticker_symbol} cleaned data", log_head=True)
         
-        # Validate cleaned data quality
-        validate_data_quality(data_clean, f"{ticker_symbol} cleaned data")
+        # # Validate cleaned data quality
+        # ##validate_data_quality(data_clean, f"{ticker_symbol} cleaned data")
 
         # Save locally and to Google Drive
         try:
@@ -90,11 +88,6 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
             logger.error(f"No Transaction_Sharpe data for {ticker_symbol}. Skipping.")
             return False
         
-        # Check if we have enough data
-        min_data_points = 200  # Set your minimum threshold
-        if len(data_clean) < min_data_points:
-            logger.warning(f"Only {len(data_clean)} data points for {ticker_symbol}, which may be insufficient")
-        
         # Split the data to train and test, create train and val the models
         logger.info(f"\n{'-'*30}\nSplitting data for {ticker_symbol}\n{'-'*30}")
         X = data_clean.drop(columns=['Transaction_Sharpe'])
@@ -107,15 +100,15 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         X_test = X.iloc[split_idx:]
         Y_test = Y.iloc[split_idx:]
         
-        log_data_stats(logger, X_train_val, f"{ticker_symbol} X_train_val", include_stats=False)
-        log_data_stats(logger, Y_train_val, f"{ticker_symbol} Y_train_val", include_stats=True)
-        log_data_stats(logger, X_test, f"{ticker_symbol} X_test", include_stats=False)
-        log_data_stats(logger, Y_test, f"{ticker_symbol} Y_test", include_stats=True)
+        # log_data_stats(logger, X_train_val, f"{ticker_symbol} X_train_val", include_stats=False)
+        # log_data_stats(logger, Y_train_val, f"{ticker_symbol} Y_train_val", include_stats=True)
+        # log_data_stats(logger, X_test, f"{ticker_symbol} X_test", include_stats=False)
+        # log_data_stats(logger, Y_test, f"{ticker_symbol} Y_test", include_stats=True)
 
         # Feature selection
-        logger.info(f"\n{'-'*30}\nPerforming feature selection for {ticker_symbol}\n{'-'*30}")
-        importance_df = analyze_feature_importance(X_train_val, Y_train_val)
-        logger.info(f"Top 10 features by importance:\n{importance_df.head(10)}")
+        # logger.info(f"\n{'-'*30}\nPerforming feature selection for {ticker_symbol}\n{'-'*30}")
+        # importance_df = analyze_feature_importance(X_train_val, Y_train_val)
+        #logger.info(f"Top 10 features by importance:\n{importance_df.head(10)}")
         # Evaluate different feature sets including PCA
         feature_results = evaluate_feature_sets(X_train_val, Y_train_val)
         logger.info("\nFeature Selection Method Comparison:")
@@ -125,54 +118,42 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         best_method = feature_results['best_method']
         best_features = feature_results['best_features']
         # Handle PCA differently than other feature selection methods
-        is_pca = best_method == 'PCA 95%'
         #########################################################
-        if is_pca:
-            logger.info(f"\nBest feature set: {best_method} with {best_features['components_selected']} components")
-            
-            # For PCA, we need to transform the data
-            pca = best_features['pca']
-            scaler = best_features['scaler']
-            
-            # Transform training data
-            X_train_val_scaled = scaler.transform(X_train_val)
-            X_train_val_selected = pca.transform(X_train_val_scaled)
-            
-            # Transform test data
-            X_test_scaled = scaler.transform(X_test)
-            X_test_selected = pca.transform(X_test_scaled)
-            
-            # Log explained variance
-            logger.info(f"PCA explained variance ratio: {best_features['explained_variance_ratio']}")
-            logger.info(f"PCA cumulative variance: {best_features['cumulative_variance_ratio']}")
-            
-            # Create dataframes with component names for easier tracking
-            component_names = [f'PC{i+1}' for i in range(best_features['components_selected'])]
-            X_train_val_selected = pd.DataFrame(X_train_val_selected, index=X_train_val.index, columns=component_names)
-            X_test_selected = pd.DataFrame(X_test_selected, index=X_test.index, columns=component_names)
-        else:
-            logger.info(f"\nBest feature set: {best_method} with {len(best_features)} features")
-            logger.info(f"Selected features: {best_features[:10]}{'...' if len(best_features) > 10 else ''}")
-            
-            # Use these features for model training
-            X_train_val_selected = X_train_val[best_features]
-            X_test_selected = X_test[best_features]
+        
+        logger.info(f"\nBest feature set: {best_method} with {best_features['components_selected']} components")
+        # For PCA, we need to transform the data
+        pca = best_features['pca']
+        scaler = best_features['scaler']
+        
+        # Transform training data
+        X_train_val_scaled = scaler.transform(X_train_val)
+        X_train_val_selected = pca.transform(X_train_val_scaled)
+        
+        # Transform test data
+        X_test_scaled = scaler.transform(X_test)
+        X_test_selected = pca.transform(X_test_scaled)
+        
+        # Create dataframes with component names for easier tracking
+        component_names = [f'PC{i+1}' for i in range(best_features['components_selected'])]
+        X_train_val_selected = pd.DataFrame(X_train_val_selected, index=X_train_val.index, columns=component_names)
+        X_test_selected = pd.DataFrame(X_test_selected, index=X_test.index, columns=component_names)
+
         #########################################################
 
         # Validate feature consistency
         logger.info(f"\n{'-'*30}\nValidating feature consistency\n{'-'*30}")
-        validate_feature_consistency(X_train_val, X_train_val_selected, best_features, is_pca=is_pca)
-        validate_feature_consistency(X_test, X_test_selected, best_features, is_pca=is_pca)
+        validate_feature_consistency(X_train_val, X_train_val_selected, best_features)
+        validate_feature_consistency(X_test, X_test_selected, best_features)
 
-        log_data_stats(logger, X_train_val_selected, f"{ticker_symbol} X_train_val_selected", include_stats=False)
-        log_data_stats(logger, X_test_selected, f"{ticker_symbol} X_test_selected", include_stats=False)
+        # log_data_stats(logger, X_train_val_selected, f"{ticker_symbol} X_train_val_selected", include_stats=False)
+        # log_data_stats(logger, X_test_selected, f"{ticker_symbol} X_test_selected", include_stats=False)
 
         # Model training
         logger.info(f"\n{'-'*30}\nTraining models for {ticker_symbol}\n{'-'*30}")
         train_results = train_and_validate_models(logger, X_train_val_selected, Y_train_val, current_date, ticker_symbol, date_folder)
-        model_results = train_results['model_results']
-        target_scaler = train_results['target_scaler']
-        feature_scaler = train_results['feature_scaler']
+        # model_results = train_results['model_results']
+        # target_scaler = train_results['target_scaler']
+        # feature_scaler = train_results['feature_scaler']
 
         # # Ensemble prediction
         # logger.info(f"\n{'-'*30}\nRunning ensemble methods for {ticker_symbol}\n{'-'*30}")

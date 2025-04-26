@@ -318,9 +318,6 @@ def select_best_features(X_train, Y_train, threshold=0.8, method='importance'):
         # Plot feature contributions to components
         plot_pca_component_contributions(pca_results, X_train, top_n_features=10)
 
-
-
-
     return selected_features
 
 def evaluate_feature_sets(X_train, Y_train):
@@ -577,33 +574,25 @@ def adapt_test_data_to_feature_method(X_test, best_method, best_features):
     return X_test_selected
 
 
-def validate_feature_consistency(X_train_original, X_train_selected, selected_features, is_pca=False):
+def validate_feature_consistency(X_train_original, X_train_selected, selected_features):
     """
-    Validate that feature selection is consistent
+    Validate that PCA feature selection is consistent
     """
+    # Get the number of components
+    n_components = selected_features['components_selected']
     
-    if is_pca:
-        # For PCA, just check dimensions
-        if isinstance(X_train_selected, np.ndarray):
-            n_components = selected_features['components_selected']
-            if X_train_selected.shape[1] != n_components:
-                raise ValueError(f"PCA-transformed data has {X_train_selected.shape[1]} columns but {n_components} components were selected")
-            print(f"Feature consistency validation passed: {n_components} PCA components used")
-        else:
-            print("Warning: PCA-transformed data is not a numpy array")
-
+    # Check if it's a DataFrame and convert to numpy array if needed
+    if isinstance(X_train_selected, pd.DataFrame):
+        X_selected_array = X_train_selected.values
+    elif isinstance(X_train_selected, np.ndarray):
+        X_selected_array = X_train_selected
     else:
-        # Check all selected features exist in original dataset
-        for feature in selected_features:
-            if feature not in X_train_original.columns:
-                raise ValueError(f"Selected feature {feature} not in original dataset")
-        
-        # Check dimensions are as expected
-        if X_train_selected.shape[1] != len(selected_features):
-            raise ValueError(f"Selected data has {X_train_selected.shape[1]} columns but {len(selected_features)} features were selected")
-        
-        # Check column order matches
-        if isinstance(X_train_selected, pd.DataFrame) and not all(X_train_selected.columns == selected_features):
-            print("Warning: Column order in selected data doesn't match feature list order")
-        
-        print(f"Feature consistency validation passed: {len(selected_features)} features used")
+        raise TypeError(f"Unexpected type for PCA-transformed data: {type(X_train_selected)}")
+    
+    # Validate dimensions
+    if X_selected_array.shape[1] != n_components:
+        raise ValueError(f"PCA-transformed data has {X_selected_array.shape[1]} columns but {n_components} components were selected")
+    
+    print(f"Feature consistency validation passed: {n_components} PCA components used")
+
+

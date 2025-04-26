@@ -102,8 +102,13 @@ class IndicatorCalculator(BaseEstimator, TransformerMixin):
                     data['PSAR'] = psar['PSARl_0.02_0.2']
                 
                 elif indicator == 'mfi':
-                    data['MFI'] = ta.mfi(data['High'], data['Low'], data['Close'], data['Volume']).astype(float)
-                
+                    tmp_volume = data['Volume'].astype(float)
+                    mfi_values = ta.mfi(data['High'], data['Low'], data['Close'], tmp_volume)
+                    if 'MFI' in data.columns:
+                        if data['MFI'].dtype == 'int64':
+                            data['MFI'] = data['MFI'].astype(float)
+                    data.loc[:, 'MFI'] = mfi_values
+
                 # Calculate Moving Volatility Pattern (MVP) (MVP as a simple moving average of squared returns)
                 elif indicator == 'mvp':
                     data['Returns'] = data['Close'].pct_change()                                                # calculate the daily return
@@ -158,11 +163,7 @@ class IndicatorCalculator(BaseEstimator, TransformerMixin):
                     data['BB_Upper'] = bbands['BBU_20_2.0']
                     data['BB_Middle'] = bbands['BBM_20_2.0']
                     data['BB_Lower'] = bbands['BBL_20_2.0']
-                    # TODO -> WHAT IS THIS?
-                    # # Calculate BB width and %B
-                    # data['BB_Width'] = (data['BB_Upper'] - data['BB_Lower']) / data['BB_Middle']
-                    # data['BB_Percent'] = (data['Close'] - data['BB_Lower']) / (data['BB_Upper'] - data['BB_Lower'])
-                
+
                 elif indicator == 'atr':
                     data['ATR'] = ta.atr(data['High'], data['Low'], data['Close'], length=14)
                     # ATR as percentage of price
@@ -194,23 +195,30 @@ class IndicatorCalculator(BaseEstimator, TransformerMixin):
                     # data['DI_Minus'] = adx['DMN_14']
                     # ADX trend strength
                     data['ADX_Trend'] = np.where(data['ADX'] > 25, 1, 0)
-                    # TODO -> WHAT IS THIS?
-                    # # Directional signals
-                    # data['ADX_Signal'] = np.where(data['DI_Plus'] > data['DI_Minus'], 1, 
-                    #                             np.where(data['DI_Plus'] < data['DI_Minus'], -1, 0))
-                
+
                 # Ichimoku Cloud
                 elif indicator == 'ichimoku':
-                    ichimoku = ta.ichimoku(data['High'], data['Low'], data['Close'])
-                    data['Ichimoku_Conversion'] = ichimoku['ICS_9_26_52_26']
-                    data['Ichimoku_Base'] = ichimoku['ITS_9_26_52_26']
-                    data['Ichimoku_A'] = ichimoku['ISA_9_26_52_26']
-                    data['Ichimoku_B'] = ichimoku['ISB_9_26_52_26']
-                    # TODO -> WHAT IS THIS?
-                    # # Cloud signals
-                    # data['Ichimoku_Signal'] = np.where(data['Close'] > data['Ichimoku_A'], 1, 
-                    #                                  np.where(data['Close'] < data['Ichimoku_B'], -1, 0))
-                
+                    try:
+                        ichimoku = ta.ichimoku(data['High'], data['Low'], data['Close'])
+                        
+                        # Check if ichimoku is a tuple (which appears to be the case based on your error)
+                        if isinstance(ichimoku, tuple) and len(ichimoku) > 1 and isinstance(ichimoku[1], pd.DataFrame):
+                            ichimoku_df = ichimoku[1]
+                          
+                            # Map appropriate columns based on what's available
+                            if 'ISA_9_26_52' in ichimoku_df.columns:
+                                data['Ichimoku_A'] = ichimoku_df['ISA_9_26_52']
+                            if 'ISB_9_26_52' in ichimoku_df.columns:
+                                data['Ichimoku_B'] = ichimoku_df['ISB_9_26_52'] 
+                            if 'ITS_9_26_52' in ichimoku_df.columns:
+                                data['Ichimoku_Base'] = ichimoku_df['ITS_9_26_52']
+                            if 'ICS_9_26_52' in ichimoku_df.columns:
+                                data['Ichimoku_Conversion'] = ichimoku_df['ICS_9_26_52']
+                        
+                    except Exception as e:
+                        print(f"Error processing Ichimoku indicator: {e}")
+                        print("Skipping Ichimoku indicator")
+                    
                 # Temporal features
                 elif indicator == 'time_features':
                     # Convert index to datetime if it's not already
@@ -368,13 +376,13 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
         for col in X_.columns:
             if any(exclude in col for exclude in self.exclude_columns):
                 # For categorical/binary columns, fill with -1 as a sentinel value
-                X_[col] = X_[col].fillna(-1)
+                X_[col] = X_[col].fillna(-1).infer_objects(copy=False)
             elif X_[col].dtype in ['float64', 'int64']:
                 # Use forward-fill then backward-fill for time series numeric data
-                X_[col] = X_[col].ffill().bfill()
+                X_[col] = X_[col].ffill().bfill().infer_objects(copy=False)
             else:
                 # For any other types, use -1
-                X_[col] = X_[col].fillna(-1)
+                X_[col] = X_[col].fillna(-1).infer_objects(copy=False)
 
         return X_
   
