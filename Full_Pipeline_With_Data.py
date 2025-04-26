@@ -1,5 +1,6 @@
 # Full_Pipeline_With_Data.py
 import pandas as pd
+import numpy as np
 from sklearn.pipeline import Pipeline
 import yfinance as yf
 import os
@@ -42,9 +43,9 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         start_time = time.time()
         # TODO -> comment and uncomment if using the machine
         # Shir's Path G:\My Drive\Investment portfolio management system\code_results\results\predictions
-        drive_path = r"G:\My Drive\Investment portfolio management system\code_results\results\predictions/"
+        #drive_path = r"G:\My Drive\Investment portfolio management system\code_results\results\predictions/"
         # # machine's Path
-        # drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/"
+        drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/"
         
         # Create date folder inside Google Drive path
         drive_date_folder = os.path.join(drive_path, current_date)
@@ -100,10 +101,10 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         X_test = X.iloc[split_idx:]
         Y_test = Y.iloc[split_idx:]
         
-        # log_data_stats(logger, X_train_val, f"{ticker_symbol} X_train_val", include_stats=False)
-        # log_data_stats(logger, Y_train_val, f"{ticker_symbol} Y_train_val", include_stats=True)
-        # log_data_stats(logger, X_test, f"{ticker_symbol} X_test", include_stats=False)
-        # log_data_stats(logger, Y_test, f"{ticker_symbol} Y_test", include_stats=True)
+    #     # log_data_stats(logger, X_train_val, f"{ticker_symbol} X_train_val", include_stats=False)
+    #     # log_data_stats(logger, Y_train_val, f"{ticker_symbol} Y_train_val", include_stats=True)
+    #     # log_data_stats(logger, X_test, f"{ticker_symbol} X_test", include_stats=False)
+    #     # log_data_stats(logger, Y_test, f"{ticker_symbol} Y_test", include_stats=True)
 
         # Feature selection
         # logger.info(f"\n{'-'*30}\nPerforming feature selection for {ticker_symbol}\n{'-'*30}")
@@ -167,17 +168,23 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
             df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
             df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_results.csv"))
 
+            # Find best prediction and get its length
             best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
             best_prediction = ensemble_results[best_method]['prediction']
+            prediction_length = len(best_prediction)  # Get actual prediction length
 
+            # Use the same index as X_test but only up to the prediction length
+            results_index = X_test.index[:prediction_length]
+
+            # Create the DataFrame with all aligned data - trimming all data to match prediction length
             results_df = pd.DataFrame({
                 'Ticker': ticker_symbol,
-                'Close': X_test.Close,
-                'Buy': X_test.Buy,
-                'Sell': X_test.Sell,
-                'Actual_Sharpe': Y_test,
+                'Close': X_test.Close.iloc[:prediction_length],
+                'Buy': X_test.Buy.iloc[:prediction_length],
+                'Sell': X_test.Sell.iloc[:prediction_length],
+                'Actual_Sharpe': Y_test.iloc[:prediction_length],
                 'Best_Prediction': best_prediction
-            })
+            }, index=results_index)
 
         #     log_data_stats(logger, results_df, f"{ticker_symbol} final results", log_head=True)
             
@@ -186,12 +193,24 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
             logger.info(f"Saved results for {ticker_symbol} to Google Drive dated folder")
             
             # Verify final prediction scale
-            verify_prediction_scale(logger, Y_test, best_prediction, f"{ticker_symbol} best ensemble method")
-            
+            verify_prediction_scale(logger, Y_test.iloc[:prediction_length], best_prediction, f"{ticker_symbol} best ensemble method")
+
+
         except Exception as e:
             logger.error(f"Error saving results to Google Drive: {e}")
-            results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensemble_prediction_results.csv"))
-        
+            logger.error(f"Exception details: {str(e)}")
+
+            # Added fallback saving option for emergencies
+            try:
+                # Try with a simpler approach if the dataframe creation failed
+
+                np.savetxt(os.path.join(current_date, f"{ticker_symbol}_best_prediction.csv"),
+                           best_prediction, delimiter=",", header="Prediction")
+                results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensemble_prediction_results.csv"))
+                logger.info(f"Saved simplified prediction to local folder")
+            except Exception as e2:
+                logger.error(f"Even simple saving failed: {e2}")
+                
         end_time = time.time()
         logger.info(f"\n{'='*50}")
         logger.info(f"COMPLETED PIPELINE FOR TICKER {ticker_symbol} in {end_time - start_time:.2f} seconds")
@@ -223,7 +242,7 @@ def run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers.
     logger.info(f"Starting stock prediction pipeline with data from {start_date} to {end_date}")
     
     # Load tickers
-    valid_tickers = load_valid_tickers(tickers_file)
+    valid_tickers = load_valid_tickers(logger, tickers_file)
     
     if not valid_tickers:
         logger.error("No valid tickers to process. Exiting.")
@@ -243,7 +262,7 @@ def run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers.
         logger.info(f"\nProcessing ticker {i+1}/{len(valid_tickers)}: {ticker}")
         
         try:
-            success = full_pipeline_for_single_stock(ticker, start_date, end_date)
+            success = full_pipeline_for_single_stock(logger, date_folder, current_date, ticker, start_date, end_date)
             
             if success:
                 logger.info(f"Successfully processed {ticker}")
