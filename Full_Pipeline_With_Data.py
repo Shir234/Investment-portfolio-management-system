@@ -44,9 +44,9 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         start_time = time.time()
         # TODO -> comment and uncomment if using the machine
         # Shir's Path G:\My Drive\Investment portfolio management system\code_results\results\predictions
-        # drive_path = r"G:\My Drive\Investment portfolio management system\code_results\results\predictions/"
-        # machine's Path
-        drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/"
+        drive_path = r"G:\My Drive\Investment portfolio management system\code_results\results\predictions/"
+        # # machine's Path
+        # drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/"
         
         # Create date folder inside Google Drive path
         drive_date_folder = os.path.join(drive_path, current_date)
@@ -116,8 +116,7 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         logger.info(f"\n{'-'*30}\nPerforming feature selection for {ticker_symbol}\n{'-'*30}")
         importance_df = analyze_feature_importance(X_train_val, Y_train_val)
         logger.info(f"Top 10 features by importance:\n{importance_df.head(10)}")
-
-        # Evaluate different feature sets
+        # Evaluate different feature sets including PCA
         feature_results = evaluate_feature_sets(X_train_val, Y_train_val)
         logger.info("\nFeature Selection Method Comparison:")
         logger.info(f"{feature_results['average_results'][['Feature_Method', 'Num_Features', 'RMSE', 'R2']]}")
@@ -125,18 +124,46 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         # Select best feature set based on results
         best_method = feature_results['best_method']
         best_features = feature_results['best_features']
-        logger.info(f"\nBest feature set: {best_method} with {len(best_features)} features")
-        logger.info(f"Selected features: {best_features[:10]}{'...' if len(best_features) > 10 else ''}")
-
-        # Use these features for model training
-        X_train_val_selected = X_train_val[best_features]
-        X_test_selected = X_test[best_features]
+        # Handle PCA differently than other feature selection methods
+        is_pca = best_method == 'PCA 95%'
+        #########################################################
+        if is_pca:
+            logger.info(f"\nBest feature set: {best_method} with {best_features['components_selected']} components")
+            
+            # For PCA, we need to transform the data
+            pca = best_features['pca']
+            scaler = best_features['scaler']
+            
+            # Transform training data
+            X_train_val_scaled = scaler.transform(X_train_val)
+            X_train_val_selected = pca.transform(X_train_val_scaled)
+            
+            # Transform test data
+            X_test_scaled = scaler.transform(X_test)
+            X_test_selected = pca.transform(X_test_scaled)
+            
+            # Log explained variance
+            logger.info(f"PCA explained variance ratio: {best_features['explained_variance_ratio']}")
+            logger.info(f"PCA cumulative variance: {best_features['cumulative_variance_ratio']}")
+            
+            # Create dataframes with component names for easier tracking
+            component_names = [f'PC{i+1}' for i in range(best_features['components_selected'])]
+            X_train_val_selected = pd.DataFrame(X_train_val_selected, index=X_train_val.index, columns=component_names)
+            X_test_selected = pd.DataFrame(X_test_selected, index=X_test.index, columns=component_names)
+        else:
+            logger.info(f"\nBest feature set: {best_method} with {len(best_features)} features")
+            logger.info(f"Selected features: {best_features[:10]}{'...' if len(best_features) > 10 else ''}")
+            
+            # Use these features for model training
+            X_train_val_selected = X_train_val[best_features]
+            X_test_selected = X_test[best_features]
+        #########################################################
 
         # Validate feature consistency
         logger.info(f"\n{'-'*30}\nValidating feature consistency\n{'-'*30}")
-        validate_feature_consistency(X_train_val, X_train_val_selected, best_features)
-        validate_feature_consistency(X_test, X_test_selected, best_features)
-        
+        validate_feature_consistency(X_train_val, X_train_val_selected, best_features, is_pca=is_pca)
+        validate_feature_consistency(X_test, X_test_selected, best_features, is_pca=is_pca)
+
         log_data_stats(logger, X_train_val_selected, f"{ticker_symbol} X_train_val_selected", include_stats=False)
         log_data_stats(logger, X_test_selected, f"{ticker_symbol} X_test_selected", include_stats=False)
 
@@ -147,47 +174,47 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         target_scaler = train_results['target_scaler']
         feature_scaler = train_results['feature_scaler']
 
-        # Ensemble prediction
-        logger.info(f"\n{'-'*30}\nRunning ensemble methods for {ticker_symbol}\n{'-'*30}")
-        ensemble_results = ensemble_pipeline(logger, model_results, X_train_val_selected, X_test_selected, Y_train_val, Y_test, target_scaler, feature_scaler)
+        # # Ensemble prediction
+        # logger.info(f"\n{'-'*30}\nRunning ensemble methods for {ticker_symbol}\n{'-'*30}")
+        # ensemble_results = ensemble_pipeline(logger, model_results, X_train_val_selected, X_test_selected, Y_train_val, Y_test, target_scaler, feature_scaler)
 
-        # Save results
-        try:
-            logger.info(f"\n{'-'*30}\nSaving results for {ticker_symbol}\n{'-'*30}")
-            df = pd.DataFrame.from_dict(ensemble_results, orient='index')
-            df.index.name = 'Method Name'
-            df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
-            df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_results.csv"))
+        # # Save results
+        # try:
+        #     logger.info(f"\n{'-'*30}\nSaving results for {ticker_symbol}\n{'-'*30}")
+        #     df = pd.DataFrame.from_dict(ensemble_results, orient='index')
+        #     df.index.name = 'Method Name'
+        #     df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
+        #     df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_results.csv"))
 
-            best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
-            best_prediction = ensemble_results[best_method]['prediction']
+        #     best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
+        #     best_prediction = ensemble_results[best_method]['prediction']
 
-            results_df = pd.DataFrame({
-                'Ticker': ticker_symbol,
-                'Close': X_test.Close,
-                'Buy': X_test.Buy,
-                'Sell': X_test.Sell,
-                'Actual_Sharpe': Y_test,
-                'Best_Prediction': best_prediction
-            })
+        #     results_df = pd.DataFrame({
+        #         'Ticker': ticker_symbol,
+        #         'Close': X_test.Close,
+        #         'Buy': X_test.Buy,
+        #         'Sell': X_test.Sell,
+        #         'Actual_Sharpe': Y_test,
+        #         'Best_Prediction': best_prediction
+        #     })
 
-            log_data_stats(logger, results_df, f"{ticker_symbol} final results", log_head=True)
+        #     log_data_stats(logger, results_df, f"{ticker_symbol} final results", log_head=True)
             
-            results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensemble_prediction_results.csv')
-            results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensemble_prediction_results.csv"))
-            logger.info(f"Saved results for {ticker_symbol} to Google Drive dated folder")
+        #     results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensemble_prediction_results.csv')
+        #     results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensemble_prediction_results.csv"))
+        #     logger.info(f"Saved results for {ticker_symbol} to Google Drive dated folder")
             
-            # Verify final prediction scale
-            verify_prediction_scale(logger, Y_test, best_prediction, f"{ticker_symbol} best ensemble method")
+        #     # Verify final prediction scale
+        #     verify_prediction_scale(logger, Y_test, best_prediction, f"{ticker_symbol} best ensemble method")
             
-        except Exception as e:
-            logger.error(f"Error saving results to Google Drive: {e}")
-            results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensemble_prediction_results.csv"))
+        # except Exception as e:
+        #     logger.error(f"Error saving results to Google Drive: {e}")
+        #     results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensemble_prediction_results.csv"))
         
-        end_time = time.time()
-        logger.info(f"\n{'='*50}")
-        logger.info(f"COMPLETED PIPELINE FOR TICKER {ticker_symbol} in {end_time - start_time:.2f} seconds")
-        logger.info(f"{'='*50}")
+        # end_time = time.time()
+        # logger.info(f"\n{'='*50}")
+        # logger.info(f"COMPLETED PIPELINE FOR TICKER {ticker_symbol} in {end_time - start_time:.2f} seconds")
+        # logger.info(f"{'='*50}")
         
         return True
         
