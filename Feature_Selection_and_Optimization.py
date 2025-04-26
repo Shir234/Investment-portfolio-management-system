@@ -19,7 +19,7 @@ This set of functions helps determine which features are most important for pred
 (Sharpe transaction values) and selects optimal feature subsets to improve model performance.
 """
 
-def select_features_with_pca(X_train, n_components=None, variance_threshold=0.95):
+def select_features_with_pca(X_train, n_components=None, variance_threshold=0.90):
     """
     Select features using Principal Component Analysis (PCA).
     
@@ -38,6 +38,7 @@ def select_features_with_pca(X_train, n_components=None, variance_threshold=0.95
         - 'explained_variance_ratio': Explained variance ratio for each component
         - 'cumulative_variance_ratio': Cumulative explained variance ratio
     """
+    
     # Scale the features (PCA is sensitive to feature scaling)
     scaler = RobustScaler()
     X_train_scaled = scaler.fit_transform(X_train)
@@ -104,6 +105,46 @@ def plot_pca_explained_variance(pca_result):
     
     plt.tight_layout()
     plt.savefig('pca_explained_variance.png')
+    plt.close()
+
+def plot_pca_component_contributions(pca_result, X_train, top_n_features=10):
+    """
+    Plot the contribution of original features to principal components.
+    
+    Parameters:
+    -----------
+    pca_result : dict, Output from select_features_with_pca function
+    X_train : DataFrame, Original training features to get feature names
+    top_n_features : int, Number of top contributing features to display
+    """
+    pca = pca_result['pca']
+    components = pca.components_
+    feature_names = X_train.columns
+    
+    plt.figure(figsize=(15, 10))
+    
+    # Plot for top components
+    num_components_to_plot = min(3, pca_result['components_selected'])
+    
+    for i in range(num_components_to_plot):
+        plt.subplot(num_components_to_plot, 1, i+1)
+        
+        # Get absolute component values for ranking
+        abs_components = np.abs(components[i])
+        
+        # Get indices of top contributing features
+        indices = np.argsort(abs_components)[-top_n_features:]
+        
+        # Create horizontal bar chart
+        plt.barh(range(top_n_features), abs_components[indices], color='skyblue')
+        plt.yticks(range(top_n_features), [feature_names[j] for j in indices])
+        plt.xlabel('Absolute Contribution')
+        plt.title(f'Top {top_n_features} Features Contributing to Principal Component {i+1}')
+        plt.tight_layout()
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.suptitle('Feature Contributions to Top Principal Components', fontsize=16)
+    plt.savefig('pca_feature_contributions.png')
     plt.close()
 
 def analyze_feature_importance(X_train, Y_train, model_type='xgboost'):
@@ -272,9 +313,10 @@ def select_best_features(X_train, Y_train, threshold=0.8, method='importance'):
         # PCA-based feature selection
         pca_results = select_features_with_pca(X_train, variance_threshold=threshold)
         selected_features = pca_results  # Return the PCA results dictionary
-        
         # Plot PCA explained variance
         plot_pca_explained_variance(pca_results)
+        # Plot feature contributions to components
+        plot_pca_component_contributions(pca_results, X_train, top_n_features=10)
 
 
 
@@ -284,22 +326,25 @@ def select_best_features(X_train, Y_train, threshold=0.8, method='importance'):
 def evaluate_feature_sets(X_train, Y_train):
     """
     Compare performance of different feature selection methods using multiple model types.
+    With emphasis on PCA for maximizing prediction accuracy.
+    
     Parameters:
     -----------
     X_train : DataFrame, Training features
     Y_train : Series, Target variable
         
     Returns:
+    --------
     Dictionary containing detailed results and best feature information
     """
     
     # Define feature selection methods
     methods = {
-        'All Features': X_train.columns.tolist(),
-        'XGBoost Top 80%': select_best_features(X_train, Y_train, threshold=0.8, method='importance'),
-        'RFECV': select_best_features(X_train, Y_train, method='rfecv'),
-        'Lasso': select_best_features(X_train, Y_train, method='lasso'),
-        'PCA 95%': select_best_features(X_train, Y_train, threshold=0.95, method='pca')
+        #'All Features': X_train.columns.tolist(),
+        'PCA 85%': select_best_features(X_train, Y_train, threshold=0.85, method='pca'),
+        'PCA 90%': select_best_features(X_train, Y_train, threshold=0.90, method='pca'),
+        'PCA 95%': select_best_features(X_train, Y_train, threshold=0.95, method='pca'),
+        'PCA 97%': select_best_features(X_train, Y_train, threshold=0.97, method='pca')
     }
 
     # Define different model types to evaluate feature sets
@@ -316,10 +361,14 @@ def evaluate_feature_sets(X_train, Y_train):
 
     # Evaluate each feature set with each model type
     for method_name, features in methods.items():
-        print(f"Evaluating feature set: {method_name} with {len(features)} features")
+        if method_name == 'All Features':
+            print(f"Evaluating feature set: {method_name} with {len(features)} features")
+        else:
+            print(f"Evaluating feature set: {method_name}")
+        
 
-        # Handle PCA differently
-        if method_name == 'PCA 95%':
+        # Handle PCA methods
+        if 'PCA' in method_name:
             print(f"Using PCA with {features['components_selected']} components")
             pca_obj = features['pca']
             scaler = features['scaler']
