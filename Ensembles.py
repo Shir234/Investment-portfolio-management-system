@@ -13,9 +13,11 @@ from Logging_and_Validation import log_data_stats, verify_prediction_scale
 # ===============================================================================
 # Ensembles
 # ===============================================================================
-def prepare_lstm_data(X, time_steps=1, features=None):
+def prepare_lstm_data(X, time_steps=5, features=None):
     """
-    Prepare data for LSTM by reshaping it to fit the expected 3D shape.
+    Prepare data for LSTM by creating sequences of time_steps.
+    For PCA-transformed data, this reshapes it into the proper 3D format.
+
     Parameters:
     - X: Input data, can be 1D, 2D, or already 3D.
     - time_steps: Number of time steps in the sequence. Default is 1 for non-time series data.
@@ -24,25 +26,21 @@ def prepare_lstm_data(X, time_steps=1, features=None):
     Returns:
     - Reshaped data with shape (samples, time_steps, features)
     """
+
     # Convert DataFrame to NumPy array if necessary
     if hasattr(X, 'values'):
         X = X.values
-
-    if len(X.shape) == 1:
-        if features is None:
-            features = 1  # Assuming single feature if not specified
-        X = X.reshape(-1, time_steps, features)
-    elif len(X.shape) == 2:
-        samples, cols = X.shape
-        if features is None:
-            features = cols  # All columns are considered as features if not specified
-        if cols % time_steps != 0:
-            raise ValueError(f"Number of columns ({cols}) must be evenly divisible by time_steps ({time_steps})")
-        X = X.reshape(samples, cols // features, features)
-    else:
-        raise ValueError(f"Input data must be 1D or 2D. Got {len(X.shape)}D data.")
-
-    return X
+    
+    # Check if we have enough samples for the time steps
+    if len(X) < time_steps:
+        raise ValueError(f"Not enough samples ({len(X)}) for the requested time steps ({time_steps})")
+    
+    # Create rolling window data
+    X_rolled = []
+    for i in range(len(X) - time_steps + 1):
+        X_rolled.append(X[i:i + time_steps])
+    
+    return np.array(X_rolled)
 
 # Linearly Weighted Ensemble
 def linearly_weighted_ensemble(models_results, X_test, target_scaler, feature_scaler):
@@ -55,31 +53,34 @@ def linearly_weighted_ensemble(models_results, X_test, target_scaler, feature_sc
     Returns:
     - Final ensemble prediction
     """
+    
     # Convert DataFrame to NumPy array if necessary
     # scaler = StandardScaler()
     # X_test = scaler.fit_transform(X_test)
 
-    # Scale using the passed scaler
-    X_test_scaled = feature_scaler.transform(X_test)
-    if hasattr(X_test, 'values'):
-        X_test = X_test.values
-
+    # Convert DataFrame to NumPy array if necessary - NO ADDITIONAL SCALING
+    X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
+    
     mae_values = []
-    model_predictions = []
+    model_predictions = [] 
 
     # Calculate Mean Absolute Error (MAE) for each model
     for model_name, result in models_results.items():
+        if 'best_model' not in result or result['best_model'] is None:
+            continue
+
+
         mae_value = np.mean(np.abs(result['best_model_prediction'] - result['Y_val_best']))
         mae_values.append(mae_value)
 
         # Prepare predictions based on model type
         if model_name.strip() == 'LSTM':
             # Reshape for LSTM
-            X_test_lstm = prepare_lstm_data(X_test_scaled, time_steps=1)
+            X_test_lstm = prepare_lstm_data(X_test_array, time_steps=5)
             model_pred = result['best_model'].predict(X_test_lstm)
         else:
             # For other models
-            model_pred = result['best_model'].predict(X_test_scaled)
+            model_pred = result['best_model'].predict(X_test_array)
 
         # Ensure 1D prediction
         model_predictions.append(model_pred.reshape(-1))
@@ -89,7 +90,7 @@ def linearly_weighted_ensemble(models_results, X_test, target_scaler, feature_sc
     weights = np.array(weights) / np.sum(weights)
 
     # Compute the final ensemble prediction
-    final_prediction = np.zeros(X_test.shape[0], dtype=np.float64)
+    final_prediction = np.zeros(len(X_test_array), dtype=np.float64)
 
     # Apply weighted predictions
     for pred, weight in zip(model_predictions, weights):
@@ -111,29 +112,27 @@ def equal_weighted_ensemble(models_results, X_test, target_scaler, feature_scale
     Returns:
     - Final ensemble prediction
     """
-    # Convert DataFrame to NumPy array if necessary
-    if isinstance(X_test, pd.DataFrame) or isinstance(X_test, pd.Series):
-        X_test = X_test.values
-
-    # scaler = StandardScaler()
-    # X_test = scaler.fit_transform(X_test)
-    X_test_scaled = feature_scaler.transform(X_test)
+    
+    # Convert DataFrame to NumPy array if necessary - NO ADDITIONAL SCALING
+    X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
 
     model_predictions = []
-
+    
     # Prepare predictions based on model type
     for model_name, result in models_results.items():
-        if 'best_model' in result:
-            if model_name.strip() == 'LSTM':
-                # Reshape for LSTM
-                X_test_lstm = prepare_lstm_data(X_test_scaled, time_steps=1)
-                model_pred = result['best_model'].predict(X_test_lstm)
-            else:
-                # For other models
-                model_pred = result['best_model'].predict(X_test_scaled)
+        if 'best_model' not in result or result['best_model'] is None:
+            continue
 
-            # Ensure 1D prediction
-            model_predictions.append(model_pred.reshape(-1))
+        if model_name.strip() == 'LSTM':
+            # Reshape for LSTM, using data directly
+            X_test_lstm = prepare_lstm_data(X_test_array, time_steps=5)  # Use time_steps=5 to match training
+            model_pred = result['best_model'].predict(X_test_lstm)
+        else:
+            # For other models, use data directly
+            model_pred = result['best_model'].predict(X_test_array)
+
+        # Ensure 1D prediction
+        model_predictions.append(model_pred.reshape(-1))
 
     if not model_predictions:
         raise ValueError("No predictions available for ensemble methods")
@@ -142,7 +141,7 @@ def equal_weighted_ensemble(models_results, X_test, target_scaler, feature_scale
     weight = 1.0 / len(model_predictions)
 
     # Compute the final ensemble prediction
-    final_prediction = np.zeros(X_test.shape[0], dtype=np.float64)
+    final_prediction = np.zeros(len(X_test_array), dtype=np.float64)
 
     # Apply weighted predictions
     for pred in model_predictions:
@@ -168,14 +167,13 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, featu
     - GBDT ensemble prediction for test data.
     """
 
-    # Scale the data using the provided global scalers
-    X_train_scaled = feature_scaler.transform(X_train)
-    X_test_scaled = feature_scaler.transform(X_test)  # Use transform here, not fit_transform
+    # Convert to arrays without scaling - data is already PCA-transformed
+    X_train_array = X_train.values if hasattr(X_train, 'values') else X_train
+    X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
 
     # Split training data into training and validation sets to prevent leakage
-    # using a 80/20 split
     X_meta_train, X_meta_val, Y_meta_train, Y_meta_val = train_test_split(
-        X_train_scaled, Y_train, test_size=0.2, random_state=42, shuffle=False
+        X_train_array, Y_train, test_size=0.2, random_state=42, shuffle=False
     )
 
     # Generate meta-features for both sets
@@ -184,14 +182,17 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, featu
     test_meta_features = []
 
     for model_name, result in models_results.items():
+        if 'best_model' not in result or result['best_model'] is None:
+            continue
+
         model = result['best_model']
 
         # Generate predictions for all three sets
         if model_name.strip() == 'LSTM':
             # Reshape for LSTM
-            X_meta_train_lstm = prepare_lstm_data(X_meta_train, time_steps=1)
-            X_meta_val_lstm = prepare_lstm_data(X_meta_val, time_steps=1)
-            X_test_lstm = prepare_lstm_data(X_test_scaled, time_steps=1)
+            X_meta_train_lstm = prepare_lstm_data(X_meta_train, time_steps=5)
+            X_meta_val_lstm = prepare_lstm_data(X_meta_val, time_steps=5)
+            X_test_lstm = prepare_lstm_data(X_test_array, time_steps=5)
             
             train_pred = model.predict(X_meta_train_lstm)
             val_pred = model.predict(X_meta_val_lstm)
@@ -199,7 +200,7 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, featu
         else:
             train_pred = model.predict(X_meta_train)
             val_pred = model.predict(X_meta_val)
-            test_pred = model.predict(X_test_scaled)
+            test_pred = model.predict(X_test_array)
         
         # Store predictions for each set
         train_meta_features.append(train_pred.reshape(-1))
@@ -212,22 +213,12 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, featu
     X_test_meta = np.column_stack(test_meta_features)
 
     # Train GBDT on meta-features
-    # gb_model = GradientBoostingRegressor(
-    #     n_estimators=200,
-    #     learning_rate=0.05,
-    #     max_depth=5,
-    #     min_samples_split=10,
-    #     min_samples_leaf=5,
-    #     subsample=0.8,
-    #     random_state=42
-    # )
-    #TODO -> grok change
     gb_model = GradientBoostingRegressor(
         n_estimators=100, 
         learning_rate=0.01, 
         max_depth=3, 
         random_state=42
-     )
+    )
 
     # Fit on training meta-features
     gb_model.fit(X_meta_train_stacked, Y_meta_train)
@@ -239,6 +230,7 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, featu
 
    # Predict on test meta-features
     final_prediction = gb_model.predict(X_test_meta)
+
     # Inverse transform to get back to original scale
     final_prediction = target_scaler.inverse_transform(final_prediction.reshape(-1, 1)).flatten()
     
@@ -276,7 +268,7 @@ def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, 
             logger.info(f"  {model_name}: Model NOT available")
 
     # Test target scaler to confirm it works properly
-    logger.info("\nValidating scalers:")
+    logger.info("\nValidating target scaler:")
     y_sample = Y_test.iloc[:3].values.reshape(-1, 1)
     y_scaled = target_scaler.transform(y_sample)
     y_restored = target_scaler.inverse_transform(y_scaled)
@@ -284,20 +276,18 @@ def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, 
     logger.info(f"  Scaled Y values: {y_scaled.flatten()}")
     logger.info(f"  Restored Y values: {y_restored.flatten()}")
 
-
-    # Create wrapper functions that always use the same scalers
     def linearly_weighted_wrapper(results, x_test):
         logger.info("Running linearly weighted ensemble...")
-        return linearly_weighted_ensemble(results, x_test, target_scaler, feature_scaler)
-    
+        return linearly_weighted_ensemble(results, x_test, target_scaler, None)  # Pass None for feature_scaler
+
     def equal_weighted_wrapper(results, x_test):
         logger.info("Running equal weighted ensemble...")
-        return equal_weighted_ensemble(results, x_test, target_scaler, feature_scaler)
-    
+        return equal_weighted_ensemble(results, x_test, target_scaler, None)  # Pass None for feature_scaler
+
     def gbdt_wrapper(results, x_test):
         logger.info("Running GBDT ensemble...")
-        return gbdt_ensemble(results, X_train, x_test, Y_train, target_scaler, feature_scaler)
-    
+        return gbdt_ensemble(results, X_train, x_test, Y_train, target_scaler, None)  # Pass None for feature_scaler
+        
     
     # Define the ensemble methods with consistent wrapper functions
     ensemble_methods = {

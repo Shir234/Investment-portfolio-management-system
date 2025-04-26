@@ -11,8 +11,8 @@ from lightgbm import LGBMRegressor
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from scipy.stats import uniform, randint
 from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 from tensorflow.keras.optimizers import Adam
 
 from Logging_and_Validation import log_data_stats, verify_prediction_scale
@@ -59,35 +59,35 @@ def create_models():
             #     'epsilon': uniform(0.01, 0.1),  # Range from 0.01 to 0.11
             #     'gamma': ['scale', 'auto'] + list(uniform(0.01, 0.5).rvs(3))  # Mix of fixed and random values
             # }),
-            # 'XGBoost': (XGBRegressor(random_state=42), {
-            #     'n_estimators': randint(100, 300),  # Range from 100 to 300
-            #     'max_depth': randint(3, 10),  # Range from 3 to 9
-            #     'learning_rate': uniform(0.01, 0.1),  # Range from 0.01 to 0.11
-            #     'subsample': uniform(0.7, 0.3),  # Range from 0.7 to 1.0
-            #     'colsample_bytree': uniform(0.7, 0.3)  # Range from 0.7 to 1.0
-            # }),
-            # 'LightGBM': (LGBMRegressor(random_state=42, verbose=-1), {
-            #     'n_estimators': randint(100, 300),
-            #     'max_depth': randint(3, 8),
-            #     'learning_rate': uniform(0.01, 0.1),
-            #     'subsample': uniform(0.7, 0.3),
-            #     'colsample_bytree': uniform(0.7, 0.3),
-            #     'force_row_wise': [True]
-            # }),
-            # 'RandomForest': (RandomForestRegressor(random_state=42), {
-            #     'n_estimators': randint(100, 300),
-            #     'max_depth': randint(3, 8),
-            #     'min_samples_split': randint(2, 11),
-            #     'min_samples_leaf': randint(1, 5),
-            #     'max_features': ['sqrt', 0.5]
-            # }),
-            # 'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
-            #     'n_estimators': randint(100, 300),
-            #     'max_depth': randint(3, 6),
-            #     'learning_rate': uniform(0.01, 0.1),
-            #     'subsample': uniform(0.7, 0.3),
-            #     'min_samples_split': randint(5, 15)
-            # }),
+            'XGBoost': (XGBRegressor(random_state=42), {
+                'n_estimators': randint(100, 300),  # Range from 100 to 300
+                'max_depth': randint(3, 10),  # Range from 3 to 9
+                'learning_rate': uniform(0.01, 0.1),  # Range from 0.01 to 0.11
+                'subsample': uniform(0.7, 0.3),  # Range from 0.7 to 1.0
+                'colsample_bytree': uniform(0.7, 0.3)  # Range from 0.7 to 1.0
+            }),
+            'LightGBM': (LGBMRegressor(random_state=42, verbose=-1), {
+                'n_estimators': randint(100, 300),
+                'max_depth': randint(3, 8),
+                'learning_rate': uniform(0.01, 0.1),
+                'subsample': uniform(0.7, 0.3),
+                'colsample_bytree': uniform(0.7, 0.3),
+                'force_row_wise': [True]
+            }),
+            'RandomForest': (RandomForestRegressor(random_state=42), {
+                'n_estimators': randint(100, 300),
+                'max_depth': randint(3, 8),
+                'min_samples_split': randint(2, 11),
+                'min_samples_leaf': randint(1, 5),
+                'max_features': ['sqrt', 0.5]
+            }),
+            'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
+                'n_estimators': randint(100, 300),
+                'max_depth': randint(3, 6),
+                'learning_rate': uniform(0.01, 0.1),
+                'subsample': uniform(0.7, 0.3),
+                'min_samples_split': randint(5, 15)
+            }),
             'LSTM': (None, {})
         }
         return models
@@ -423,11 +423,18 @@ def train_lstm_model(X_train, y_train, X_val, y_val, params):
 
         # Create and compile model
         feature_dim = X_train.shape[1]
-        model = Sequential([
-            LSTM(units, activation='relu', input_shape=(time_steps, feature_dim), return_sequences=False),
-            Dropout(dropout_rate),
-            Dense(1)
-        ])
+        # model = Sequential([
+        #     LSTM(units, activation='relu', input_shape=(time_steps, feature_dim), return_sequences=False),
+        #     Dropout(dropout_rate),
+        #     Dense(1)
+        # ])
+
+        inputs = Input(shape=(time_steps, feature_dim))
+        lstm_layer = LSTM(units, activation='relu', return_sequences=False)(inputs)
+        dropout_layer = Dropout(dropout_rate)(lstm_layer)
+        outputs = Dense(1)(dropout_layer)
+        model = Model(inputs=inputs, outputs=outputs)
+
         model.compile(optimizer=Adam(learning_rate=learning_rate), loss='mse')
 
         early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
@@ -633,15 +640,22 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
                 features_count = X_train_val_scaled.shape[1]
                 dropout_rate = final_best_params.get('dropout', 0.2)
 
-                final_model = Sequential([
-                    LSTM(final_best_params['units'], 
-                         activation='relu', 
-                         input_shape=(time_steps, features_count), 
-                         return_sequences=False),
-                    Dropout(dropout_rate),
-                    Dense(1)
-                ])
-                
+                # final_model = Sequential([
+                #     LSTM(final_best_params['units'], 
+                #          activation='relu', 
+                #          input_shape=(time_steps, features_count), 
+                #          return_sequences=False),
+                #     Dropout(dropout_rate),
+                #     Dense(1)
+                # ])
+                inputs = Input(shape=(time_steps, features_count))
+                lstm_layer = LSTM(final_best_params['units'], 
+                                  activation='relu', 
+                                  return_sequences=False)(inputs)
+                dropout_layer = Dropout(dropout_rate)(lstm_layer)
+                outputs = Dense(1)(dropout_layer)
+                final_model = Model(inputs=inputs, outputs=outputs)
+
                 final_model.compile(
                     optimizer=Adam(learning_rate=final_best_params['learning_rate']), 
                     loss='mse'
