@@ -114,10 +114,6 @@ def main():
     # Apply dark mode
     set_dark_mode(app)
     
-    # Show splash screen
-    splash = SplashScreen()
-    splash.show()
-    
     # Prompt user to select the CSV file
     csv_path, _ = QFileDialog.getOpenFileName(None, "Select CSV File", "", "CSV Files (*.csv)")
     if not csv_path:
@@ -126,6 +122,10 @@ def main():
     
     # Load data with the selected file
     data_manager = DataManager(csv_path=csv_path)
+    
+    # Show splash screen
+    splash = SplashScreen()
+    splash.show()
     
     # Initialize and show the main window
     window = MainWindow(data_manager)
