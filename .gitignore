@@ -9,13 +9,15 @@ venv.bak/
 *env*/
 .python-version
 
-# Result folder - will be preserved locally but not tracked by Git
+# Result folder - preserved locally, not tracked
 result/
 
-# Python bytecode
+# Python bytecode and CPython files
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+*.pyd
 
 # Distribution / packaging
 dist/

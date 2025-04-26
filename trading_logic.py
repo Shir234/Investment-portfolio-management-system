@@ -1,247 +1,199 @@
-"""
-1 merge the date
-2 get input from the user:
-    risk threshold in pct (0-100)
-    investment amount - how mush money we have to invest
-    trading window - investment period --> convert it to number of days
-3 convert the risk pct to sharpe threshold
-4 start trading algorithm
-"""
+import pandas as pd
+import logging
+from datetime import timedelta
+import json
+import os
 
-def map_risk_threshold_to_sharpe(threshold):
-    if threshold >= 80:
-        min_acceptable_sharpe = 0.2
-    elif threshold >= 60:
-        min_acceptable_sharpe = 0.5
-    elif threshold >= 40:
-        min_acceptable_sharpe = 1
-    elif threshold >= 20:
-        min_acceptable_sharpe = 1.5
-    else: 
-        min_acceptable_sharpe = 2
+# Set up logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-    return min_acceptable_sharpe
+orders = []
+portfolio_history = []
+portfolio_state_file = 'data/portfolio_state.json'
 
+def map_risk_threshold_to_sharpe(risk_level, merged_data):
+    """Map risk level (0-100) to buy/sell thresholds and holding period."""
+    risk_level = max(1, min(100, risk_level))
+    buy_threshold = 3.0 - (risk_level / 100) * 2.5  # Scales from 3.0 (conservative) to 0.5 (aggressive)
+    sell_threshold = -buy_threshold
+    min_holding_days = max(5, int(30 - (risk_level / 100) * 25))  # Scales from 30 to 5 days
+    logger.info(f"Risk level: {risk_level}, buy_threshold: {buy_threshold}, sell_threshold: {sell_threshold}, min_holding_days: {min_holding_days}")
+    return buy_threshold, sell_threshold, min_holding_days
 
-def close_positions(today_data, min_acceptable_sharpe, current_date, current_positions, orders, available_capital):
-    """
-    Close transactions based on threshold
-    - sell shares 
-    - update available capital
-    - return updated current_positions
-    """
-    positions_to_close = []
+def save_portfolio_state():
+    """Save orders and portfolio history to portfolio_state.json."""
+    state = {
+        'orders': orders,
+        'portfolio_history': portfolio_history
+    }
+    try:
+        with open(portfolio_state_file, 'w') as f:
+            json.dump(state, f, default=str)
+        logger.debug("Portfolio state saved successfully")
+    except Exception as e:
+        logger.error(f"Error saving portfolio state: {e}")
 
-    for ticker, position in current_positions.items():
-        # Get today's prediction for this ticker
-        ticker_today = today_data[today_data['ticker'] == ticker]
-        if ticker_today.empty:
-            continue # Skip
+def load_portfolio_state():
+    """Load orders and portfolio history from portfolio_state.json."""
+    global orders, portfolio_history
+    if os.path.exists(portfolio_state_file):
+        try:
+            with open(portfolio_state_file, 'r') as f:
+                state = json.load(f)
+            orders = state.get('orders', [])
+            portfolio_history = state.get('portfolio_history', [])
+            logger.debug("Portfolio state loaded successfully")
+        except Exception as e:
+            logger.error(f"Error loading portfolio state: {e}")
+            orders = []
+            portfolio_history = []
 
-        current_sharpe = ticker_today['Best_Prediction'].values[0]
-        position_type = position['position_type']
+def get_orders():
+    """Return a copy of the orders list."""
+    logger.debug(f"Returning orders: {len(orders)}")
+    return orders.copy()
 
-        # Evaluate if position should be closed
-        should_close = False
+def get_portfolio_history():
+    """Return a copy of the portfolio history list."""
+    logger.debug(f"Returning portfolio history: {len(portfolio_history)}")
+    return portfolio_history.copy()
 
-        # Close if Sharpe drops below threshold
-        if position_type == 'LONG' and current_sharpe < min_acceptable_sharpe:
-            should_close = True
-        elif position_type == 'SHORT' and current_sharpe > -min_acceptable_sharpe:
-            should_close = True
+def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, data_manager, mode="automatic", reset_state=False):
+    """Execute the trading strategy over the specified date range."""
+    logger.debug("Starting run_trading_strategy")
+    global orders, portfolio_history
+    
+    try:
+        # Reset state if requested
+        if reset_state:
+            logger.debug("Resetting portfolio state")
+            orders = []
+            portfolio_history = []
+            if os.path.exists(portfolio_state_file):
+                os.remove(portfolio_state_file)
         
-        if should_close:
-            positions_to_close.append(ticker)
-            close_price = ticker_today['Close'].values[0]
-            # Add to orders
-            orders.append({
-                'date': current_date,
-                'ticker': ticker,
-                'action': 'SELL' if position_type == 'LONG' else 'COVER',
-                'shares_amount': position['shares_amount'],
-                'price': close_price,
-                'reason': 'Below Sharpe threshold'
-            })
-
-    # Make the transaction: remove closed positions from current_positions
-    for ticker in positions_to_close:
-        # Get ticker data and price
-        ticker_today = today_data[today_data['ticker'] == ticker]
-        close_price = ticker_today['Close'].values(0)
-        # Calculate current value + profit / loss
-        current_value = current_positions[ticker]['shares_amount'] * close_price
-        profit_loss = current_value - current_positions[ticker]['investment_amount']
-        # Update available capital and remove from portfolio
-        available_capital += current_value
-        del current_positions[ticker]
-    
-    return current_positions, orders, available_capital
-
-
-def open_positions(today_data, min_acceptable_sharpe, current_date, current_positions, orders, daily_target, transaction_cost_pct, available_capital):
-    """
-    Open transactions based on threshold
-    - buy shares 
-    - update available capital
-    - return updated current_positions
-    """
-
-    # Filter for acceptable trades today
-    potential_trades = today_data[abs(today_data['Best_Prediction'] >= min_acceptable_sharpe)]
-
-    if not potential_trades.empty:
-        # Calculate total potential sharpe strength 
-        total_sharpe_strength = sum(abs(potential_trades['Best_Prediction']))
-
-        # Distribute daily target based on sharpe strength 
-        for _, row in potential_trades.iterrows():
-            ticker = row['ticker']
-            current_sharpe = row['Best_Prediction']
-            position_type = "LONG" if current_sharpe > 0 else "SHORT"
-
-            # TODO - After results, maybe try different allocation ? 
-            # Calculate allocation based on Sharpe strength - how much money to invest
-            allocation = (abs(current_sharpe) / total_sharpe_strength) * daily_target
-            # Adjust for transaction costs - include tax
-            allocation_after_costs = allocation * (1 - transaction_cost_pct)
-
-            # Check if we have enough capital
-            if allocation_after_costs <=0 or allocation_after_costs > available_capital:
+        # Load existing state
+        load_portfolio_state()
+        
+        # Map risk level to thresholds
+        buy_threshold, sell_threshold, min_holding_days = map_risk_threshold_to_sharpe(risk_level, merged_data)
+        
+        # Initialize portfolio
+        current_date = start_date
+        portfolio_value = investment_amount
+        holdings = {}
+        
+        # Ensure dates are timezone-aware
+        merged_data['date'] = pd.to_datetime(merged_data['date'], utc=True)
+        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+        
+        for current_date in date_range:
+            current_date = current_date.replace(tzinfo=pd.Timestamp.utcnow().tz)
+            daily_data = merged_data[merged_data['date'].dt.date == current_date.date()]
+            
+            if daily_data.empty:
+                logger.debug(f"No data for {current_date.date()}")
+                portfolio_history.append({
+                    'date': current_date,
+                    'value': portfolio_value,
+                    'holdings': holdings.copy()
+                })
                 continue
-
-            entry_price = row['Close'] 
-            # Calculate number of shares to buy/short
-            shares_to_buy = allocation_after_costs / entry_price
-
-            # Check if the position exists
-            if ticker in current_positions and current_positions[ticker]['position_type'] == position_type:
-                # Get the existing data
-                existing_shares = current_positions[ticker]['shares_amount']
-                existing_investment = current_positions[ticker]['investment_amount']
-
-                # Calculate new position details
-                new_shares_total = existing_shares + shares_to_buy
-                new_investment_total = existing_investment + allocation_after_costs
-
-                # Calculate average entry price
-                old_entry_price = existing_investment / existing_shares if existing_shares > 0 else 0
-                avg_entry_price = ((old_entry_price * existing_shares) + (entry_price * shares_to_buy)) / new_shares_total
-
-                # Add to orders
-                orders.append({
-                    'date': current_date,
-                    'ticker': ticker,
-                    'action': 'ADD_TO_' + position_type,  # Special action to indicate adding to position
-                    'shares_amount': shares_to_buy,
-                    'price': entry_price,
-                    'investment_amount': allocation_after_costs,
-                    'previous_shares': existing_shares,
-                    'new_total_shares': new_shares_total,
-                    'sharpe': current_sharpe
-                })
-
-                # Update the existing position
-                current_positions[ticker]['shares_amount'] = new_shares_total
-                current_positions[ticker]['investment_amount'] = new_investment_total
-
-            else:
-                # Create new position
-                orders.append({
-                    'date': current_date,
-                    'ticker': ticker,
-                    'action': 'BUY' if position_type == 'LONG' else 'SHORT',
-                    'shares_amount': shares_to_buy,
-                    'price': entry_price,
-                    'investment_amount': allocation_after_costs,
-                    'sharpe': current_sharpe
-                })
-
-                # Add to current positions
-                current_positions[ticker] = {
-                    'entry_date': current_date,
-                    'shares_amount': shares_to_buy,
-                    'investment_amount': allocation_after_costs,
-                    'position_type': position_type
-                }
-
-            # Update available capital
-            available_capital -= allocation_after_costs
-
-    return current_positions, orders, available_capital
-
-
-def daily_trading_algorithm(merged_data, min_acceptable_sharpe, investment_amount,
-                            investment_period_days, current_date=None,
-                            current_positions=None, transaction_cost_pct=0.001):
-    """
-    Daily trading algorithm that decides which positions to enter or exit.
-    Parameters:
-    - merged_data: DataFrame with predictions for all tickers
-    - min_acceptable_sharpe: Minimum acceptable Sharpe ratio
-    - investment_amount: Total amount to invest
-    - investment_period_days: Period over which to invest all money
-    - current_date: Current trading date (defaults to earliest date in data)
-    - current_positions: Dictionary of current positions {ticker: {amount, entry_date, position_type, entry_price}}
-    - transaction_cost_pct: Cost of transaction as percentage (Trading fee percentage)
-    """
-
-    # Initialize variables
-    if current_positions is None:
-        current_positions = {}
-    # Set current date if not provided
-    if current_date is None:
-        current_date = merged_data['Date'].min()
-    # Get today's data
-    today_data = merged_data[merged_data['Date'] == current_date]
-
-    # Calculate available capital 
-    """
-    {ticker}
-    entry date -> day of opening position
-    shares_amount -> number of shares i own 
-    investment_amount -> amount of money invested in this stock
-    position_type -> LONG / SHORT
-    """
-    invested_capital = sum(position['investment_amount'] for position in current_positions.values())
-    available_capital = investment_amount - invested_capital
-
-    # Initialize orders list
-    orders = []
+            
+            # Buy signals
+            buy_signals = daily_data[daily_data['Best_Prediction'] >= buy_threshold]
+            logger.info(f"Day: {current_date.date()}, Buy signals: {len(buy_signals)}")
+            
+            if mode == "automatic" and not buy_signals.empty:
+                for _, row in buy_signals.iterrows():
+                    ticker = row['Ticker']
+                    price = row['Close']
+                    prediction = row['Best_Prediction']
+                    sharpe = row.get('Actual_Sharpe', 0.0)
+                    
+                    # Allocate 10% of initial investment per trade
+                    shares_to_buy = int((investment_amount * 0.1) / price)
+                    if shares_to_buy > 0:
+                        cost = shares_to_buy * price
+                        if cost <= portfolio_value:
+                            holdings[ticker] = holdings.get(ticker, {'shares': 0, 'purchase_date': None})
+                            holdings[ticker]['shares'] += shares_to_buy
+                            holdings[ticker]['purchase_date'] = current_date
+                            portfolio_value -= cost
+                            
+                            order = {
+                                'date': current_date,
+                                'ticker': ticker,
+                                'action': 'buy',
+                                'shares_amount': shares_to_buy,
+                                'price': price,
+                                'investment_amount': cost,
+                                'previous_shares': holdings[ticker]['shares'] - shares_to_buy,
+                                'new_total_shares': holdings[ticker]['shares'],
+                                'sharpe': sharpe
+                            }
+                            orders.append(order)
+                            logger.info(f"Buying {ticker} on {current_date.date()}: Best_Prediction = {prediction}, Shares = {shares_to_buy}, Price = {price}")
+            
+            # Sell signals
+            for ticker, holding in list(holdings.items()):
+                holding_data = daily_data[daily_data['Ticker'] == ticker]
+                if holding_data.empty:
+                    continue
+                
+                row = holding_data.iloc[0]
+                current_price = row['Close']
+                prediction = row.get('Best_Prediction', -1.0)
+                
+                days_held = (current_date - holding['purchase_date']).days if holding['purchase_date'] else 0
+                
+                if days_held >= min_holding_days and prediction < sell_threshold:
+                    shares = holding['shares']
+                    sale_value = shares * current_price
+                    portfolio_value += sale_value
+                    
+                    order = {
+                        'date': current_date,
+                        'ticker': ticker,
+                        'action': 'sell',
+                        'shares_amount': shares,
+                        'price': current_price,
+                        'investment_amount': sale_value,
+                        'previous_shares': shares,
+                        'new_total_shares': 0,
+                        'sharpe': row.get('Actual_Sharpe', 0.0)
+                    }
+                    orders.append(order)
+                    logger.info(f"Selling {ticker} on {current_date.date()}: Best_Prediction ({prediction}) < Sell threshold ({sell_threshold})")
+                    
+                    del holdings[ticker]
+            
+            # Calculate current portfolio value
+            current_value = portfolio_value
+            for ticker, holding in holdings.items():
+                ticker_data = daily_data[daily_data['Ticker'] == ticker]
+                if not ticker_data.empty:
+                    current_value += holding['shares'] * ticker_data.iloc[0]['Close']
+            
+            portfolio_history.append({
+                'date': current_date,
+                'value': current_value,
+                'holdings': holdings.copy()
+            })
+        
+        # Save final state
+        save_portfolio_state()
+        logger.info(f"Final Portfolio Value: {portfolio_value}")
+        logger.debug("run_trading_strategy completed successfully")
+        
+        # Return based on mode
+        return orders, portfolio_history, portfolio_value if mode == "automatic" else orders
     
-    # Part 1: find positions to close (according to portfolio threshold)
-    current_positions, orders, available_capital = close_positions(today_data, min_acceptable_sharpe, current_date, current_positions, orders, available_capital)
+    except Exception as e:
+        logger.error(f"Error in run_trading_strategy: {e}", exc_info=True)
+        return [], [], 0.0 if mode == "automatic" else []
 
-    # Calculate daily investment target (how much to invest today)
-    days_left = investment_period_days - len(set(merged_data[merged_data['Date'] < current_date]['Date']))
-    days_left = max(1, days_left) # Avoid division by zero
-    daily_target = available_capital / days_left
-
-    # Part 2: find new opportunities (according to portfolio threshold)
-    current_positions, orders, available_capital = open_positions(today_data, min_acceptable_sharpe, current_date, current_positions, orders, daily_target, transaction_cost_pct, available_capital)
-
-    # TODO - not sure, maybe implement later
-    # PART 3: REBALANCE PORTFOLIO (optional)
-    # This section would reallocate capital from lower Sharpe positions to higher ones
-
-    return orders, current_positions, available_capital
-
-def run_portfolio_simulation(merged_data, min_acceptable_sharpe, investment_amount, 
-                            investment_period_days, start_date=None, end_date=None,
-                            transaction_cost_pct=0.001):
-    """
-    Run a full portfolio simulation over a date range.
-    
-    Parameters:
-    - merged_data: DataFrame with predictions for all tickers
-    - min_acceptable_sharpe: Minimum acceptable Sharpe ratio
-    - investment_amount: Total amount to invest
-    - investment_period_days: Period over which to invest all money
-    - start_date: Start date for simulation (default: earliest date in data)
-    - end_date: End date for simulation (default: latest date in data)
-    - transaction_cost_pct: Cost of transaction as percentage
-    
-    Returns:
-    - all_orders: List of all orders executed
-    - portfolio_value_history: DataFrame with daily portfolio value
-    - final_positions: Dictionary of positions at end of simulation
-    """
+def get_order_history():
+    """Return the order history as a DataFrame."""
+    return pd.DataFrame(orders)

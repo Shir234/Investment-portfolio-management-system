@@ -33,7 +33,7 @@ def merge_ticker_data(base_directory, date_folder, validate=True, sort_by_date=T
         files = os.listdir(date_path)
         print(f"Found {len(files)} files in {date_path}")
         
-        csv_files = [f for f in files if f.endswith('_ensamble_prediction_results.csv')]
+        csv_files = [f for f in files if f.endswith('_ensemble_prediction_results.csv')]
         if not csv_files:
             print(f"No matching CSV files found in {date_path}")
             return pd.DataFrame()
@@ -132,11 +132,10 @@ def merge_ticker_data(base_directory, date_folder, validate=True, sort_by_date=T
             print(f"WARNING: Row count mismatch! {merged_row_count} != {total_rows_original}")
             print(f"Difference: {abs(merged_row_count - total_rows_original)} rows")
         else:
-            print("✓ Row counts match perfectly")
+            print("Success: Row counts match perfectly")  # Replaced \u2713 with plain text
             
         print(f"Total nulls in merged data: {merged_null_count}")
         
-        # Check nulls by column
         null_by_column = merged_data.isnull().sum()
         columns_with_nulls = null_by_column[null_by_column > 0]
         if not columns_with_nulls.empty:
@@ -144,14 +143,13 @@ def merge_ticker_data(base_directory, date_folder, validate=True, sort_by_date=T
             for col, count in columns_with_nulls.items():
                 print(f"  - {col}: {count} nulls ({count/len(merged_data)*100:.2f}%)")
         else:
-            print("✓ No null values found in any column")
+            print("Success: No null values found in any column")  # Replaced \u2713 with plain text
             
-        # Check for duplicate rows
         duplicate_count = merged_data.duplicated().sum()
         if duplicate_count > 0:
             print(f"\nWARNING: Found {duplicate_count} duplicate rows")
         else:
-            print("✓ No duplicate rows found")
+            print("Success: No duplicate rows found")  # Replaced \u2713 with plain text
             
         print("------------------------\n")
     
