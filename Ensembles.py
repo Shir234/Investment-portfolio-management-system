@@ -260,41 +260,42 @@ def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, 
     Returns:
     - Dictionary with ensemble results
     """
-    print(f"\n{'-'*30}\nInitializing ensemble pipeline\n{'-'*30}")
-    log_data_stats(logger, X_train, "X_train for ensembles", include_stats=False)
-    log_data_stats(logger, X_test, "X_test for ensembles", include_stats=False) 
-    log_data_stats(logger, Y_train, "Y_train for ensembles", include_stats=True)
-    log_data_stats(logger, Y_test, "Y_test for ensembles", include_stats=True)
+
+    logger.info(f"\n{'-'*30}\nInitializing ensemble pipeline\n{'-'*30}")
+    # log_data_stats(logger, X_train, "X_train for ensembles", include_stats=False)
+    # log_data_stats(logger, X_test, "X_test for ensembles", include_stats=False) 
+    # log_data_stats(logger, Y_train, "Y_train for ensembles", include_stats=True)
+    # log_data_stats(logger, Y_test, "Y_test for ensembles", include_stats=True)
 
     # Verify input model results
-    print("\nVerifying model results for ensemble:")
+    logger.info("\nVerifying model results for ensemble:")
     for model_name, result in models_results.items():
         if 'best_model' in result and result['best_model'] is not None:
-            print(f"  {model_name}: Model available, Best MSE: {np.min(result['best_mse_scores']):.6f}")
+            logger.info(f"  {model_name}: Model available, Best MSE: {np.min(result['best_mse_scores']):.6f}")
         else:
-            print(f"  {model_name}: Model NOT available")
+            logger.info(f"  {model_name}: Model NOT available")
 
     # Test target scaler to confirm it works properly
-    print("\nValidating scalers:")
+    logger.info("\nValidating scalers:")
     y_sample = Y_test.iloc[:3].values.reshape(-1, 1)
     y_scaled = target_scaler.transform(y_sample)
     y_restored = target_scaler.inverse_transform(y_scaled)
-    print(f"  Original Y values: {y_sample.flatten()}")
-    print(f"  Scaled Y values: {y_scaled.flatten()}")
-    print(f"  Restored Y values: {y_restored.flatten()}")
+    logger.info(f"  Original Y values: {y_sample.flatten()}")
+    logger.info(f"  Scaled Y values: {y_scaled.flatten()}")
+    logger.info(f"  Restored Y values: {y_restored.flatten()}")
 
 
     # Create wrapper functions that always use the same scalers
     def linearly_weighted_wrapper(results, x_test):
-        print("Running linearly weighted ensemble...")
+        logger.info("Running linearly weighted ensemble...")
         return linearly_weighted_ensemble(results, x_test, target_scaler, feature_scaler)
     
     def equal_weighted_wrapper(results, x_test):
-        print("Running equal weighted ensemble...")
+        logger.info("Running equal weighted ensemble...")
         return equal_weighted_ensemble(results, x_test, target_scaler, feature_scaler)
     
     def gbdt_wrapper(results, x_test):
-        print("Running GBDT ensemble...")
+        logger.info("Running GBDT ensemble...")
         return gbdt_ensemble(results, X_train, x_test, Y_train, target_scaler, feature_scaler)
     
     
@@ -309,7 +310,7 @@ def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, 
 
     for method_name, method_func in ensemble_methods.items():
         try:
-            print(f"\n{'-'*20} Running {method_name} ensemble {'-'*20}")
+            logger.info(f"\n{'-'*20} Running {method_name} ensemble {'-'*20}")
             # Time the prediction
             start_time = time.time()
             # Get predictions from the ensemble method
@@ -323,10 +324,10 @@ def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, 
             y_mean, y_std = np.mean(Y_test), np.std(Y_test)
             pred_mean, pred_std = np.mean(final_prediction), np.std(final_prediction)
 
-            print(f"\nScale Comparison for {method_name}:")
-            print(f"  Y_test range: [{y_min:.4f}, {y_max:.4f}], mean: {y_mean:.4f}, std: {y_std:.4f}")
-            print(f"  Prediction range: [{pred_min:.4f}, {pred_max:.4f}], mean: {pred_mean:.4f}, std: {pred_std:.4f}")
-            print(f"  Time taken: {end_time - start_time:.2f} seconds")
+            logger.info(f"\nScale Comparison for {method_name}:")
+            logger.info(f"  Y_test range: [{y_min:.4f}, {y_max:.4f}], mean: {y_mean:.4f}, std: {y_std:.4f}")
+            logger.info(f"  Prediction range: [{pred_min:.4f}, {pred_max:.4f}], mean: {pred_mean:.4f}, std: {pred_std:.4f}")
+            logger.info(f"  Time taken: {end_time - start_time:.2f} seconds")
             
 
             # Calculate performance metrics
@@ -345,14 +346,14 @@ def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, 
             }
 
             # Show detailed stats for this method
-            print(f"\nDetailed results for {method_name}:")
-            print(f"  MSE: {mse:.6f}")
-            print(f"  RMSE: {rmse:.6f}")
-            print(f"  R²: {r2:.6f}")
-            print(f"  MAE: {mae:.6f}")
+            logger.info(f"\nDetailed results for {method_name}:")
+            logger.info(f"  MSE: {mse:.6f}")
+            logger.info(f"  RMSE: {rmse:.6f}")
+            logger.info(f"  R²: {r2:.6f}")
+            logger.info(f"  MAE: {mae:.6f}")
 
         except Exception as e:
-            print(f"Error in {method_name} ensemble: {e}")
+            logger.error(f"Error in {method_name} ensemble: {e}")
             import traceback
             traceback.print_exc()
 

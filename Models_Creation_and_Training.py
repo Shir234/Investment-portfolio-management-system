@@ -53,12 +53,12 @@ Long Short Term Memory model (LSTM)
 def create_models():
     try:
         models = {
-            'SVR': (SVR(), {
-                'kernel': ['rbf', 'linear'],
-                'C': uniform(0.1, 100),  # Range from 0.1 to 100.1
-                'epsilon': uniform(0.01, 0.1),  # Range from 0.01 to 0.11
-                'gamma': ['scale', 'auto'] + list(uniform(0.01, 0.5).rvs(3))  # Mix of fixed and random values
-            }),
+            # 'SVR': (SVR(), {
+            #     'kernel': ['rbf', 'linear'],
+            #     'C': uniform(0.1, 100),  # Range from 0.1 to 100.1
+            #     'epsilon': uniform(0.01, 0.1),  # Range from 0.01 to 0.11
+            #     'gamma': ['scale', 'auto'] + list(uniform(0.01, 0.5).rvs(3))  # Mix of fixed and random values
+            # }),
             'XGBoost': (XGBRegressor(random_state=42), {
                 'n_estimators': randint(100, 300),  # Range from 100 to 300
                 'max_depth': randint(3, 10),  # Range from 3 to 9
@@ -141,37 +141,13 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
     # log_data_stats(logger, X_train_val, "X_train_val for models", include_stats=False)
     # log_data_stats(logger, Y_train_val, "Y_train_val for models", include_stats=True)
 
-    # Check if data is already PCA-transformed
-    data_is_pca = is_pca_transformed_data(X_train_val)
-    if data_is_pca:
-        logger.info("Detected PCA-transformed input data")
+    # We assume X_train_val is already PCA-transformed data
+    logger.info("Using PCA-transformed input data without additional scaling")
 
-    # Create global scalers for final output
-    feature_scaler = RobustScaler()
+    # Create global scaler for final output
     target_scaler = RobustScaler()
-
-    ##################################
-    # Fit the global scalers on all training data for later use with test data
-    # For PCA data, we've already scaled before transformation, so we can skip this step
-    if data_is_pca:
-        # For PCA-transformed data, we might still want to scale, but less aggressively
-        # We can use StandardScaler instead of RobustScaler for PCA data
-        feature_scaler = StandardScaler()
-        X_train_val_scaled = pd.DataFrame(
-            feature_scaler.fit_transform(X_train_val),
-            columns=X_train_val.columns,
-            index=X_train_val.index
-        )
-    else:
-        # Original scaling for normal feature data
-        feature_scaler.fit(X_train_val)
-        X_train_val_scaled = pd.DataFrame(
-            feature_scaler.transform(X_train_val),
-            columns=X_train_val.columns,
-            index=X_train_val.index
-        )
-    ##################################
-
+    # The features are already scaled by RobustScaler and transformed by PCA
+    X_train_val_scaled = X_train_val  # Use PCA data directly
     # Scale the target variable (same for both PCA and non-PCA)
     target_scaler.fit(Y_train_val.values.reshape(-1, 1))
     Y_train_val_scaled = target_scaler.transform(Y_train_val.values.reshape(-1, 1)).flatten()
@@ -196,12 +172,12 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
         # Reshape the data for LSTM model
         if model_name == 'LSTM':
             logger.info(f"Handling LSTM model separately with special reshaping")
-            results[model_name] = train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, target_scaler)
+            results[model_name] = train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, None, target_scaler)
             continue
 
         # Add timeout or max iterations for SVR
         if model_name == 'SVR':
-            model.set_params(max_iter=1000)  # Limit iterations
+            model.set_params(max_iter=5000)  # Limit iterations
 
         # Each fold: split the data and to train and val (using the tcsv indices) then scale
         # For each fold, use the pre-scaled data with the global scalers
@@ -225,15 +201,6 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             # Reduce the number of CV splits for SVR to speed up
             cv_splits = 2 if model_name == 'SVR' else 3
 
-            # grid_search = GridSearchCV(
-            #     estimator=model,
-            #     param_grid=params_grid,
-            #     scoring='neg_mean_squared_error',
-            #     cv=cv_splits,
-            #     n_jobs=-1,
-            #     verbose=1
-            # )
-
             n_iter = 30 if model_name in ['XGBoost', 'LightGBM', 'RandomForest', 'GradientBoosting'] else 15
             random_search = RandomizedSearchCV(
                 estimator=model,
@@ -249,10 +216,6 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             try:
                 random_search.fit(X_train_fold, Y_train_fold)
                 best_params.append(random_search.best_params_)
-                # Train the model for every combination of parameters on each training set of the fold
-                # Save the best params
-                # grid_search.fit(X_train_fold, Y_train_fold)               
-                # best_params.append(grid_search.best_params_)
                 logger.info(f"  Best parameters: {random_search.best_params_}")
 
                 # Validate using the best model
@@ -304,15 +267,8 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
         else:
             logger.info(f"  No successful folds for {model_name}")
         
-    # After all folds, retrain best model on all data using global scalers
-    # This ensures the final model can be used with the global scalers
-    logger.info("\nRetraining all models on full dataset using global scalers...")
-    X_train_val_scaled = pd.DataFrame(
-        feature_scaler.transform(X_train_val),
-        columns=X_train_val.columns,
-        index=X_train_val.index
-    )
-    Y_train_val_scaled = target_scaler.transform(Y_train_val.values.reshape(-1, 1)).flatten()
+    # After all folds, retrain best model on all data
+    logger.info("\nRetraining all models on full dataset...")
 
     # For each model (except LSTM which is handled separately)
     for model_name, result in results.items():
@@ -338,7 +294,6 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
 
                 logger.info(f"  Retrained {model_name} - MSE: {retrain_mse:.4f}, RMSE: {retrain_rmse:.4f}")
                 verify_prediction_scale(logger, Y_train_val, Y_retrain_pred, f"{model_name} retrained")
-                
             
                 # Replace the best model
                 results[model_name]['best_model'] = base_model
@@ -418,7 +373,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
     results_with_scaler = {
         'model_results' : results,
         'target_scaler': target_scaler,
-        'feature_scaler': feature_scaler
+        'feature_scaler': None
     }
 
     return results_with_scaler
@@ -533,31 +488,13 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
         best_model_prediction = None
         Y_val_best = None
 
-        # Define LSTM parameter grid
-        # lstm_param_grid = [
-        #     {'epochs': 50, 'batch_size': 32, 'units': 50, 'learning_rate': 0.01, 'dropout': 0.0},
-        #     {'epochs': 100, 'batch_size': 32, 'units': 50, 'learning_rate': 0.01, 'dropout': 0.2},
-        #     {'epochs': 50, 'batch_size': 64, 'units': 100, 'learning_rate': 0.01, 'dropout': 0.0},
-        # ]
-
-        # Adjust parameter grid based on data type
-        if data_is_pca:
-            # For PCA data, we might need different hyperparameters
-            # Simpler architecture with fewer units since PCA reduces dimensionality
-            lstm_param_grid = [
-                {'epochs': 50, 'batch_size': 32, 'units': 32, 'learning_rate': 0.01, 'dropout': 0.1},
-                {'epochs': 100, 'batch_size': 32, 'units': 32, 'learning_rate': 0.005, 'dropout': 0.2},
-                {'epochs': 75, 'batch_size': 64, 'units': 16, 'learning_rate': 0.01, 'dropout': 0.1},
-                {'epochs': 150, 'batch_size': 32, 'units': 24, 'learning_rate': 0.002, 'dropout': 0.2}
-            ]
-        else:
-            # Original parameter grid for regular features
-            lstm_param_grid = [
-                {'epochs': 50, 'batch_size': 32, 'units': 50, 'learning_rate': 0.01, 'dropout': 0.0},
-                {'epochs': 100, 'batch_size': 32, 'units': 50, 'learning_rate': 0.01, 'dropout': 0.2},
-                {'epochs': 50, 'batch_size': 64, 'units': 100, 'learning_rate': 0.01, 'dropout': 0.0},
-                {'epochs': 75, 'batch_size': 32, 'units': 75, 'learning_rate': 0.005, 'dropout': 0.1}
-            ]
+        # Simpler architecture with fewer units since PCA reduces dimensionality
+        lstm_param_grid = [
+            {'epochs': 50, 'batch_size': 32, 'units': 32, 'learning_rate': 0.01, 'dropout': 0.1},
+            {'epochs': 100, 'batch_size': 32, 'units': 32, 'learning_rate': 0.005, 'dropout': 0.2},
+            {'epochs': 75, 'batch_size': 64, 'units': 16, 'learning_rate': 0.01, 'dropout': 0.1},
+            {'epochs': 150, 'batch_size': 32, 'units': 24, 'learning_rate': 0.002, 'dropout': 0.2}
+        ]
 
         for fold, (train_idx, val_idx) in enumerate(tscv.split(X_train_val)):
             print(f"\nTraining on fold {fold + 1} for LSTM...")
@@ -567,27 +504,16 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
             X_val_fold = X_train_val.iloc[val_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[val_idx]
             Y_train_fold = Y_train_val.iloc[train_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[train_idx]
             Y_val_fold = Y_train_val.iloc[val_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[val_idx]
-
-            # Scale features and target
-            if data_is_pca:
-                # For PCA data, use a StandardScaler instead of RobustScaler
-                fold_feature_scaler = StandardScaler()
-            else:
-                fold_feature_scaler = RobustScaler()
-            
-        
-            # Convert to numpy arrays if needed
-            X_train_fold_array = X_train_fold.values if isinstance(X_train_fold, pd.DataFrame) else X_train_fold
-            X_val_fold_array = X_val_fold.values if isinstance(X_val_fold, pd.DataFrame) else X_val_fold
-            
-            X_train_scaled = fold_feature_scaler.fit_transform(X_train_fold_array)
-            X_val_scaled = fold_feature_scaler.transform(X_val_fold_array)
-            
+                  
             # Target scaling is the same regardless of PCA
             fold_target_scaler = RobustScaler()
             Y_train_fold_array = Y_train_fold.values if isinstance(Y_train_fold, pd.Series) else Y_train_fold
             Y_val_fold_array = Y_val_fold.values if isinstance(Y_val_fold, pd.Series) else Y_val_fold
             
+            # Features are already PCA-transformed, so we only need to convert to arrays
+            X_train_scaled = X_train_fold.values if isinstance(X_train_fold, pd.DataFrame) else X_train_fold
+            X_val_scaled = X_val_fold.values if isinstance(X_val_fold, pd.DataFrame) else X_val_fold
+
             Y_train_scaled = fold_target_scaler.fit_transform(Y_train_fold_array.reshape(-1, 1)).flatten()
             Y_val_scaled = fold_target_scaler.transform(Y_val_fold_array.reshape(-1, 1)).flatten()
 
@@ -668,8 +594,8 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
                 X_train_val_array = X_train_val.values if isinstance(X_train_val, pd.DataFrame) else X_train_val
                 Y_train_val_array = Y_train_val.values if isinstance(Y_train_val, pd.Series) else Y_train_val
                 
-                # Scale all training data with global scalers
-                X_train_val_scaled = feature_scaler.transform(X_train_val_array)
+                # Scale only target variable
+                X_train_val_scaled = X_train_val_array
                 Y_train_val_scaled = target_scaler.transform(Y_train_val_array.reshape(-1, 1)).flatten()
                 
                 # Get time steps and dropout rate
