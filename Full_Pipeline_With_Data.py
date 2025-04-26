@@ -45,7 +45,8 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         # Shir's Path G:\My Drive\Investment portfolio management system\code_results\results\predictions
         #drive_path = r"G:\My Drive\Investment portfolio management system\code_results\results\predictions/"
         # # machine's Path
-        drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/"
+        # drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/" #(previous path)
+        drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions"
         
         # Create date folder inside Google Drive path
         drive_date_folder = os.path.join(drive_path, current_date)
