@@ -57,6 +57,7 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         logger.info(f"\n{'-'*30}\nFetching and processing data for {ticker_symbol}\n{'-'*30}")
         pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate)
         data = pipeline.fit_transform(pd.DataFrame())
+        data.to_csv(f'{date_folder}/{ticker_symbol}_data.csv')
         #log_data_stats(logger , data, f"{ticker_symbol} raw data", log_head=True)
 
         if data.empty:
