@@ -39,7 +39,7 @@ class AnalysisDashboard(QWidget):
             "Performance by Stock",
             "Heatmap of Ensemble Performance",
             "Portfolio vs Max Possible Value",
-            "Aggregated Sharpe Prediction Accuracy"
+            "Sharpe Accuracy"
         ])
         self.graph_combo.setStyleSheet("background-color: #3c3f41; color: #ffffff; selection-background-color: #2a82da;")
         self.graph_combo.currentIndexChanged.connect(self.change_graph_type)
@@ -47,6 +47,23 @@ class AnalysisDashboard(QWidget):
         selection_layout.addWidget(self.graph_combo)
         selection_group.setLayout(selection_layout)
         layout.addWidget(selection_group)
+        
+        # Ticker selection dropdown
+        ticker_group = QGroupBox("Ticker Selection")
+        ticker_group.setStyleSheet("color: #ffffff;")
+        ticker_layout = QVBoxLayout()
+        
+        self.ticker_combo = QComboBox()
+        # Populate with unique tickers from data_manager
+        tickers = sorted(self.data_manager.data['Ticker'].unique())
+        self.ticker_combo.addItem("All Tickers")  # Option to show all tickers
+        self.ticker_combo.addItems(tickers)
+        self.ticker_combo.setStyleSheet("background-color: #3c3f41; color: #ffffff; selection-background-color: #2a82da;")
+        self.ticker_combo.currentIndexChanged.connect(self.update_visualizations)
+        
+        ticker_layout.addWidget(self.ticker_combo)
+        ticker_group.setLayout(ticker_layout)
+        layout.addWidget(ticker_group)
         
         # Chart area
         self.chart_fig = Figure(figsize=(10, 6))
@@ -76,6 +93,7 @@ class AnalysisDashboard(QWidget):
     
     def update_visualizations(self):
         graph_type = self.graph_combo.currentText()
+        selected_ticker = self.ticker_combo.currentText()
         self.chart_fig.clear()
         
         # Ensure start_date and end_date are properly set
@@ -93,25 +111,25 @@ class AnalysisDashboard(QWidget):
         if graph_type == "Portfolio Performance":
             self.plot_portfolio_performance()
         elif graph_type == "Daily vs Periodic Sharpe":
-            self.plot_sharpe_comparison()
+            self.plot_sharpe_comparison(selected_ticker)
         elif graph_type == "Sharpe Distribution":
-            self.plot_sharpe_distribution()
+            self.plot_sharpe_distribution(selected_ticker)
         elif graph_type == "Portfolio Composition":
             self.plot_portfolio_composition()
         elif graph_type == "Scatter Plot with Regression Line":
-            self.plot_scatter_with_regression()
+            self.plot_scatter_with_regression(selected_ticker)
         elif graph_type == "Time Series Comparison":
-            self.plot_time_series_comparison()
+            self.plot_time_series_comparison(selected_ticker)
         elif graph_type == "Prediction Error Distribution":
-            self.plot_error_distribution()
+            self.plot_error_distribution(selected_ticker)
         elif graph_type == "Performance by Stock":
-            self.plot_performance_by_stock()
+            self.plot_performance_by_stock(selected_ticker)
         elif graph_type == "Heatmap of Ensemble Performance":
-            self.plot_ensemble_heatmap()
+            self.plot_ensemble_heatmap(selected_ticker)
         elif graph_type == "Portfolio vs Max Possible Value":
             self.plot_portfolio_vs_max_possible()
-        elif graph_type == "Aggregated Sharpe Prediction Accuracy":
-            self.plot_aggregated_sharpe_accuracy()
+        elif graph_type == "Sharpe Accuracy":
+            self.plot_sharpe_accuracy(selected_ticker)
         
         self.update_metrics()
         self.chart_canvas.draw()
@@ -295,7 +313,7 @@ class AnalysisDashboard(QWidget):
                 total_value = portfolio_history[-1]['value']
             else:
                 total_value = data['Close'].iloc[-1]
-            sharpe_ratio = data['Best_Prediction'].mean()
+            sharpe_ratio = data[data['Actual_Sharpe'] != -1.0]['Best_Prediction'].mean()
             if portfolio_history:
                 df = pd.DataFrame(portfolio_history)
                 volatility = df['value'].pct_change().std()
@@ -308,32 +326,47 @@ class AnalysisDashboard(QWidget):
             for label in self.metrics_labels.values():
                 label.setText(f"Error: {str(e)}")
                 
-    def plot_sharpe_comparison(self):
+    def plot_sharpe_comparison(self, selected_ticker):
         ax = self.chart_fig.add_subplot(111)
         data = self.data_manager.data.copy()
         data['date'] = pd.to_datetime(data['date'], utc=True)
         data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
 
-        # Aggregate data: mean Best_Prediction and Actual_Sharpe per day
-        daily_agg = data.groupby(data['date'].dt.date).agg({
-            'Best_Prediction': 'mean',
-            'Actual_Sharpe': 'mean'
-        }).reset_index()
-        daily_agg['date'] = pd.to_datetime(daily_agg['date'])
+        # Filter by selected ticker
+        if selected_ticker != "All Tickers":
+            data = data[data['Ticker'] == selected_ticker]
+            if data.empty:
+                ax.text(0.5, 0.5, f'No data for ticker {selected_ticker}', 
+                        horizontalalignment='center', color='white')
+                self.chart_fig.patch.set_facecolor('#353535')
+                ax.set_facecolor('#2b2b2b')
+                return
+        else:
+            # Warn if too many tickers
+            unique_tickers = len(data['Ticker'].unique())
+            if unique_tickers > 50:
+                ax.text(0.5, 0.5, 'Too many tickers to display clearly.\nPlease select a specific ticker.', 
+                        horizontalalignment='center', color='white')
+                self.chart_fig.patch.set_facecolor('#353535')
+                ax.set_facecolor('#2b2b2b')
+                return
 
-        # Plot daily aggregated predicted Sharpe
-        ax.plot(daily_agg['date'], daily_agg['Best_Prediction'], label='Daily Predicted Sharpe (Avg)', color='#2a82da', alpha=0.7)
+        # Plot raw daily Best_Prediction for each ticker
+        for ticker in data['Ticker'].unique():
+            ticker_data = data[data['Ticker'] == ticker]
+            ax.plot(ticker_data['date'], ticker_data['Best_Prediction'], 
+                    color='#2a82da', alpha=0.5, label='Daily Predicted Sharpe' if ticker == data['Ticker'].iloc[0] else None)
 
-        # Compute monthly actual Sharpe (for dates where Actual_Sharpe != -1)
-        periodic_data = data[data['Actual_Sharpe'] != -1].copy()
+        # Plot raw periodic Actual_Sharpe where available
+        periodic_data = data[data['Actual_Sharpe'] != -1.0]
         if not periodic_data.empty:
-            periodic_data.set_index('date', inplace=True)
-            monthly_sharpe = periodic_data['Actual_Sharpe'].resample('M').mean().dropna()
-            if not monthly_sharpe.empty:
-                ax.plot(monthly_sharpe.index, monthly_sharpe, label='Monthly Actual Sharpe (Avg)', 
-                        color='#ff9900', marker='o', linestyle='--')
+            for ticker in periodic_data['Ticker'].unique():
+                ticker_data = periodic_data[periodic_data['Ticker'] == ticker]
+                ax.scatter(ticker_data['date'], ticker_data['Actual_Sharpe'], 
+                           color='#ff9900', s=50, alpha=0.7, 
+                           label='Periodic Actual Sharpe' if ticker == periodic_data['Ticker'].iloc[0] else None)
 
-        ax.set_title('Daily Predicted vs Monthly Actual Sharpe Ratio (Aggregated)', color='white')
+        ax.set_title('Daily Predicted vs Periodic Actual Sharpe Ratios (Raw)', color='white')
         ax.set_xlabel('Date', color='white')
         ax.set_ylabel('Sharpe Ratio', color='white')
         ax.legend()
@@ -342,12 +375,24 @@ class AnalysisDashboard(QWidget):
         self.chart_fig.patch.set_facecolor('#353535')
         ax.set_facecolor('#2b2b2b')
         
-    def plot_sharpe_distribution(self):
+    def plot_sharpe_distribution(self, selected_ticker):
         ax = self.chart_fig.add_subplot(111)
-        data = self.data_manager.data
+        data = self.data_manager.data.copy()
+        data['date'] = pd.to_datetime(data['date'], utc=True)
         data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
+        
+        # Filter by selected ticker
+        if selected_ticker != "All Tickers":
+            data = data[data['Ticker'] == selected_ticker]
+            if data.empty:
+                ax.text(0.5, 0.5, f'No data for ticker {selected_ticker}', 
+                        horizontalalignment='center', color='white')
+                self.chart_fig.patch.set_facecolor('#353535')
+                ax.set_facecolor('#2b2b2b')
+                return
+
         sns.histplot(data=data, x='Best_Prediction', bins=30, ax=ax, color='#2a82da', alpha=0.7, label='Daily Predicted Sharpe')
-        actual_data = data[data['Actual_Sharpe'] != -1]
+        actual_data = data[data['Actual_Sharpe'] != -1.0]
         if not actual_data.empty:
             sns.histplot(data=actual_data, x='Actual_Sharpe', bins=15, ax=ax, color='#ff9900', alpha=0.7, label='Periodic Actual Sharpe')
         ax.set_title('Distribution of Sharpe Ratios', color='white')
@@ -359,61 +404,102 @@ class AnalysisDashboard(QWidget):
         self.chart_fig.patch.set_facecolor('#353535')
         ax.set_facecolor('#2b2b2b')
         
-    def plot_scatter_with_regression(self):
+    def plot_scatter_with_regression(self, selected_ticker):
         ax = self.chart_fig.add_subplot(111)
-        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0]
+        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy()
+        filtered_data['date'] = pd.to_datetime(filtered_data['date'], utc=True)
         filtered_data = filtered_data[(filtered_data['date'] >= self.start_date) & (filtered_data['date'] <= self.end_date)]
+        
+        # Filter by selected ticker
+        if selected_ticker != "All Tickers":
+            filtered_data = filtered_data[filtered_data['Ticker'] == selected_ticker]
+            if filtered_data.empty:
+                ax.text(0.5, 0.5, f'No data for ticker {selected_ticker}', 
+                        horizontalalignment='center', color='white')
+                self.chart_fig.patch.set_facecolor('#353535')
+                ax.set_facecolor('#2b2b2b')
+                return
+        
         if filtered_data.empty:
             ax.text(0.5, 0.5, 'No data with Actual Sharpe != -1.0', horizontalalignment='center', color='white')
+            self.chart_fig.patch.set_facecolor('#353535')
+            ax.set_facecolor('#2b2b2b')
             return
 
-        # Aggregate by date to reduce points
-        agg_data = filtered_data.groupby(filtered_data['date'].dt.date).agg({
-            'Best_Prediction': 'mean',
-            'Actual_Sharpe': 'mean'
-        }).reset_index()
+        # Remove rows with missing values in Best_Prediction or Actual_Sharpe
+        filtered_data = filtered_data.dropna(subset=['Best_Prediction', 'Actual_Sharpe'])
 
-        colors = ['#4CAF50' if pred >= actual else '#F44336' for pred, actual in zip(agg_data['Best_Prediction'], agg_data['Actual_Sharpe'])]
-        ax.scatter(agg_data['Actual_Sharpe'], agg_data['Best_Prediction'], c=colors, alpha=0.7, label='Predictions')
-        min_val = min(agg_data['Actual_Sharpe'].min(), agg_data['Best_Prediction'].min())
-        max_val = max(agg_data['Actual_Sharpe'].max(), agg_data['Best_Prediction'].max())
-        ax.plot([min_val, max_val], [min_val, max_val], 'y--', label='Perfect Prediction')
-        ax.set_title('Predicted vs Actual Sharpe Ratio (Aggregated)', color='white')
-        ax.set_xlabel('Actual Sharpe Ratio', color='white')
-        ax.set_ylabel('Predicted Sharpe Ratio', color='white')
+        # Calculate correlation coefficient
+        correlation = filtered_data['Actual_Sharpe'].corr(filtered_data['Best_Prediction'])
+        logging.debug(f"Correlation coefficient: {correlation:.4f}")
+
+        # Create scatter plot with regression line
+        sns.scatterplot(x='Best_Prediction', y='Actual_Sharpe', data=filtered_data, ax=ax, 
+                        color='#2a82da', alpha=0.7, label='Data Points')
+        sns.regplot(x='Best_Prediction', y='Actual_Sharpe', data=filtered_data, ax=ax, 
+                    scatter=False, color='#ff9900', label='Regression Line')
+
+        # Add y=x line for reference
+        min_val = min(filtered_data['Best_Prediction'].min(), filtered_data['Actual_Sharpe'].min())
+        max_val = max(filtered_data['Best_Prediction'].max(), filtered_data['Actual_Sharpe'].max())
+        ax.plot([min_val, max_val], [min_val, max_val], 'y--', label='y=x Line')
+
+        # Add correlation coefficient annotation
+        ax.text(0.05, 0.95, f'Correlation: {correlation:.4f}', transform=ax.transAxes, 
+                color='white', fontsize=10, verticalalignment='top', 
+                bbox=dict(boxstyle='round', facecolor='#353535', alpha=0.8))
+
+        ax.set_title('Actual Sharpe vs Predicted Sharpe (Raw)', color='white')
+        ax.set_xlabel('Predicted Sharpe Ratio (Best_Prediction)', color='white')
+        ax.set_ylabel('Actual Sharpe Ratio', color='white')
         ax.legend()
         ax.grid(True, color='#444444')
         ax.tick_params(colors='white')
         self.chart_fig.patch.set_facecolor('#353535')
         ax.set_facecolor('#2b2b2b')
         
-    def plot_time_series_comparison(self):
+    def plot_time_series_comparison(self, selected_ticker):
         ax = self.chart_fig.add_subplot(111)
         data = self.data_manager.data.copy()
         data['date'] = pd.to_datetime(data['date'], utc=True)
         data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
 
-        # Aggregate data: mean Best_Prediction and Actual_Sharpe per day
-        daily_agg = data.groupby(data['date'].dt.date).agg({
-            'Best_Prediction': 'mean',
-            'Actual_Sharpe': 'mean'
-        }).reset_index()
-        daily_agg['date'] = pd.to_datetime(daily_agg['date'])
+        # Filter by selected ticker
+        if selected_ticker != "All Tickers":
+            data = data[data['Ticker'] == selected_ticker]
+            if data.empty:
+                ax.text(0.5, 0.5, f'No data for ticker {selected_ticker}', 
+                        horizontalalignment='center', color='white')
+                self.chart_fig.patch.set_facecolor('#353535')
+                ax.set_facecolor('#2b2b2b')
+                return
+        else:
+            # Warn if too many tickers
+            unique_tickers = len(data['Ticker'].unique())
+            if unique_tickers > 50:
+                ax.text(0.5, 0.5, 'Too many tickers to display clearly.\nPlease select a specific ticker.', 
+                        horizontalalignment='center', color='white')
+                self.chart_fig.patch.set_facecolor('#353535')
+                ax.set_facecolor('#2b2b2b')
+                return
 
-        # Plot aggregated predicted Sharpe
-        ax.plot(daily_agg['date'], daily_agg['Best_Prediction'], label='Predicted Sharpe (Avg)', color='#2a82da', alpha=0.7)
+        # Plot raw Best_Prediction for each ticker
+        for ticker in data['Ticker'].unique():
+            ticker_data = data[data['Ticker'] == ticker]
+            ax.plot(ticker_data['date'], ticker_data['Best_Prediction'], 
+                    color='#2a82da', alpha=0.5, label='Predicted Sharpe' if ticker == data['Ticker'].iloc[0] else None)
 
-        # Plot smoothed predicted Sharpe
-        smoothed_pred = daily_agg['Best_Prediction'].rolling(window=7, min_periods=1).mean()
-        ax.plot(daily_agg['date'], smoothed_pred, label='Predicted Sharpe (Smoothed Avg)', color='#2a82da', linewidth=2)
-
-        # Plot aggregated actual Sharpe (where available)
-        actual_data = daily_agg[daily_agg['Actual_Sharpe'].notna()]
+        # Plot raw Actual_Sharpe where available
+        actual_data = data[data['Actual_Sharpe'] != -1.0]
         if not actual_data.empty:
-            ax.scatter(actual_data['date'], actual_data['Actual_Sharpe'], label='Actual Sharpe (Avg)', color='#ff9900', s=50)
+            for ticker in actual_data['Ticker'].unique():
+                ticker_data = actual_data[actual_data['Ticker'] == ticker]
+                ax.scatter(ticker_data['date'], ticker_data['Actual_Sharpe'], 
+                           color='#ff9900', s=50, alpha=0.7, 
+                           label='Actual Sharpe' if ticker == actual_data['Ticker'].iloc[0] else None)
 
         ax.set_ylim(-5, 5)
-        ax.set_title('Time Series Comparison of Aggregated Sharpe Ratios', color='white')
+        ax.set_title('Time Series Comparison of Sharpe Ratios (Raw)', color='white')
         ax.set_xlabel('Date', color='white')
         ax.set_ylabel('Sharpe Ratio', color='white')
         ax.legend()
@@ -422,24 +508,34 @@ class AnalysisDashboard(QWidget):
         self.chart_fig.patch.set_facecolor('#353535')
         ax.set_facecolor('#2b2b2b')
         
-    def plot_error_distribution(self):
+    def plot_error_distribution(self, selected_ticker):
         ax = self.chart_fig.add_subplot(111)
-        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0]
+        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy()
+        filtered_data['date'] = pd.to_datetime(filtered_data['date'], utc=True)
         filtered_data = filtered_data[(filtered_data['date'] >= self.start_date) & (filtered_data['date'] <= self.end_date)]
+        
+        # Filter by selected ticker
+        if selected_ticker != "All Tickers":
+            filtered_data = filtered_data[filtered_data['Ticker'] == selected_ticker]
+            if filtered_data.empty:
+                ax.text(0.5, 0.5, f'No data for ticker {selected_ticker}', 
+                        horizontalalignment='center', color='white')
+                self.chart_fig.patch.set_facecolor('#353535')
+                ax.set_facecolor('#2b2b2b')
+                return
+
         if filtered_data.empty:
             ax.text(0.5, 0.5, 'No data with Actual Sharpe != -1.0', horizontalalignment='center', color='white')
+            self.chart_fig.patch.set_facecolor('#353535')
+            ax.set_facecolor('#2b2b2b')
             return
 
-        # Aggregate errors by date
-        agg_data = filtered_data.groupby(filtered_data['date'].dt.date).agg({
-            'Best_Prediction': 'mean',
-            'Actual_Sharpe': 'mean'
-        }).reset_index()
-        errors = agg_data['Best_Prediction'] - agg_data['Actual_Sharpe']
+        # Calculate prediction errors
+        errors = filtered_data['Best_Prediction'] - filtered_data['Actual_Sharpe']
 
         ax.hist(errors, bins=30, color='#2a82da', alpha=0.7)
         ax.axvline(0, color='yellow', linestyle='--', label='Zero Error')
-        ax.set_title('Distribution of Prediction Errors (Aggregated)', color='white')
+        ax.set_title('Distribution of Prediction Errors (Raw)', color='white')
         ax.set_xlabel('Prediction Error', color='white')
         ax.set_ylabel('Frequency', color='white')
         ax.legend()
@@ -448,12 +544,26 @@ class AnalysisDashboard(QWidget):
         self.chart_fig.patch.set_facecolor('#353535')
         ax.set_facecolor('#2b2b2b')
         
-    def plot_performance_by_stock(self):
+    def plot_performance_by_stock(self, selected_ticker):
         ax = self.chart_fig.add_subplot(111)
-        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0]
+        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy()
+        filtered_data['date'] = pd.to_datetime(filtered_data['date'], utc=True)
         filtered_data = filtered_data[(filtered_data['date'] >= self.start_date) & (filtered_data['date'] <= self.end_date)]
+        
+        # Filter by selected ticker
+        if selected_ticker != "All Tickers":
+            filtered_data = filtered_data[filtered_data['Ticker'] == selected_ticker]
+            if filtered_data.empty:
+                ax.text(0.5, 0.5, f'No data for ticker {selected_ticker}', 
+                        horizontalalignment='center', color='white')
+                self.chart_fig.patch.set_facecolor('#353535')
+                ax.set_facecolor('#2b2b2b')
+                return
+
         if filtered_data.empty:
             ax.text(0.5, 0.5, 'No data with Actual Sharpe != -1.0', horizontalalignment='center', color='white')
+            self.chart_fig.patch.set_facecolor('#353535')
+            ax.set_facecolor('#2b2b2b')
             return
 
         # Calculate mean absolute error per ticker
@@ -474,12 +584,26 @@ class AnalysisDashboard(QWidget):
         self.chart_fig.patch.set_facecolor('#353535')
         ax.set_facecolor('#2b2b2b')
         
-    def plot_ensemble_heatmap(self):
+    def plot_ensemble_heatmap(self, selected_ticker):
         ax = self.chart_fig.add_subplot(111)
-        data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0]
+        data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy()
+        data['date'] = pd.to_datetime(data['date'], utc=True)
         data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
+        
+        # Filter by selected ticker
+        if selected_ticker != "All Tickers":
+            data = data[data['Ticker'] == selected_ticker]
+            if data.empty:
+                ax.text(0.5, 0.5, f'No data for ticker {selected_ticker}', 
+                        horizontalalignment='center', color='white')
+                self.chart_fig.patch.set_facecolor('#353535')
+                ax.set_facecolor('#2b2b2b')
+                return
+
         if data.empty:
             ax.text(0.5, 0.5, 'No data available with Actual Sharpe != -1.0', horizontalalignment='center', color='white')
+            self.chart_fig.patch.set_facecolor('#353535')
+            ax.set_facecolor('#2b2b2b')
             return
 
         # Check for ensemble prediction columns
@@ -509,24 +633,47 @@ class AnalysisDashboard(QWidget):
         self.chart_fig.patch.set_facecolor('#353535')
         ax.set_facecolor('#2b2b2b')
         
-    def plot_aggregated_sharpe_accuracy(self):
+    def plot_sharpe_accuracy(self, selected_ticker):
         ax = self.chart_fig.add_subplot(111)
         data = self.data_manager.data.copy()
         data['date'] = pd.to_datetime(data['date'], utc=True)
         data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
 
-        # Aggregate data: mean Best_Prediction and Actual_Sharpe per day
-        daily_agg = data.groupby(data['date'].dt.date).agg({
-            'Best_Prediction': 'mean',
-            'Actual_Sharpe': 'mean'
-        }).reset_index()
-        daily_agg['date'] = pd.to_datetime(daily_agg['date'])
+        # Filter by selected ticker
+        if selected_ticker != "All Tickers":
+            data = data[data['Ticker'] == selected_ticker]
+            if data.empty:
+                ax.text(0.5, 0.5, f'No data for ticker {selected_ticker}', 
+                        horizontalalignment='center', color='white')
+                self.chart_fig.patch.set_facecolor('#353535')
+                ax.set_facecolor('#2b2b2b')
+                return
+        else:
+            # Warn if too many tickers
+            unique_tickers = len(data['Ticker'].unique())
+            if unique_tickers > 50:
+                ax.text(0.5, 0.5, 'Too many tickers to display clearly.\nPlease select a specific ticker.', 
+                        horizontalalignment='center', color='white')
+                self.chart_fig.patch.set_facecolor('#353535')
+                ax.set_facecolor('#2b2b2b')
+                return
 
-        # Plot aggregated predicted vs actual Sharpe
-        ax.plot(daily_agg['date'], daily_agg['Best_Prediction'], label='Predicted Sharpe (Avg)', color='#2a82da')
-        ax.plot(daily_agg['date'], daily_agg['Actual_Sharpe'], label='Actual Sharpe (Avg)', color='#ff9900', linestyle='--')
+        # Plot raw Best_Prediction for each ticker
+        for ticker in data['Ticker'].unique():
+            ticker_data = data[data['Ticker'] == ticker]
+            ax.plot(ticker_data['date'], ticker_data['Best_Prediction'], 
+                    color='#2a82da', alpha=0.5, label='Predicted Sharpe' if ticker == data['Ticker'].iloc[0] else None)
 
-        ax.set_title('Aggregated Predicted vs Actual Sharpe Ratio Over Time', color='white')
+        # Plot raw Actual_Sharpe where available
+        actual_data = data[data['Actual_Sharpe'] != -1.0]
+        if not actual_data.empty:
+            for ticker in actual_data['Ticker'].unique():
+                ticker_data = actual_data[actual_data['Ticker'] == ticker]
+                ax.scatter(ticker_data['date'], ticker_data['Actual_Sharpe'], 
+                           color='#ff9900', s=50, alpha=0.7, 
+                           label='Actual Sharpe' if ticker == actual_data['Ticker'].iloc[0] else None)
+
+        ax.set_title('Predicted vs Actual Sharpe Ratios Over Time (Raw)', color='white')
         ax.set_xlabel('Date', color='white')
         ax.set_ylabel('Sharpe Ratio', color='white')
         ax.legend()
