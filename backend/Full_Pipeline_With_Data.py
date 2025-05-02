@@ -257,6 +257,8 @@ def run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers.
         'start_time': time.time(),
         'tickers_processed': []
     }
+
+    logger.info(f"Loaded {len(valid_tickers)} valid tickers.")
     
     # Process each ticker
     for i, ticker in enumerate(valid_tickers):

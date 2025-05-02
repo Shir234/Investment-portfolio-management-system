@@ -1,19 +1,22 @@
 # Models_Creation_and_Training.py
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler, RobustScaler
-from sklearn.model_selection import TimeSeriesSplit
+from sklearn.preprocessing import RobustScaler
+from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.svm import SVR
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+
 from scipy.stats import uniform, randint
+
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 from tensorflow.keras.optimizers import Adam
+
+from joblib import parallel_backend
 
 from backend.Logging_and_Validation import log_data_stats, verify_prediction_scale
 
@@ -162,17 +165,18 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             cv_splits = 2 if model_name == 'SVR' else 3
 
             n_iter = 30 if model_name in ['XGBoost', 'LightGBM', 'RandomForest', 'GradientBoosting'] else 15
-            random_search = RandomizedSearchCV(
-                estimator=model,
-                param_distributions=params_grid,
-                n_iter=n_iter,  # More iterations for complex models
-                scoring='neg_mean_squared_error',
-                cv=cv_splits,
-                n_jobs=-1,
-                verbose=1,
-                random_state=42  # For reproducibility
-            )
-
+            with parallel_backend('multiprocessing'):
+                random_search = RandomizedSearchCV(
+                    estimator=model,
+                    param_distributions=params_grid,
+                    n_iter=n_iter,  # More iterations for complex models
+                    scoring='neg_mean_squared_error',
+                    cv=cv_splits,
+                    n_jobs=-1,
+                    verbose=1,
+                    random_state=42  # For reproducibility
+                )
+    
             try:
                 random_search.fit(X_train_fold, Y_train_fold)
                 best_params.append(random_search.best_params_)
