@@ -8,7 +8,7 @@ import pandas as pd
 import os
 
 # Suppress matplotlib logs
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 
 class InputPanel(QWidget):
@@ -52,7 +52,7 @@ class InputPanel(QWidget):
         end_label = QLabel("End Date:")
         end_label.setStyleSheet("color: #ffffff;")
         self.end_date = QDateEdit()
-        self.end_date.setDate(datetime(2023, 12, 29))
+        self.end_date.setDate(datetime(2023, 12, 22))
         self.end_date.setStyleSheet("background-color: #3c3f41; color: #ffffff;")
         date_layout.addWidget(start_label)
         date_layout.addWidget(self.start_date)
@@ -107,19 +107,36 @@ class InputPanel(QWidget):
         try:
             investment_amount = float(self.investment_input.text())
             risk_level = float(self.risk_input.text()) * 10  # Scale 0-10 to 0-100
-            start_date = self.start_date.date().toPyDate()
-            end_date = self.end_date.date().toPyDate()
-            mode = self.mode_combo.currentText().lower()
+            # Convert dates to pd.Timestamp with UTC timezone
+            start_date = pd.Timestamp(self.start_date.date().toPyDate(), tz='UTC')
+            end_date = pd.Timestamp(self.end_date.date().toPyDate(), tz='UTC')
+
             # Set date range in data_manager
-            self.data_manager.set_date_range(start_date, end_date)
-            logging.debug(f"Executing with risk_level={risk_level}, mode={mode}")
+            success, message = self.data_manager.set_date_range(start_date, end_date)
+            if not success:
+                QMessageBox.critical(
+                    self,
+                    "Invalid Date Range",
+                    message,
+                    QMessageBox.Ok
+                )
+                return
+            if message:  # Display adjustment message if date range was modified
+                QMessageBox.information(
+                    self,
+                    "Date Range Adjusted",
+                    message,
+                    QMessageBox.Ok
+                )
+
+            logging.debug(f"Executing with risk_level={risk_level}, mode={self.mode_combo.currentText().lower()}")
             success, result = execute_trading_strategy(
                 investment_amount,
                 risk_level,
-                pd.Timestamp(start_date, tz='UTC'),
-                pd.Timestamp(end_date, tz='UTC'),
+                start_date,
+                end_date,
                 data_manager=self.data_manager,
-                mode=mode,
+                mode=self.mode_combo.currentText().lower(),
                 reset_state=True
             )
             if success:
@@ -128,7 +145,7 @@ class InputPanel(QWidget):
                 orders = result.get('orders', [])
                 warning_message = result.get('warning_message', '')
                 
-                if mode == "semi-automatic" and orders:
+                if self.mode_combo.currentText().lower() == "semi-automatic" and orders:
                     # Show confirmation dialog
                     msg = QMessageBox()
                     msg.setWindowTitle("Confirm Trades")
@@ -140,8 +157,8 @@ class InputPanel(QWidget):
                         success, result = execute_trading_strategy(
                             investment_amount,
                             risk_level,
-                            pd.Timestamp(start_date, tz='UTC'),
-                            pd.Timestamp(end_date, tz='UTC'),
+                            start_date,
+                            end_date,
                             data_manager=self.data_manager,
                             mode="automatic",
                             reset_state=False

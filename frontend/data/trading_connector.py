@@ -2,12 +2,12 @@ import pandas as pd
 import logging 
 from trading_logic import run_trading_strategy, get_orders, get_portfolio_history
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 logger = logging.getLogger('trading_connector')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
-def execute_trading_strategy(investment_amount, risk_level, start_date, end_date, data_manager, mode="automatic", reset_state=False):
+def execute_trading_strategy(investment_amount, risk_level, start_date, end_date, data_manager, mode="automatic", reset_state=True):
     """Execute the trading strategy with user inputs from the frontend."""
     logger.debug("Starting execute_trading_strategy")
     try:

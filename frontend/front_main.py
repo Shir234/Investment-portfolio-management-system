@@ -6,7 +6,7 @@ import pandas as pd
 
 # Suppress matplotlib and NumExpr logs
 os.environ["NUMEXPR_MAX_THREADS"] = "8"
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 
