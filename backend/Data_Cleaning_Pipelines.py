@@ -460,14 +460,13 @@ class OutlierHandler(BaseEstimator, TransformerMixin):
 
 class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
     """
-    # TODO: replace the original outlier class:
-    the percentile-based capping plus log transformation approach generally eliminates the need for the z-score based outlier handling in financial data processing. The log transformation helps normalize the distribution, making the data more suitable for many machine learning algorithms without requiring the additional z-score step.
-    Uses a strategy that combines percentile-based capping with log transformation.
-    - Uses percentile-based capping (1st and 99th percentiles) to handle extreme values
-    - Applies log transformation to address skewness in the distribution
-
+    Handles outliers using percentile-based capping and optional log transformation.
+    - For Transaction_Sharpe: Applies only capping to preserve negative and positive values.
+    - For other numeric columns: Applies capping and log transformation to address skewness.
     """
-    def __init__(self, target_column='Transaction_Sharpe', lower_percentile=1, upper_percentile=99, exclude_columns=[
+
+    def __init__(self, target_column='Transaction_Sharpe', lower_percentile=1, 
+                 upper_percentile=99, exclude_columns=[
         # Price data - should not be transformed
         'Open', 'High', 'Low', 'Close', 'Volume',
         # Signal and binary columns
@@ -496,33 +495,37 @@ class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
             col for col in X.columns
             if X[col].dtype in ['float64', 'int64']
             and not any(exclude in col for exclude in self.exclude_columns)
-        ]
+            ]
+        # Exclude target_column from log transformation
+        self.log_transform_columns = [col for col in self.numeric_columns if col != self.target_column]
 
         # Compute percentiles for capping
         for col in self.numeric_columns:
-            self.percentiles[col] = np.percentile(X[col].dropna(), [self.lower_percentile, self.upper_percentile])
+            self.percentiles[col] = np.percentile(X[col].dropna(), 
+                                                  [self.lower_percentile, self.upper_percentile])
         return self
-
+    
     def transform(self, X):
         X_ = X.copy()
 
         # Process each numeric column
         for col in self.numeric_columns:
-            # Cap extreme values
             p1, p99 = self.percentiles[col]
+            # Cap extreme values
             X_[col] = np.clip(X_[col], p1, p99)
 
-            # Apply log transformation (handle negative values)
-            col_data = X_[col]
-            self.min_vals[col] = col_data.min()
-            if self.min_vals[col] < 0:
-                col_shifted = col_data - self.min_vals[col] + 1
-            else:
-                col_shifted = col_data + 1
-            X_[col] = np.log1p(col_shifted)
+            # Apply log transformation only to non-target columns
+            if col in self.log_transform_columns:
+                col_data = X_[col]
+                self.min_vals[col] = col_data.min()
+                if self.min_vals[col] < 0:
+                    col_shifted = col_data - self.min_vals[col] + 1
+                else:
+                    col_shifted = col_data + 1
+                X_[col] = np.log1p(col_shifted)
 
         return X_
-
+    
     def inverse_transform(self, X):
         X_ = X.copy()
         # Inverse transform each numeric column
@@ -530,10 +533,14 @@ class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
             if col in X_.columns:
                 p1, p99 = self.percentiles[col]
                 col_data = X_[col]
-                # Inverse log transformation
-                col_original = np.expm1(col_data) + self.min_vals[col] - 1
-                # Ensure values remain within capped range
-                X_[col] = np.clip(col_original, p1, p99)
+                if col in self.log_transform_columns:
+                    # Inverse log transformation
+                    col_original = np.expm1(col_data) + self.min_vals.get(col, 0) - 1
+                    # Ensure values remain within capped range
+                    X_[col] = np.clip(col_original, p1, p99)
+                else:
+                    # For Transaction_Sharpe, only ensure capping
+                    X_[col] = np.clip(col_data, p1, p99)
         return X_
 
 # Handle highly correlated features
