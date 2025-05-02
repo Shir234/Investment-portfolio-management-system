@@ -15,7 +15,7 @@ from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 from tensorflow.keras.optimizers import Adam
 
-from Logging_and_Validation import log_data_stats, verify_prediction_scale
+from backend.Logging_and_Validation import log_data_stats, verify_prediction_scale
 
 import json
 import os

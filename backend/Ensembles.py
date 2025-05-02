@@ -7,8 +7,8 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
-import Models_Creation_and_Training
-from Logging_and_Validation import log_data_stats, verify_prediction_scale
+import backend.Models_Creation_and_Training as Models_Creation_and_Training
+from backend.Logging_and_Validation import log_data_stats, verify_prediction_scale
 
 # ===============================================================================
 # Ensembles

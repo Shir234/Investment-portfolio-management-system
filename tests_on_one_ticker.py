@@ -17,12 +17,12 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from pandas_datareader import data as pdr
 import datetime
 
-from Data_Cleaning_Pipelines import create_stock_data_pipeline, create_data_cleaning_pipeline
-from Feature_Selection_and_Optimization import analyze_feature_importance, evaluate_feature_sets, validate_feature_consistency
-from Full_Pipeline_With_Data import full_pipeline_for_single_stock
-from Models_Creation_and_Training import train_and_validate_models
-from Ensembles import ensemble_pipeline
-from Logging_and_Validation import log_data_stats, verify_prediction_scale
+from backend.Data_Cleaning_Pipelines import create_stock_data_pipeline, create_data_cleaning_pipeline
+from backend.Feature_Selection_and_Optimization import analyze_feature_importance, evaluate_feature_sets, validate_feature_consistency
+from backend.Full_Pipeline_With_Data import full_pipeline_for_single_stock
+from backend.Models_Creation_and_Training import train_and_validate_models
+from backend.Ensembles import ensemble_pipeline
+from backend.Logging_and_Validation import log_data_stats, verify_prediction_scale
 
 import logging
 

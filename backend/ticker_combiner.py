@@ -156,7 +156,7 @@ def merge_ticker_data(base_directory, date_folder, validate=True, sort_by_date=T
     return merged_data
 
 # Example usage:
-selected_date = "20250402"
+selected_date = "20250426"
 merged_results = merge_ticker_data("results", selected_date, validate=True, sort_by_date=True)
 # If validation passes, save the merged data
 merged_results.to_csv(f"{selected_date}_all_tickers_results.csv", index=False)

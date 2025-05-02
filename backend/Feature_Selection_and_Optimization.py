@@ -314,9 +314,9 @@ def select_best_features(X_train, Y_train, threshold=0.8, method='importance'):
         pca_results = select_features_with_pca(X_train, variance_threshold=threshold)
         selected_features = pca_results  # Return the PCA results dictionary
         # Plot PCA explained variance
-        plot_pca_explained_variance(pca_results)
-        # Plot feature contributions to components
-        plot_pca_component_contributions(pca_results, X_train, top_n_features=10)
+        # plot_pca_explained_variance(pca_results)
+        # # Plot feature contributions to components
+        # plot_pca_component_contributions(pca_results, X_train, top_n_features=10)
 
     return selected_features
 

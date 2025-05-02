@@ -5,11 +5,11 @@ from sklearn.pipeline import Pipeline
 import yfinance as yf
 import os
 import time
-from Data_Cleaning_Pipelines import create_stock_data_pipeline, create_data_cleaning_pipeline
-from Feature_Selection_and_Optimization import analyze_feature_importance, evaluate_feature_sets, validate_feature_consistency
-from Logging_and_Validation import log_data_stats, validate_data_quality, verify_prediction_scale
-from Models_Creation_and_Training import train_and_validate_models
-from Ensembles import ensemble_pipeline
+from backend.Data_Cleaning_Pipelines import create_stock_data_pipeline, create_data_cleaning_pipeline
+from backend.Feature_Selection_and_Optimization import analyze_feature_importance, evaluate_feature_sets, validate_feature_consistency
+from backend.Logging_and_Validation import log_data_stats, validate_data_quality, verify_prediction_scale
+from backend.Models_Creation_and_Training import train_and_validate_models
+from backend.Ensembles import ensemble_pipeline
 
 def load_valid_tickers(logger, file_path="valid_tickers.csv"):
     """

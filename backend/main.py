@@ -1,7 +1,7 @@
 import os
 import logging
 import datetime
-from Full_Pipeline_With_Data import full_pipeline_for_single_stock, load_valid_tickers, run_pipeline
+from backend.Full_Pipeline_With_Data import full_pipeline_for_single_stock, load_valid_tickers, run_pipeline
 
 # Set up logging
 logging.basicConfig(
