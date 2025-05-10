@@ -30,7 +30,7 @@ def load_valid_tickers(logger, file_path="valid_tickers.csv"):
         logger.error(f"Error loading tickers from {file_path}: {e}")
         return []
     
-def full_pipeline_fetch_data_for_single_stock(data_clean, logger, date_folder, current_date, ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
+def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date, ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
     logger.info(f"STARTING PIPELINE FOR TICKER {ticker_symbol}")
 
     try:
@@ -96,19 +96,7 @@ def full_pipeline_fetch_data_for_single_stock(data_clean, logger, date_folder, c
 # ===============================================================================
 # Running the -> Full Pipeline For Single Stock
 # ===============================================================================
-def run_pipeline_fetch_data(logger, date_folder, current_date, tickers_file="valid_tickers.csv", start_date="2013-01-01", end_date="2024-01-01"):
-    """
-    Main function to run the complete pipeline
-    
-    Parameters:
-    - tickers_file: CSV file with ticker symbols
-    - start_date: Start date for historical data
-    - end_date: End date for historical data
-    
-    Returns:
-    - dict: Summary of processing results
-    """
-    
+def run_pipeline_fetch_data(logger, date_folder, current_date, tickers_file="valid_tickers.csv", start_date="2013-01-01", end_date="2024-01-01"): 
     # Load tickers
     valid_tickers = load_valid_tickers(logger, tickers_file)
     
@@ -172,6 +160,7 @@ def run_pipeline_fetch_data(logger, date_folder, current_date, tickers_file="val
     summary_df.to_csv(f'{date_folder}/pipeline_summary_{current_date}.csv', index=False)
     
     return results
+
 
 
 
