@@ -30,7 +30,7 @@ def load_valid_tickers(logger, file_path="valid_tickers.csv"):
         logger.error(f"Error loading tickers from {file_path}: {e}")
         return []
     
-def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date, ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
+def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date, api_key, ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
     logger.info(f"STARTING PIPELINE FOR TICKER {ticker_symbol}")
 
     try:
@@ -50,7 +50,7 @@ def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date,
         # Run first pipeline, fetch data
         logger.info(f"\n{'-'*30}\nFetching and processing data for {ticker_symbol}\n{'-'*30}")
         
-        pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate)
+        pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate, api_key)
         data = pipeline.fit_transform(pd.DataFrame())
         data.to_csv(f'{date_folder}/{ticker_symbol}_data.csv')        
 
@@ -96,7 +96,7 @@ def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date,
 # ===============================================================================
 # Running the -> Full Pipeline For Single Stock
 # ===============================================================================
-def run_pipeline_fetch_data(logger, date_folder, current_date, tickers_file="valid_tickers.csv", start_date="2013-01-01", end_date="2024-01-01"): 
+def run_pipeline_fetch_data(logger, date_folder, current_date, api_key, tickers_file="valid_tickers.csv", start_date="2013-01-01", end_date="2024-01-01"): 
     # Load tickers
     valid_tickers = load_valid_tickers(logger, tickers_file)
     
@@ -119,7 +119,7 @@ def run_pipeline_fetch_data(logger, date_folder, current_date, tickers_file="val
         logger.info(f"\nProcessing ticker {i+1}/{len(valid_tickers)}: {ticker}")
         
         try:  
-            success = full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date, ticker, start_date, end_date)
+            success = full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date, api_key, ticker, start_date, end_date)
                         
             if success:
                 logger.info(f"Successfully processed {ticker}")
@@ -185,11 +185,20 @@ os.makedirs(date_folder, exist_ok=True)
 
 # Example usage
 if __name__ == "__main__":
-    import yfinance as yf
 
+   # In your main script
+    API_KEY = "OI3PEOTKGEFGXADW"  # Get from https://www.alphavantage.co/support/#api-key
     # Call the main pipeline function
-    pipeline_results = run_pipeline_fetch_data(logger, date_folder, current_date, tickers_file="valid_tickers.csv", start_date="2013-01-01", end_date="2024-01-01")
-   
+    pipeline_results = run_pipeline_fetch_data(
+        logger, 
+        date_folder, 
+        current_date, 
+        api_key=API_KEY,
+        tickers_file="valid_tickers.csv", 
+        start_date="2013-01-01", 
+        end_date="2024-01-01"
+    )
+
     # Exit with appropriate code
     if pipeline_results['successful'] > 0:
         print("Pipeline completed successfully.")
