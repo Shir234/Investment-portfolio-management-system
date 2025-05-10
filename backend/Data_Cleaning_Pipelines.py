@@ -12,36 +12,79 @@ import pandas_ta as ta
 from sklearn.base import BaseEstimator, TransformerMixin
 from pandas_datareader import data as pdr
 import datetime
+import time
 
 # ===============================================================================
 # Data Pipeline Classes
 ## Pipeline to fetch stock data and feature engineering
 # ===============================================================================
 # fetch historical stock data
+# class DataFetcher(BaseEstimator, TransformerMixin):
+#     def __init__(self, ticker_symbol, start_date, end_date):
+#         self.ticker_symbol = ticker_symbol
+#         self.start_date = start_date
+#         self.end_date = end_date
+
+#     def fit(self, X, y=None):
+#         return self
+
+#     def transform(self, X):
+#         try:
+#             ticker = yf.Ticker(self.ticker_symbol)
+#             history = ticker.history(start=self.start_date, end=self.end_date)
+            
+#             if history.empty:
+#                 raise ValueError(f"No data returned for ticker: {self.ticker_symbol}")
+
+#             return history
+        
+#         except Exception as e:
+#             print(f"Error fetching data for ticker {self.ticker_symbol}: {e}")
+
+#             return pd.DataFrame() # return an empty df if an error occurs
+
 class DataFetcher(BaseEstimator, TransformerMixin):
-    def __init__(self, ticker_symbol, start_date, end_date):
+    def __init__(self, ticker_symbol, start_date, end_date, max_retries=3, retry_delay=5):
         self.ticker_symbol = ticker_symbol
         self.start_date = start_date
         self.end_date = end_date
-
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        
     def fit(self, X, y=None):
         return self
-
-    def transform(self, X):
-        try:
-            ticker = yf.Ticker(self.ticker_symbol)
-            history = ticker.history(start=self.start_date, end=self.end_date)
-            
-            if history.empty:
-                raise ValueError(f"No data returned for ticker: {self.ticker_symbol}")
-
-            return history
         
-        except Exception as e:
-            print(f"Error fetching data for ticker {self.ticker_symbol}: {e}")
+    def transform(self, X):
+        for attempt in range(self.max_retries):
+            try:
+                ticker = yf.Ticker(self.ticker_symbol)
+                history = ticker.history(start=self.start_date, end=self.end_date)
+                
+                if history.empty:
+                    raise ValueError(f"No data returned for ticker: {self.ticker_symbol}")
+                
+                # Ensure we have the expected columns
+                required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                missing_columns = [col for col in required_columns if col not in history.columns]
+                if missing_columns:
+                    raise ValueError(f"Missing required columns: {missing_columns}")
+                
+                # Convert index to DatetimeIndex if it's not already
+                if not isinstance(history.index, pd.DatetimeIndex):
+                    history.index = pd.to_datetime(history.index)
+                    
+                return history
+            
+            except Exception as e:
+                if "Too Many Requests" in str(e) and attempt < self.max_retries - 1:
+                    print(f"Rate limited for {self.ticker_symbol}. Retrying in {self.retry_delay} seconds...")
+                    time.sleep(self.retry_delay)
+                    self.retry_delay *= 2  # Exponential backoff
+                else:
+                    print(f"Error fetching data for ticker {self.ticker_symbol}: {e}")
+                    # Instead of returning empty DataFrame, raise an exception to stop pipeline
+                    raise ValueError(f"Failed to fetch data for {self.ticker_symbol}: {e}")
 
-            return pd.DataFrame() # return an empty df if an error occurs
-      
 # TODO -> ADD INDICATORS
 # Add market indicators
 class IndicatorCalculator(BaseEstimator, TransformerMixin):

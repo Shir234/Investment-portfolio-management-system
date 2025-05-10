@@ -7,8 +7,8 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
-import backend.Models_Creation_and_Training as Models_Creation_and_Training
-from backend.Logging_and_Validation import log_data_stats, verify_prediction_scale
+import Models_Creation_and_Training as Models_Creation_and_Training
+from Logging_and_Validation import log_data_stats, verify_prediction_scale
 
 # ===============================================================================
 # Ensembles
@@ -221,6 +221,128 @@ def equal_weighted_ensemble(models_results, X_test, target_scaler, feature_scale
 
     return final_prediction_original
 
+# # Gradient Boosting Decision Tree Ensemble
+# def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, feature_scaler, logger=None):
+#     """
+#     Use GBDT to predict based on the predictions of base models.
+#     Implements a validation split approach to prevent data leakage.
+#     Parameters:
+#     - models_results: Dictionary containing model results, with 'best_model' key for each model.
+#     - X_train: Training data features to generate meta-features for training GBDT.
+#     - X_test: Test data features for final prediction.
+#     - Y_train_val: Training labels for fitting the GBDT model.
+    
+#     Returns: 
+#     - GBDT ensemble prediction for test data.
+#     """
+
+#     # Convert to arrays without scaling - data is already PCA-transformed
+#     X_train_array = X_train.values if hasattr(X_train, 'values') else X_train
+#     X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
+#     Y_train_array = Y_train.values if hasattr(Y_train, 'values') else Y_train
+
+#     # Split training data into training and validation sets to prevent leakage
+#     X_meta_train, X_meta_val, Y_meta_train, Y_meta_val = train_test_split(
+#         X_train_array, Y_train_array, test_size=0.2, random_state=42, shuffle=False
+#     )
+
+#     # Track metadata about models and predictions
+#     train_meta_features = {}
+#     val_meta_features = {}
+#     test_meta_features = {}
+#     prediction_lengths = {'train': [], 'val': [], 'test': []}
+
+#     for model_name, result in models_results.items():
+#         if 'best_model' not in result or result['best_model'] is None:
+#             continue
+
+#         model = result['best_model']
+
+#         try:
+#             # Generate predictions for all three sets
+#             if model_name.strip() == 'LSTM':
+#                 # Reshape for LSTM
+#                 X_meta_train_lstm = prepare_lstm_data(X_meta_train, time_steps=5)
+#                 X_meta_val_lstm = prepare_lstm_data(X_meta_val, time_steps=5)
+#                 X_test_lstm = prepare_lstm_data(X_test_array, time_steps=5)
+                
+#                 train_pred = model.predict(X_meta_train_lstm).flatten()
+#                 val_pred = model.predict(X_meta_val_lstm).flatten()
+#                 test_pred = model.predict(X_test_lstm).flatten()
+#             else:
+#                 train_pred = model.predict(X_meta_train).flatten()
+#                 val_pred = model.predict(X_meta_val).flatten()
+#                 test_pred = model.predict(X_test_array).flatten()
+            
+#             # Store predictions for each model separately to handle length differences
+#             train_meta_features[model_name] = train_pred
+#             val_meta_features[model_name] = val_pred
+#             test_meta_features[model_name] = test_pred
+            
+#             # Record prediction lengths
+#             prediction_lengths['train'].append(len(train_pred))
+#             prediction_lengths['val'].append(len(val_pred))
+#             prediction_lengths['test'].append(len(test_pred))
+            
+#             if logger:
+#                 logger.info(f"Model {model_name} prediction lengths - Train: {len(train_pred)}, "
+#                             f"Val: {len(val_pred)}, Test: {len(test_pred)}")
+        
+#         except Exception as e:
+#             if logger:
+#                 logger.error(f"Error generating predictions for {model_name}: {e}")
+#             continue
+
+#     # If no predictions were successful, exit early
+#     if not train_meta_features:
+#         raise ValueError("No valid model predictions available for GBDT ensemble")
+
+#     # Calculate minimum lengths for each set to handle size mismatches
+#     min_train_length = min(prediction_lengths['train'])
+#     min_val_length = min(prediction_lengths['val'])
+#     min_test_length = min(prediction_lengths['test'])
+    
+#     if logger:
+#         logger.info(f"Using minimum lengths - Train: {min_train_length}, "
+#                     f"Val: {min_val_length}, Test: {min_test_length}")
+
+#     # Prepare arrays with consistent lengths
+#     train_features_aligned = np.column_stack([pred[:min_train_length] for pred in train_meta_features.values()])
+#     val_features_aligned = np.column_stack([pred[:min_val_length] for pred in val_meta_features.values()])
+#     test_features_aligned = np.column_stack([pred[:min_test_length] for pred in test_meta_features.values()])
+    
+#     # Align target arrays with the meta-features
+#     Y_meta_train_aligned = Y_meta_train[:min_train_length]
+#     Y_meta_val_aligned = Y_meta_val[:min_val_length]
+    
+#     if len(Y_meta_train_aligned) == 0 or len(Y_meta_val_aligned) == 0:
+#         raise ValueError("Insufficient data for GBDT training after alignment")
+
+#     # Train GBDT on meta-features
+#     gb_model = GradientBoostingRegressor(
+#         n_estimators=100, 
+#         learning_rate=0.01, 
+#         max_depth=3, 
+#         random_state=42
+#     )
+
+#     # Fit on training meta-features
+#     gb_model.fit(train_features_aligned, Y_meta_train_aligned)
+    
+#     # Evaluate on validation set to check for overfitting
+#     val_pred = gb_model.predict(val_features_aligned)
+#     val_mse = mean_squared_error(Y_meta_val_aligned, val_pred)
+#     if logger:
+#         logger.info(f"GBDT Ensemble - Validation MSE: {val_mse:.6f}, RMSE: {np.sqrt(val_mse):.6f}")
+
+#     # Predict on test meta-features
+#     final_prediction = gb_model.predict(test_features_aligned)
+
+#     # Inverse transform to get back to original scale
+#     final_prediction_original = target_scaler.inverse_transform(final_prediction.reshape(-1, 1)).flatten()
+    
+#     return final_prediction_original
+
 # Gradient Boosting Decision Tree Ensemble
 def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, feature_scaler, logger=None):
     """
@@ -230,7 +352,7 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, featu
     - models_results: Dictionary containing model results, with 'best_model' key for each model.
     - X_train: Training data features to generate meta-features for training GBDT.
     - X_test: Test data features for final prediction.
-    - Y_train_val: Training labels for fitting the GBDT model.
+    - Y_train: Training labels for fitting the GBDT model.
     
     Returns: 
     - GBDT ensemble prediction for test data.
@@ -287,6 +409,9 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, featu
             if logger:
                 logger.info(f"Model {model_name} prediction lengths - Train: {len(train_pred)}, "
                             f"Val: {len(val_pred)}, Test: {len(test_pred)}")
+                logger.info(f"Model {model_name} prediction stats - Train mean: {np.mean(train_pred):.4f}, "
+                            f"std: {np.std(train_pred):.4f}, Val mean: {np.mean(val_pred):.4f}, "
+                            f"std: {np.std(val_pred):.4f}")
         
         except Exception as e:
             if logger:
@@ -318,25 +443,38 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, featu
     if len(Y_meta_train_aligned) == 0 or len(Y_meta_val_aligned) == 0:
         raise ValueError("Insufficient data for GBDT training after alignment")
 
-    # Train GBDT on meta-features
+    # Scale meta-features
+    meta_scaler = StandardScaler()
+    train_features_scaled = meta_scaler.fit_transform(train_features_aligned)
+    val_features_scaled = meta_scaler.transform(val_features_aligned)
+    test_features_scaled = meta_scaler.transform(test_features_aligned)
+
+    if logger:
+        logger.info(f"Meta-features scaled - Train shape: {train_features_scaled.shape}, "
+                    f"Val shape: {val_features_scaled.shape}, Test shape: {test_features_scaled.shape}")
+        logger.info(f"Meta-features stats - Train mean: {np.mean(train_features_scaled, axis=0)}, "
+                    f"std: {np.std(train_features_scaled, axis=0)}")
+
+    # Train GBDT on scaled meta-features
     gb_model = GradientBoostingRegressor(
-        n_estimators=100, 
-        learning_rate=0.01, 
-        max_depth=3, 
+        n_estimators=50,  # Reduced to prevent overfitting
+        learning_rate=0.01,
+        max_depth=2,  # Shallower trees
         random_state=42
     )
 
     # Fit on training meta-features
-    gb_model.fit(train_features_aligned, Y_meta_train_aligned)
+    gb_model.fit(train_features_scaled, Y_meta_train_aligned)
     
     # Evaluate on validation set to check for overfitting
-    val_pred = gb_model.predict(val_features_aligned)
+    val_pred = gb_model.predict(val_features_scaled)
     val_mse = mean_squared_error(Y_meta_val_aligned, val_pred)
+    val_r2 = r2_score(Y_meta_val_aligned, val_pred)
     if logger:
-        logger.info(f"GBDT Ensemble - Validation MSE: {val_mse:.6f}, RMSE: {np.sqrt(val_mse):.6f}")
+        logger.info(f"GBDT Ensemble - Validation MSE: {val_mse:.6f}, RMSE: {np.sqrt(val_mse):.6f}, R²: {val_r2:.6f}")
 
     # Predict on test meta-features
-    final_prediction = gb_model.predict(test_features_aligned)
+    final_prediction = gb_model.predict(test_features_scaled)
 
     # Inverse transform to get back to original scale
     final_prediction_original = target_scaler.inverse_transform(final_prediction.reshape(-1, 1)).flatten()

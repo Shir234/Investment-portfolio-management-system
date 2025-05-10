@@ -18,7 +18,7 @@ from tensorflow.keras.optimizers import Adam
 
 from joblib import parallel_backend
 
-from backend.Logging_and_Validation import log_data_stats, verify_prediction_scale
+from Logging_and_Validation import log_data_stats, verify_prediction_scale
 
 import json
 import os
@@ -98,6 +98,43 @@ def create_models():
         print(f"Error creating models: {e}")
         return {}
     
+
+# def create_models():
+#     """
+#     Define models and their Optuna parameter search spaces.
+#     """
+#     models = {
+#         'SVR': (SVR(), {
+#             'kernel': ['rbf', 'linear'],
+#             'C': lambda trial: trial.suggest_float('C', 0.1, 10, log=True),
+#             'epsilon': lambda trial: trial.suggest_float('epsilon', 0.01, 0.2)
+#         }),
+#         'XGBoost': (XGBRegressor(random_state=42), {
+#             'n_estimators': lambda trial: trial.suggest_int('n_estimators', 50, 300),
+#             'max_depth': lambda trial: trial.suggest_int('max_depth', 2, 8),
+#             'learning_rate': lambda trial: trial.suggest_float('learning_rate', 0.005, 0.2, log=True),
+#             'subsample': lambda trial: trial.suggest_float('subsample', 0.6, 1.0)
+#         }),
+#         'LightGBM': (LGBMRegressor(random_state=42, verbose=-1), {
+#             'n_estimators': lambda trial: trial.suggest_int('n_estimators', 50, 300),
+#             'max_depth': lambda trial: trial.suggest_int('max_depth', 2, 8),
+#             'learning_rate': lambda trial: trial.suggest_float('learning_rate', 0.005, 0.2, log=True),
+#             'force_row_wise': [True]
+#         }),
+#         'RandomForest': (RandomForestRegressor(random_state=42), {
+#             'n_estimators': lambda trial: trial.suggest_int('n_estimators', 50, 300),
+#             'max_depth': lambda trial: trial.suggest_int('max_depth', 2, 8),
+#             'min_samples_split': lambda trial: trial.suggest_int('min_samples_split', 2, 10)
+#         }),
+#         'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
+#             'n_estimators': lambda trial: trial.suggest_int('n_estimators', 50, 300),
+#             'max_depth': lambda trial: trial.suggest_int('max_depth', 2, 8),
+#             'learning_rate': lambda trial: trial.suggest_float('learning_rate', 0.005, 0.2, log=True)
+#         }),
+#         'LSTM': (None, {})  # Handled separately
+#     }
+#     return models
+
 
 def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ticker_symbol, date_folder):
     logger.info(f"\n{'-'*30}\nInitializing model training\n{'-'*30}")

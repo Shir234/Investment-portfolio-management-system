@@ -17,12 +17,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from pandas_datareader import data as pdr
 import datetime
 
-from backend.Data_Cleaning_Pipelines import create_stock_data_pipeline, create_data_cleaning_pipeline
-from backend.Feature_Selection_and_Optimization import analyze_feature_importance, evaluate_feature_sets, validate_feature_consistency
-from backend.Full_Pipeline_With_Data import full_pipeline_for_single_stock
-from backend.Models_Creation_and_Training import train_and_validate_models
-from backend.Ensembles import ensemble_pipeline
-from backend.Logging_and_Validation import log_data_stats, verify_prediction_scale
+from Full_Pipeline_With_Data import full_pipeline_for_single_stock
 
 import logging
 
@@ -47,7 +42,22 @@ current_date = datetime.datetime.now().strftime("%Y%m%d")
 date_folder = f'results/{current_date}'
 os.makedirs(date_folder, exist_ok=True)
 
-full_pipeline_for_single_stock(logger, date_folder, current_date, 'OPK', "2013-01-01", "2024-01-01")
+base_directory = "results" 
+clean_data_date_folder = "20250426"
+date_path = os.path.join(base_directory, clean_data_date_folder)
+
+if not os.path.exists(date_path):
+    print(f"Folder path '{date_path}' does not exist.")
+# read csv -> {ticker}_clean_data: send clean data to full pipelin
+ticker_csv_path = os.path.join(date_path, f"OPK_clean_data.csv")
+# Check if the file exists
+if not os.path.exists(ticker_csv_path):
+    logger.warning(f"File not found: {ticker_csv_path}")
+
+# Read the CSV file
+ticker_clean_data = pd.read_csv(ticker_csv_path)
+
+full_pipeline_for_single_stock(ticker_clean_data, logger, date_folder, current_date, 'OPK', "2013-01-01", "2024-01-01")
 
 # # ===============================================================================
 # # LSTM Support Functions

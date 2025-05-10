@@ -5,11 +5,11 @@ from sklearn.pipeline import Pipeline
 import yfinance as yf
 import os
 import time
-from backend.Data_Cleaning_Pipelines import create_stock_data_pipeline, create_data_cleaning_pipeline
-from backend.Feature_Selection_and_Optimization import analyze_feature_importance, evaluate_feature_sets, validate_feature_consistency
-from backend.Logging_and_Validation import log_data_stats, validate_data_quality, verify_prediction_scale
-from backend.Models_Creation_and_Training import train_and_validate_models
-from backend.Ensembles import ensemble_pipeline
+from Data_Cleaning_Pipelines import create_stock_data_pipeline, create_data_cleaning_pipeline
+from Feature_Selection_and_Optimization import analyze_feature_importance, evaluate_feature_sets, validate_feature_consistency
+from Logging_and_Validation import log_data_stats, validate_data_quality, verify_prediction_scale
+from Models_Creation_and_Training import train_and_validate_models
+from Ensembles import ensemble_pipeline
 
 def load_valid_tickers(logger, file_path="valid_tickers.csv"):
     """
@@ -36,7 +36,7 @@ def load_valid_tickers(logger, file_path="valid_tickers.csv"):
 # ===============================================================================
 # Full Pipeline For Single Stock
 # ===============================================================================
-def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
+def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date, ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
     logger.info(f"STARTING PIPELINE FOR TICKER {ticker_symbol}")
 
     try:
@@ -53,12 +53,36 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         # Create directory if it doesn't exist
         os.makedirs(drive_date_folder,exist_ok=True)
 
+        # Process the loaded clean data
+        logger.info(f"\n{'-'*30}\nProcessing loaded clean data for {ticker_symbol}\n{'-'*30}")
+        
+        # Handle the index column if it was read as a normal column
+        if 'Unnamed: 0' in data_clean.columns:
+            # This is likely the index column saved by to_csv
+            data_clean = data_clean.set_index('Unnamed: 0')
+        
+        # Convert the index to datetime if it's a string date
+        if isinstance(data_clean.index[0], str):
+            try:
+                data_clean.index = pd.to_datetime(data_clean.index)
+                logger.info(f"Converted index to datetime for {ticker_symbol}")
+            except Exception as e:
+                logger.warning(f"Could not convert index to datetime: {e}")
+        
+        # Check if we have transaction metrics
+        if 'Transaction_Sharpe' not in data_clean.columns:
+            logger.error(f"No Transaction_Sharpe data for {ticker_symbol}. Skipping.")
+            return False
+
+        """
         # Run first pipeline, fetch data
         logger.info(f"\n{'-'*30}\nFetching and processing data for {ticker_symbol}\n{'-'*30}")
+        
         pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate)
         data = pipeline.fit_transform(pd.DataFrame())
         data.to_csv(f'{date_folder}/{ticker_symbol}_data.csv')
         #log_data_stats(logger , data, f"{ticker_symbol} raw data", log_head=True)
+        
 
         if data.empty:
             logger.error(f"No data returned for ticker {ticker_symbol}")
@@ -66,7 +90,7 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         
         # Validate data quality
        # validate_data_quality(data, f"{ticker_symbol} raw data")
-
+       
         # Run second pipeline, clean and process
         logger.info(f"\n{'-'*30}\nCleaning data for {ticker_symbol}\n{'-'*30}")
         pipeline_clean = create_data_cleaning_pipeline()
@@ -90,11 +114,23 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         if 'Transaction_Sharpe' not in data_clean.columns:
             logger.error(f"No Transaction_Sharpe data for {ticker_symbol}. Skipping.")
             return False
-        
+        """
+       
         # Split the data to train and test, create train and val the models
         logger.info(f"\n{'-'*30}\nSplitting data for {ticker_symbol}\n{'-'*30}")
-        X = data_clean.drop(columns=['Transaction_Sharpe'])
+
+        # Make sure we're working with numeric data only for X
+        numeric_columns = data_clean.select_dtypes(include=np.number).columns.tolist()
+        # Ensure Transaction_Sharpe is included if it's numeric
+        numeric_columns = [col for col in numeric_columns if col != 'Transaction_Sharpe']
+        
+        # Use only numeric columns for X
+        X = data_clean[numeric_columns]
         Y = data_clean['Transaction_Sharpe']
+
+        logger.info(f"Using {len(numeric_columns)} numeric features for modeling")
+        logger.info(f"First 5 features: {numeric_columns[:5]}")
+
         train_size = 0.8
         split_idx = int(len(data_clean)*train_size)
 
@@ -102,17 +138,9 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         Y_train_val = Y.iloc[:split_idx]
         X_test = X.iloc[split_idx:]
         Y_test = Y.iloc[split_idx:]
-        
-    #     # log_data_stats(logger, X_train_val, f"{ticker_symbol} X_train_val", include_stats=False)
-    #     # log_data_stats(logger, Y_train_val, f"{ticker_symbol} Y_train_val", include_stats=True)
-    #     # log_data_stats(logger, X_test, f"{ticker_symbol} X_test", include_stats=False)
-    #     # log_data_stats(logger, Y_test, f"{ticker_symbol} Y_test", include_stats=True)
 
         # Feature selection
-        # logger.info(f"\n{'-'*30}\nPerforming feature selection for {ticker_symbol}\n{'-'*30}")
-        # importance_df = analyze_feature_importance(X_train_val, Y_train_val)
-        #logger.info(f"Top 10 features by importance:\n{importance_df.head(10)}")
-        # Evaluate different feature sets including PCA
+        logger.info(f"\n{'-'*30}\nPerforming feature selection for {ticker_symbol}\n{'-'*30}")
         feature_results = evaluate_feature_sets(X_train_val, Y_train_val)
         logger.info("\nFeature Selection Method Comparison:")
         logger.info(f"{feature_results['average_results'][['Feature_Method', 'Num_Features', 'RMSE', 'R2']]}")
@@ -120,8 +148,6 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         # Select best feature set based on results
         best_method = feature_results['best_method']
         best_features = feature_results['best_features']
-        # Handle PCA differently than other feature selection methods
-        #########################################################
         
         logger.info(f"\nBest feature set: {best_method} with {best_features['components_selected']} components")
         # For PCA, we need to transform the data
@@ -141,15 +167,10 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
         X_train_val_selected = pd.DataFrame(X_train_val_selected, index=X_train_val.index, columns=component_names)
         X_test_selected = pd.DataFrame(X_test_selected, index=X_test.index, columns=component_names)
 
-        #########################################################
-
         # Validate feature consistency
         logger.info(f"\n{'-'*30}\nValidating feature consistency\n{'-'*30}")
         validate_feature_consistency(X_train_val, X_train_val_selected, best_features)
         validate_feature_consistency(X_test, X_test_selected, best_features)
-
-        # log_data_stats(logger, X_train_val_selected, f"{ticker_symbol} X_train_val_selected", include_stats=False)
-        # log_data_stats(logger, X_test_selected, f"{ticker_symbol} X_test_selected", include_stats=False)
 
         # Model training
         logger.info(f"\n{'-'*30}\nTraining models for {ticker_symbol}\n{'-'*30}")
@@ -179,16 +200,24 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
             results_index = X_test.index[:prediction_length]
 
             # Create the DataFrame with all aligned data - trimming all data to match prediction length
-            results_df = pd.DataFrame({
-                'Ticker': ticker_symbol,
-                'Close': X_test.Close.iloc[:prediction_length],
-                'Buy': X_test.Buy.iloc[:prediction_length],
-                'Sell': X_test.Sell.iloc[:prediction_length],
-                'Actual_Sharpe': Y_test.iloc[:prediction_length],
-                'Best_Prediction': best_prediction
-            }, index=results_index)
-
-        #     log_data_stats(logger, results_df, f"{ticker_symbol} final results", log_head=True)
+            # Get the original columns that we need for the results dataframe
+            if 'Close' in data_clean.columns and 'Buy' in data_clean.columns and 'Sell' in data_clean.columns:
+                results_df = pd.DataFrame({
+                    'Ticker': ticker_symbol,
+                    'Close': data_clean.loc[X_test.index[:prediction_length], 'Close'],
+                    'Buy': data_clean.loc[X_test.index[:prediction_length], 'Buy'],
+                    'Sell': data_clean.loc[X_test.index[:prediction_length], 'Sell'],
+                    'Actual_Sharpe': Y_test.iloc[:prediction_length],
+                    'Best_Prediction': best_prediction
+                }, index=results_index)
+            else:
+                # Fallback if we don't have those specific columns
+                results_df = pd.DataFrame({
+                    'Ticker': ticker_symbol,
+                    'Actual_Sharpe': Y_test.iloc[:prediction_length],
+                    'Best_Prediction': best_prediction
+                }, index=results_index)
+                logger.warning(f"Some columns (Close/Buy/Sell) not found in the data. Created simplified results.")
             
             results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensemble_prediction_results.csv')
             results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensemble_prediction_results.csv"))
@@ -205,9 +234,9 @@ def full_pipeline_for_single_stock(logger, date_folder, current_date, ticker_sym
             # Added fallback saving option for emergencies
             try:
                 # Try with a simpler approach if the dataframe creation failed
-
                 np.savetxt(os.path.join(current_date, f"{ticker_symbol}_best_prediction.csv"),
                            best_prediction, delimiter=",", header="Prediction")
+                
                 results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensemble_prediction_results.csv"))
                 logger.info(f"Saved simplified prediction to local folder")
             except Exception as e2:
@@ -260,14 +289,42 @@ def run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers.
     }
 
     logger.info(f"Loaded {len(valid_tickers)} valid tickers.")
+
+    base_directory = "results" 
+    clean_data_date_folder = "20250426"
+    date_path = os.path.join(base_directory, clean_data_date_folder)
+
+    if not os.path.exists(date_path):
+        logger.error(f"Folder path '{date_path}' does not exist.")
+        return {'status': 'error', 'message': 'Clean data folder not found'}
+
     
+
     # Process each ticker
     for i, ticker in enumerate(valid_tickers):
         logger.info(f"\nProcessing ticker {i+1}/{len(valid_tickers)}: {ticker}")
         
         try:
-            success = full_pipeline_for_single_stock(logger, date_folder, current_date, ticker, start_date, end_date)
+            # read csv -> {ticker}_clean_data: send clean data to full pipelin
+            ticker_csv_path = os.path.join(date_path, f"{ticker}_clean_data.csv")
+
+            # Check if the file exists
+            if not os.path.exists(ticker_csv_path):
+                logger.warning(f"File not found: {ticker_csv_path}")
+                results['failed'] += 1
+                results['tickers_processed'].append({'ticker': ticker, 'status': 'file_not_found'})
+                continue
+
+            # Read the CSV file - use date parsing to handle the index correctly
+            ticker_clean_data = pd.read_csv(ticker_csv_path, parse_dates=True)
+            logger.info(f"Successfully loaded clean data for {ticker}")
+
+            # Debug information about the loaded data
+            logger.info(f"Data shape: {ticker_clean_data.shape}")
+            logger.info(f"Columns: {ticker_clean_data.columns.tolist()[:5]}...")
             
+            success = full_pipeline_for_single_stock(ticker_clean_data, logger, date_folder, current_date, ticker, start_date, end_date)
+                        
             if success:
                 logger.info(f"Successfully processed {ticker}")
                 results['successful'] += 1

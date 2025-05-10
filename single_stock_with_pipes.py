@@ -679,38 +679,72 @@ Gradient Boosting Regression (GBR)
 Long Short Term Memory model (LSTM)
 """
 
+# def create_models(): #OLD PARAMS 2/5/25
+#   models = {
+#       'SVR': (SVR(), {
+#             'kernel': ['rbf', 'linear'],
+#             'C': [0.1, 1, 10],
+#             'epsilon': [0.01, 0.1]
+#         }),
+#       'XGBoost': (XGBRegressor(random_state=42), {
+#             'n_estimators': [100, 200],
+#             'max_depth': [3, 5, 7],
+#             'learning_rate': [0.01, 0.1]
+#       }),
+#       'LightGBM': (LGBMRegressor(random_state=42, verbose=-1), {
+#             'n_estimators': [100, 200],
+#             'max_depth': [3, 5, 7],
+#             'learning_rate': [0.01, 0.1],
+#             'force_row_wise': [True]
+#       }),
+#       'RandomForest': (RandomForestRegressor(random_state=42), {
+#             'n_estimators': [100, 200],
+#             'max_depth': [3, 5, 7],
+#             'min_samples_split': [2, 5, 10]
+#       }),
+#       'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
+#             'n_estimators': [100, 200],
+#             'max_depth': [3, 5, 7],
+#             'learning_rate': [0.01, 0.1]
+#       }),
+#       'LSTM': (None, {})
+#     }
+#   return models
 def create_models():
-  models = {
-      'SVR': (SVR(), {
+    """
+    Define models and their Optuna parameter search spaces.
+    """
+    models = {
+        'SVR': (SVR(), {
             'kernel': ['rbf', 'linear'],
-            'C': [0.1, 1, 10],
-            'epsilon': [0.01, 0.1]
+            'C': lambda trial: trial.suggest_float('C', 0.1, 10, log=True),
+            'epsilon': lambda trial: trial.suggest_float('epsilon', 0.01, 0.2)
         }),
-      'XGBoost': (XGBRegressor(random_state=42), {
-            'n_estimators': [100, 200],
-            'max_depth': [3, 5, 7],
-            'learning_rate': [0.01, 0.1]
-      }),
-      'LightGBM': (LGBMRegressor(random_state=42, verbose=-1), {
-            'n_estimators': [100, 200],
-            'max_depth': [3, 5, 7],
-            'learning_rate': [0.01, 0.1],
+        'XGBoost': (XGBRegressor(random_state=42), {
+            'n_estimators': lambda trial: trial.suggest_int('n_estimators', 50, 300),
+            'max_depth': lambda trial: trial.suggest_int('max_depth', 2, 8),
+            'learning_rate': lambda trial: trial.suggest_float('learning_rate', 0.005, 0.2, log=True),
+            'subsample': lambda trial: trial.suggest_float('subsample', 0.6, 1.0)
+        }),
+        'LightGBM': (LGBMRegressor(random_state=42, verbose=-1), {
+            'n_estimators': lambda trial: trial.suggest_int('n_estimators', 50, 300),
+            'max_depth': lambda trial: trial.suggest_int('max_depth', 2, 8),
+            'learning_rate': lambda trial: trial.suggest_float('learning_rate', 0.005, 0.2, log=True),
             'force_row_wise': [True]
-      }),
-      'RandomForest': (RandomForestRegressor(random_state=42), {
-            'n_estimators': [100, 200],
-            'max_depth': [3, 5, 7],
-            'min_samples_split': [2, 5, 10]
-      }),
-      'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
-            'n_estimators': [100, 200],
-            'max_depth': [3, 5, 7],
-            'learning_rate': [0.01, 0.1]
-      }),
-      'LSTM': (None, {})
+        }),
+        'RandomForest': (RandomForestRegressor(random_state=42), {
+            'n_estimators': lambda trial: trial.suggest_int('n_estimators', 50, 300),
+            'max_depth': lambda trial: trial.suggest_int('max_depth', 2, 8),
+            'min_samples_split': lambda trial: trial.suggest_int('min_samples_split', 2, 10)
+        }),
+        'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
+            'n_estimators': lambda trial: trial.suggest_int('n_estimators', 50, 300),
+            'max_depth': lambda trial: trial.suggest_int('max_depth', 2, 8),
+            'learning_rate': lambda trial: trial.suggest_float('learning_rate', 0.005, 0.2, log=True)
+        }),
+        'LSTM': (None, {})  # Handled separately
     }
-  return models
-
+    return models
 """# Replace the LSTM part in create_models() function
 ## Instead of returning a KerasRegressor instance, create a placeholder
 ## handle LSTM separately in the train_and_validate_models function
