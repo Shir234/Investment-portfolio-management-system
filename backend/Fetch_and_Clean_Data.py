@@ -58,6 +58,14 @@ def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date,
             logger.error(f"No data returned for ticker {ticker_symbol}")
             return False
         
+        try:
+            data.to_csv(f'{date_folder}/{ticker_symbol}_raw_data.csv')        
+            data.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_raw_data.csv"))
+            logger.info(f"Saved raw data for {ticker_symbol} to folders")
+        except Exception as e:
+            logger.error(f"Error saving to Google Drive: {e}")
+            os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
+        
         # Run second pipeline, clean and process
         logger.info(f"\n{'-'*30}\nCleaning data for {ticker_symbol}\n{'-'*30}")
         pipeline_clean = create_data_cleaning_pipeline()
@@ -187,7 +195,7 @@ os.makedirs(date_folder, exist_ok=True)
 if __name__ == "__main__":
 
    # In your main script
-    API_KEY = "OI3PEOTKGEFGXADW"  # Get from https://www.alphavantage.co/support/#api-key
+    API_KEY = "3T3LNJ2UYGY4R7WO"  # Get from https://www.alphavantage.co/support/#api-key
     # Call the main pipeline function
     pipeline_results = run_pipeline_fetch_data(
         logger, 
