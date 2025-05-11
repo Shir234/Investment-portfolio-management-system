@@ -136,7 +136,7 @@ def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date,
 # ===============================================================================
 # Running the -> Full Pipeline For Single Stock
 # ===============================================================================
-def run_pipeline_fetch_data(logger, date_folder, current_date, api_key, tickers_file="valid_tickers.csv", start_date="2013-01-01", end_date="2024-01-01"): 
+def run_pipeline_fetch_data(logger, date_folder, current_date, api_key, tickers_file="valid_tickers_av", start_date="2013-01-01", end_date="2024-01-01"): 
     # Load tickers
     valid_tickers = load_valid_tickers(logger, tickers_file)
     
