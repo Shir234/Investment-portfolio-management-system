@@ -14,35 +14,6 @@ from pandas_datareader import data as pdr
 import datetime
 import time
 
-# ===============================================================================
-# Data Pipeline Classes
-## Pipeline to fetch stock data and feature engineering
-# ===============================================================================
-# fetch historical stock data
-# class DataFetcher(BaseEstimator, TransformerMixin):
-#     def __init__(self, ticker_symbol, start_date, end_date):
-#         self.ticker_symbol = ticker_symbol
-#         self.start_date = start_date
-#         self.end_date = end_date
-
-#     def fit(self, X, y=None):
-#         return self
-
-#     def transform(self, X):
-#         try:
-#             ticker = yf.Ticker(self.ticker_symbol)
-#             history = ticker.history(start=self.start_date, end=self.end_date)
-            
-#             if history.empty:
-#                 raise ValueError(f"No data returned for ticker: {self.ticker_symbol}")
-
-#             return history
-        
-#         except Exception as e:
-#             print(f"Error fetching data for ticker {self.ticker_symbol}: {e}")
-
-#             return pd.DataFrame() # return an empty df if an error occurs
-
 class DataFetcher(BaseEstimator, TransformerMixin):
     def __init__(self, ticker_symbol, start_date, end_date, max_retries=3, retry_delay=5):
         self.ticker_symbol = ticker_symbol
@@ -83,6 +54,67 @@ class DataFetcher(BaseEstimator, TransformerMixin):
                 else:
                     print(f"Error fetching data for ticker {self.ticker_symbol}: {e}")
                     # Instead of returning empty DataFrame, raise an exception to stop pipeline
+                    raise ValueError(f"Failed to fetch data for {self.ticker_symbol}: {e}")
+
+
+class AlphaVantageDataFetcher(BaseEstimator, TransformerMixin):
+    def __init__(self, ticker_symbol, start_date, end_date, api_key, max_retries=3, retry_delay=5):
+        self.ticker_symbol = ticker_symbol
+        self.start_date = start_date
+        self.end_date = end_date
+        self.api_key = api_key
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        
+    def fit(self, X, y=None):
+        return self
+        
+    def transform(self, X):
+        from pandas_datareader import data as pdr
+        import pandas as pd
+        import time
+        from datetime import datetime
+        
+        for attempt in range(self.max_retries):
+            try:
+                # Convert string dates to datetime
+                start = datetime.strptime(self.start_date, "%Y-%m-%d")
+                end = datetime.strptime(self.end_date, "%Y-%m-%d")
+                
+                # Fetch data from Alpha Vantage
+                history = pdr.DataReader(
+                    self.ticker_symbol, 
+                    'av-daily', 
+                    start=start, 
+                    end=end,
+                    api_key=self.api_key
+                )
+                
+                if history.empty:
+                    raise ValueError(f"No data returned for ticker: {self.ticker_symbol}")
+                
+                # Rename columns to match expected format from yfinance
+                history = history.rename(columns={
+                    'open': 'Open',
+                    'high': 'High',
+                    'low': 'Low',
+                    'close': 'Close',
+                    'volume': 'Volume'
+                })
+                
+                # Ensure index is DatetimeIndex
+                if not isinstance(history.index, pd.DatetimeIndex):
+                    history.index = pd.to_datetime(history.index)
+                    
+                return history
+            
+            except Exception as e:
+                if "rate limit" in str(e).lower() and attempt < self.max_retries - 1:
+                    print(f"Rate limited for {self.ticker_symbol}. Retrying in {self.retry_delay} seconds...")
+                    time.sleep(self.retry_delay)
+                    self.retry_delay *= 2  # Exponential backoff
+                else:
+                    print(f"Error fetching data for ticker {self.ticker_symbol}: {e}")
                     raise ValueError(f"Failed to fetch data for {self.ticker_symbol}: {e}")
 
 # TODO -> ADD INDICATORS
@@ -625,9 +657,9 @@ class CorrelationHandler(BaseEstimator, TransformerMixin):
 # ===============================================================================
 # Create The Pipelines
 # ===============================================================================
-def create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate):
+def create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate, api_key):
     return Pipeline([
-        ('data_fetcher', DataFetcher(ticker_symbol, start_date, end_date)),
+        ('data_fetcher', AlphaVantageDataFetcher(ticker_symbol, start_date, end_date, api_key)),
         ('indicator_calculator', IndicatorCalculator()),
         ('signal_calculator', SignalCalculator()),
         ('transaction_metrics_calculator', TransactionMetricsCalculator(risk_free_rate)),
