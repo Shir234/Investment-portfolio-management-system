@@ -8,7 +8,7 @@ import datetime
 from Data_Cleaning_Pipelines import create_stock_data_pipeline, create_data_cleaning_pipeline
 
 
-def load_valid_tickers(logger, file_path="valid_tickers.csv"):
+def load_valid_tickers(logger, file_path="valid_tickers_av.csv"):
     """
     Loads valid tickers from a CSV file
     Parameters:
@@ -30,11 +30,38 @@ def load_valid_tickers(logger, file_path="valid_tickers.csv"):
         logger.error(f"Error loading tickers from {file_path}: {e}")
         return []
     
-def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date, api_key, ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
+def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date, api_key, 
+                                              ticker_symbol, start_date, end_date, risk_free_rate = 0.02, requests_this_minute=0, minute_start_time=None):
+    """
+    Runs the full pipeline for a single stock with rate limiting
+    
+    Returns:
+    - tuple: (success, requests_this_minute, minute_start_time)
+    """
+     
     logger.info(f"STARTING PIPELINE FOR TICKER {ticker_symbol}")
+
+    if minute_start_time is None:
+        minute_start_time = time.time()
+
 
     try:
         start_time = time.time()
+        # Check if we need to reset our minute counter
+        current_time = time.time()
+        if current_time - minute_start_time >= 60:
+            requests_this_minute = 0
+            minute_start_time = current_time
+            logger.info("Rate limit counter reset for new minute")
+        
+        # If we're approaching the rate limit, wait until the next minute starts
+        if requests_this_minute >= 72:  # 75 - buffer
+            seconds_to_wait = 60 - (current_time - minute_start_time) + 1
+            logger.info(f"Approaching rate limit. Waiting {seconds_to_wait:.2f} seconds until next minute...")
+            time.sleep(seconds_to_wait)
+            requests_this_minute = 0
+            minute_start_time = time.time()
+
         # TODO -> comment and uncomment if using the machine
         # Shir's Path G:\My Drive\Investment portfolio management system\code_results\results\predictions
         #drive_path = r"G:\My Drive\Investment portfolio management system\code_results\results\predictions/"
@@ -52,11 +79,17 @@ def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date,
         
         pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate, api_key)
         data = pipeline.fit_transform(pd.DataFrame())
+
+        # Increment request counter - assuming pipeline uses about 10 API calls
+        # Adjust this number based on your actual pipeline implementation
+        requests_this_minute += 10
+        logger.info(f"API request count: {requests_this_minute}/75 this minute")
+        
         data.to_csv(f'{date_folder}/{ticker_symbol}_data.csv')        
 
         if data.empty:
             logger.error(f"No data returned for ticker {ticker_symbol}")
-            return False
+            return False, requests_this_minute, minute_start_time
         
         try:
             data.to_csv(f'{date_folder}/{ticker_symbol}_raw_data.csv')        
@@ -91,15 +124,14 @@ def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date,
         logger.info(f"COMPLETED PIPELINE FOR TICKER {ticker_symbol} in {end_time - start_time:.2f} seconds")
         logger.info(f"{'='*50}")
         
-        return True
+        return True, requests_this_minute, minute_start_time
         
     except Exception as e:
         logger.error(f"Error in pipeline for {ticker_symbol}: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        return False, requests_this_minute, minute_start_time
     
-
 
 # ===============================================================================
 # Running the -> Full Pipeline For Single Stock
@@ -121,13 +153,22 @@ def run_pipeline_fetch_data(logger, date_folder, current_date, api_key, tickers_
         'tickers_processed': []
     }
 
+    # Rate limiting variables
+    requests_this_minute = 0
+    minute_start_time = time.time()
+
     logger.info(f"Loaded {len(valid_tickers)} valid tickers.") 
+    logger.info(f"Rate limit set to 75 requests per minute (premium API)")
+
     # Process each ticker
     for i, ticker in enumerate(valid_tickers):
         logger.info(f"\nProcessing ticker {i+1}/{len(valid_tickers)}: {ticker}")
         
         try:  
-            success = full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date, api_key, ticker, start_date, end_date)
+            success, requests_this_minute, minute_start_time = full_pipeline_fetch_data_for_single_stock(
+                logger, date_folder, current_date, api_key, ticker, start_date, end_date,
+                requests_this_minute=requests_this_minute, minute_start_time=minute_start_time
+            )
                         
             if success:
                 logger.info(f"Successfully processed {ticker}")
@@ -137,6 +178,12 @@ def run_pipeline_fetch_data(logger, date_folder, current_date, api_key, tickers_
                 logger.warning(f"Failed to process {ticker}")
                 results['failed'] += 1
                 results['tickers_processed'].append({'ticker': ticker, 'status': 'failed'})
+            
+            # Save intermediate results periodically
+            if (i+1) % 10 == 0 or (i+1) == len(valid_tickers):
+                summary_df = pd.DataFrame(results['tickers_processed'])
+                summary_df.to_csv(f'{date_folder}/pipeline_summary_intermediate_{current_date}.csv', index=False)
+                logger.info(f"Saved intermediate results after processing {i+1}/{len(valid_tickers)} tickers")
         
         except Exception as e:
             logger.error(f"Error processing ticker {ticker}: {e}")
@@ -202,7 +249,7 @@ if __name__ == "__main__":
         date_folder, 
         current_date, 
         api_key=API_KEY,
-        tickers_file="valid_tickers.csv", 
+        tickers_file="valid_tickers_av.csv", 
         start_date="2013-01-01", 
         end_date="2024-01-01"
     )
