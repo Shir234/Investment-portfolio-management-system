@@ -92,7 +92,8 @@ def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date,
             return False, requests_this_minute, minute_start_time
         
         try:
-            data.to_csv(f'{date_folder}/{ticker_symbol}_raw_data.csv')        
+            data.index.name = "Date"  # Name the index column
+            data.to_csv(f'{date_folder}/{ticker_symbol}_raw_data.csv')
             data.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_raw_data.csv"))
             logger.info(f"Saved raw data for {ticker_symbol} to folders")
         except Exception as e:
@@ -106,6 +107,7 @@ def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date,
 
         # Save locally and to Google Drive
         try:
+            data_clean.index.name = "Date"  # Name the index column
             data_clean.to_csv(f'{date_folder}/{ticker_symbol}_clean_data.csv')
             data_clean.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_clean_data.csv"))
             logger.info(f"Saved clean data for {ticker_symbol} to folders")

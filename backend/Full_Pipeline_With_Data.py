@@ -219,6 +219,7 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
                 }, index=results_index)
                 logger.warning(f"Some columns (Close/Buy/Sell) not found in the data. Created simplified results.")
             
+            results_df.index.name = "Date"
             results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensemble_prediction_results.csv')
             results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensemble_prediction_results.csv"))
             logger.info(f"Saved results for {ticker_symbol} to Google Drive dated folder")
