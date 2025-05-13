@@ -1,3 +1,4 @@
+# Data_Cleaning_Pipelines.py
 """
 Data fetching and cleaning pipelines.
 Fetch the data, add indicators, calculate buy/sell signals.
@@ -11,40 +12,115 @@ import pandas_ta as ta
 from sklearn.base import BaseEstimator, TransformerMixin
 from pandas_datareader import data as pdr
 import datetime
+import time
 
-# ===============================================================================
-# Data Pipeline Classes
-## Pipeline to fetch stock data and feature engineering
-# ===============================================================================
-# fetch historical stock data
 class DataFetcher(BaseEstimator, TransformerMixin):
-    def __init__(self, ticker_symbol, start_date, end_date):
+    def __init__(self, ticker_symbol, start_date, end_date, max_retries=3, retry_delay=5):
         self.ticker_symbol = ticker_symbol
         self.start_date = start_date
         self.end_date = end_date
-
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        
     def fit(self, X, y=None):
         return self
-
-    def transform(self, X):
-        try:
-            ticker = yf.Ticker(self.ticker_symbol)
-            history = ticker.history(start=self.start_date, end=self.end_date)
-            
-            if history.empty:
-                raise ValueError(f"No data returned for ticker: {self.ticker_symbol}")
-
-            return history
         
-        except Exception as e:
-            print(f"Error fetching data for ticker {self.ticker_symbol}: {e}")
+    def transform(self, X):
+        for attempt in range(self.max_retries):
+            try:
+                ticker = yf.Ticker(self.ticker_symbol)
+                history = ticker.history(start=self.start_date, end=self.end_date)
+                
+                if history.empty:
+                    raise ValueError(f"No data returned for ticker: {self.ticker_symbol}")
+                
+                # Ensure we have the expected columns
+                required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                missing_columns = [col for col in required_columns if col not in history.columns]
+                if missing_columns:
+                    raise ValueError(f"Missing required columns: {missing_columns}")
+                
+                # Convert index to DatetimeIndex if it's not already
+                if not isinstance(history.index, pd.DatetimeIndex):
+                    history.index = pd.to_datetime(history.index)
+                    
+                return history
+            
+            except Exception as e:
+                if "Too Many Requests" in str(e) and attempt < self.max_retries - 1:
+                    print(f"Rate limited for {self.ticker_symbol}. Retrying in {self.retry_delay} seconds...")
+                    time.sleep(self.retry_delay)
+                    self.retry_delay *= 2  # Exponential backoff
+                else:
+                    print(f"Error fetching data for ticker {self.ticker_symbol}: {e}")
+                    # Instead of returning empty DataFrame, raise an exception to stop pipeline
+                    raise ValueError(f"Failed to fetch data for {self.ticker_symbol}: {e}")
 
-            return pd.DataFrame() # return an empty df if an error occurs
-      
+
+class AlphaVantageDataFetcher(BaseEstimator, TransformerMixin):
+    def __init__(self, ticker_symbol, start_date, end_date, api_key, max_retries=3, retry_delay=5):
+        self.ticker_symbol = ticker_symbol
+        self.start_date = start_date
+        self.end_date = end_date
+        self.api_key = api_key
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        
+    def fit(self, X, y=None):
+        return self
+        
+    def transform(self, X):
+        from pandas_datareader import data as pdr
+        import pandas as pd
+        import time
+        from datetime import datetime
+        
+        for attempt in range(self.max_retries):
+            try:
+                # Convert string dates to datetime
+                start = datetime.strptime(self.start_date, "%Y-%m-%d")
+                end = datetime.strptime(self.end_date, "%Y-%m-%d")
+                
+                # Fetch data from Alpha Vantage
+                history = pdr.DataReader(
+                    self.ticker_symbol, 
+                    'av-daily', 
+                    start=start, 
+                    end=end,
+                    api_key=self.api_key
+                )
+                
+                if history.empty:
+                    raise ValueError(f"No data returned for ticker: {self.ticker_symbol}")
+                
+                # Rename columns to match expected format from yfinance
+                history = history.rename(columns={
+                    'open': 'Open',
+                    'high': 'High',
+                    'low': 'Low',
+                    'close': 'Close',
+                    'volume': 'Volume'
+                })
+                
+                # Ensure index is DatetimeIndex
+                if not isinstance(history.index, pd.DatetimeIndex):
+                    history.index = pd.to_datetime(history.index)
+                    
+                return history
+            
+            except Exception as e:
+                if "rate limit" in str(e).lower() and attempt < self.max_retries - 1:
+                    print(f"Rate limited for {self.ticker_symbol}. Retrying in {self.retry_delay} seconds...")
+                    time.sleep(self.retry_delay)
+                    self.retry_delay *= 2  # Exponential backoff
+                else:
+                    print(f"Error fetching data for ticker {self.ticker_symbol}: {e}")
+                    raise ValueError(f"Failed to fetch data for {self.ticker_symbol}: {e}")
+
 # TODO -> ADD INDICATORS
 # Add market indicators
 class IndicatorCalculator(BaseEstimator, TransformerMixin):
-    def __init__(self, include_prime_rate=True, prime_start="2019-01-01", prime_end="2024-01-01"):
+    def __init__(self, include_prime_rate=True, prime_start="2013-01-01", prime_end="2024-01-01"):
         self.indicators = [
             # Original indicators
             'psar', 'mfi', 'mvp',     
@@ -78,8 +154,8 @@ class IndicatorCalculator(BaseEstimator, TransformerMixin):
 
             self.prime_data = pdr.get_data_fred('PRIME', start, end)
             # Apply forward fill then backward fill
-            self.prime_data = self.prime_data.fillna(method='ffill')
-            self.prime_data = self.prime_data.fillna(method='bfill')
+            self.prime_data = self.prime_data.ffill()
+            self.prime_data = self.prime_data.bfill()
             print(f"Prime rate data loaded with {len(self.prime_data)} records")
         
         except Exception as e:
@@ -101,8 +177,13 @@ class IndicatorCalculator(BaseEstimator, TransformerMixin):
                     data['PSAR'] = psar['PSARl_0.02_0.2']
                 
                 elif indicator == 'mfi':
-                    data['MFI'] = ta.mfi(data['High'], data['Low'], data['Close'], data['Volume']).astype(float)
-                
+                    tmp_volume = data['Volume'].astype(float)
+                    mfi_values = ta.mfi(data['High'], data['Low'], data['Close'], tmp_volume)
+                    if 'MFI' in data.columns:
+                        if data['MFI'].dtype == 'int64':
+                            data['MFI'] = data['MFI'].astype(float)
+                    data.loc[:, 'MFI'] = mfi_values
+
                 # Calculate Moving Volatility Pattern (MVP) (MVP as a simple moving average of squared returns)
                 elif indicator == 'mvp':
                     data['Returns'] = data['Close'].pct_change()                                                # calculate the daily return
@@ -157,11 +238,7 @@ class IndicatorCalculator(BaseEstimator, TransformerMixin):
                     data['BB_Upper'] = bbands['BBU_20_2.0']
                     data['BB_Middle'] = bbands['BBM_20_2.0']
                     data['BB_Lower'] = bbands['BBL_20_2.0']
-                    # TODO -> WHAT IS THIS?
-                    # # Calculate BB width and %B
-                    # data['BB_Width'] = (data['BB_Upper'] - data['BB_Lower']) / data['BB_Middle']
-                    # data['BB_Percent'] = (data['Close'] - data['BB_Lower']) / (data['BB_Upper'] - data['BB_Lower'])
-                
+
                 elif indicator == 'atr':
                     data['ATR'] = ta.atr(data['High'], data['Low'], data['Close'], length=14)
                     # ATR as percentage of price
@@ -190,26 +267,33 @@ class IndicatorCalculator(BaseEstimator, TransformerMixin):
                     adx = ta.adx(data['High'], data['Low'], data['Close'], length=14)
                     data['ADX'] = adx['ADX_14']
                     data['DI_Plus'] = adx['DMP_14']
-                    data['DI_Minus'] = adx['DMN_14']
+                    # data['DI_Minus'] = adx['DMN_14']
                     # ADX trend strength
                     data['ADX_Trend'] = np.where(data['ADX'] > 25, 1, 0)
-                    # TODO -> WHAT IS THIS?
-                    # # Directional signals
-                    # data['ADX_Signal'] = np.where(data['DI_Plus'] > data['DI_Minus'], 1, 
-                    #                             np.where(data['DI_Plus'] < data['DI_Minus'], -1, 0))
-                
+
                 # Ichimoku Cloud
                 elif indicator == 'ichimoku':
-                    ichimoku = ta.ichimoku(data['High'], data['Low'], data['Close'])
-                    data['Ichimoku_Conversion'] = ichimoku['ICS_9_26_52_26']
-                    data['Ichimoku_Base'] = ichimoku['ITS_9_26_52_26']
-                    data['Ichimoku_A'] = ichimoku['ISA_9_26_52_26']
-                    data['Ichimoku_B'] = ichimoku['ISB_9_26_52_26']
-                    # TODO -> WHAT IS THIS?
-                    # # Cloud signals
-                    # data['Ichimoku_Signal'] = np.where(data['Close'] > data['Ichimoku_A'], 1, 
-                    #                                  np.where(data['Close'] < data['Ichimoku_B'], -1, 0))
-                
+                    try:
+                        ichimoku = ta.ichimoku(data['High'], data['Low'], data['Close'])
+                        
+                        # Check if ichimoku is a tuple (which appears to be the case based on your error)
+                        if isinstance(ichimoku, tuple) and len(ichimoku) > 1 and isinstance(ichimoku[1], pd.DataFrame):
+                            ichimoku_df = ichimoku[1]
+                          
+                            # Map appropriate columns based on what's available
+                            if 'ISA_9_26_52' in ichimoku_df.columns:
+                                data['Ichimoku_A'] = ichimoku_df['ISA_9_26_52']
+                            if 'ISB_9_26_52' in ichimoku_df.columns:
+                                data['Ichimoku_B'] = ichimoku_df['ISB_9_26_52'] 
+                            if 'ITS_9_26_52' in ichimoku_df.columns:
+                                data['Ichimoku_Base'] = ichimoku_df['ITS_9_26_52']
+                            if 'ICS_9_26_52' in ichimoku_df.columns:
+                                data['Ichimoku_Conversion'] = ichimoku_df['ICS_9_26_52']
+                        
+                    except Exception as e:
+                        print(f"Error processing Ichimoku indicator: {e}")
+                        print("Skipping Ichimoku indicator")
+                    
                 # Temporal features
                 elif indicator == 'time_features':
                     # Convert index to datetime if it's not already
@@ -367,21 +451,40 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
         for col in X_.columns:
             if any(exclude in col for exclude in self.exclude_columns):
                 # For categorical/binary columns, fill with -1 as a sentinel value
-                X_[col] = X_[col].fillna(-1)
+                X_[col] = X_[col].fillna(-1).infer_objects(copy=False)
             elif X_[col].dtype in ['float64', 'int64']:
                 # Use forward-fill then backward-fill for time series numeric data
-                X_[col] = X_[col].fillna(method='ffill').fillna(method='bfill')
+                X_[col] = X_[col].ffill().bfill().infer_objects(copy=False)
             else:
                 # For any other types, use -1
-                X_[col] = X_[col].fillna(-1)
+                X_[col] = X_[col].fillna(-1).infer_objects(copy=False)
 
         return X_
   
 # Handle outliers: Use Z-score to identify data points that deviate significantly from the mean - rolling window of 28 days
 class OutlierHandler(BaseEstimator, TransformerMixin):
-    def __init__(self,threshold=3, window=28, exclude_columns=[
+    # def __init__(self,threshold=3, window=28, exclude_columns=[
+    #     # Price data
+    #     'Open', 'High', 'Low', 'Close', 'Volume',
+    #     # Signal columns
+    #     'Buy', 'Sell', 'Signal', 'Signal_Shift',
+    #     # Binary signals or categorical
+    #     'Is_Month_End', 'Is_Month_Start', 'Is_Quarter_End',
+    #     'Day_of_Week', 'Month', 'Quarter', 
+    #     'Sin_Day', 'Cos_Day', 'Sin_Month', 'Cos_Month',
+    #     'RSI_Overbought', 'RSI_Oversold', 'STOCH_Signal', 
+    #     'MACD_CrossOver', 'ADX_Signal', 'ADX_Trend', 
+    #     'Ichimoku_Signal', 'MVP_Signal',
+    #     # Transaction metrics
+    #     'Transaction_Sharpe', 'Transaction_Returns', 
+    #     'Transaction_Volatility', 'Transaction_Duration',
+    #     # External data
+    #     'Prime_Rate'
+    # ]):
+    #TODO -> grok change
+    def __init__(self,threshold=2.5, window=14, exclude_columns=[
         # Price data
-        'Open', 'High', 'Low', 'Close', 'Volume',
+        'Open', 'High', 'Low', 'Close',
         # Signal columns
         'Buy', 'Sell', 'Signal', 'Signal_Shift',
         # Binary signals or categorical
@@ -390,10 +493,10 @@ class OutlierHandler(BaseEstimator, TransformerMixin):
         'Sin_Day', 'Cos_Day', 'Sin_Month', 'Cos_Month',
         'RSI_Overbought', 'RSI_Oversold', 'STOCH_Signal', 
         'MACD_CrossOver', 'ADX_Signal', 'ADX_Trend', 
-        'Ichimoku_Signal', 'MVP_Signal',
+        'Ichimoku_Signal',
         # Transaction metrics
-        'Transaction_Sharpe', 'Transaction_Returns', 
-        'Transaction_Volatility', 'Transaction_Duration',
+        # 'Transaction_Sharpe', 'Transaction_Returns', 
+        # 'Transaction_Volatility', 'Transaction_Duration',
         # External data
         'Prime_Rate'
     ]):
@@ -429,6 +532,92 @@ class OutlierHandler(BaseEstimator, TransformerMixin):
 
         return X_
   
+
+class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
+    """
+    Handles outliers using percentile-based capping and optional log transformation.
+    - For Transaction_Sharpe: Applies only capping to preserve negative and positive values.
+    - For other numeric columns: Applies capping and log transformation to address skewness.
+    """
+
+    def __init__(self, target_column='Transaction_Sharpe', lower_percentile=1, 
+                 upper_percentile=99, exclude_columns=[
+        # Price data - should not be transformed
+        'Open', 'High', 'Low', 'Close', 'Volume',
+        # Signal and binary columns
+        'Signal', 'Signal_Shift', 'Buy', 'Sell',
+        # Categorical time features
+        'Day_of_Week', 'Month', 'Quarter',
+        # Binary indicators
+        'Is_Month_End', 'Is_Month_Start', 'Is_Quarter_End',
+        'ADX_Trend',
+        # Cyclic features (already bounded)
+        'Sin_Day', 'Cos_Day', 'Sin_Month', 'Cos_Month',
+        # External data 
+        'Prime_Rate'
+    ]):
+        self.target_column = target_column
+        self.lower_percentile = lower_percentile
+        self.upper_percentile = upper_percentile
+        self.exclude_columns = exclude_columns
+        self.percentiles = {}  # Store percentiles for each column
+        self.min_vals = {}    # Store minimum values for log transformation
+        self.numeric_columns = []
+
+    def fit(self, X, y=None):
+        # Identify numeric columns to process (excluding binary/categorical)
+        self.numeric_columns = [
+            col for col in X.columns
+            if X[col].dtype in ['float64', 'int64']
+            and not any(exclude in col for exclude in self.exclude_columns)
+            ]
+        # Exclude target_column from log transformation
+        self.log_transform_columns = [col for col in self.numeric_columns if col != self.target_column]
+
+        # Compute percentiles for capping
+        for col in self.numeric_columns:
+            self.percentiles[col] = np.percentile(X[col].dropna(), 
+                                                  [self.lower_percentile, self.upper_percentile])
+        return self
+    
+    def transform(self, X):
+        X_ = X.copy()
+
+        # Process each numeric column
+        for col in self.numeric_columns:
+            p1, p99 = self.percentiles[col]
+            # Cap extreme values
+            X_[col] = np.clip(X_[col], p1, p99)
+
+            # Apply log transformation only to non-target columns
+            if col in self.log_transform_columns:
+                col_data = X_[col]
+                self.min_vals[col] = col_data.min()
+                if self.min_vals[col] < 0:
+                    col_shifted = col_data - self.min_vals[col] + 1
+                else:
+                    col_shifted = col_data + 1
+                X_[col] = np.log1p(col_shifted)
+
+        return X_
+    
+    def inverse_transform(self, X):
+        X_ = X.copy()
+        # Inverse transform each numeric column
+        for col in self.numeric_columns:
+            if col in X_.columns:
+                p1, p99 = self.percentiles[col]
+                col_data = X_[col]
+                if col in self.log_transform_columns:
+                    # Inverse log transformation
+                    col_original = np.expm1(col_data) + self.min_vals.get(col, 0) - 1
+                    # Ensure values remain within capped range
+                    X_[col] = np.clip(col_original, p1, p99)
+                else:
+                    # For Transaction_Sharpe, only ensure capping
+                    X_[col] = np.clip(col_data, p1, p99)
+        return X_
+
 # Handle highly correlated features
 class CorrelationHandler(BaseEstimator, TransformerMixin):
     def __init__(self, threshold=0.95, keep_columns=['Close']):
@@ -468,9 +657,9 @@ class CorrelationHandler(BaseEstimator, TransformerMixin):
 # ===============================================================================
 # Create The Pipelines
 # ===============================================================================
-def create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate):
+def create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate, api_key):
     return Pipeline([
-        ('data_fetcher', DataFetcher(ticker_symbol, start_date, end_date)),
+        ('data_fetcher', AlphaVantageDataFetcher(ticker_symbol, start_date, end_date, api_key)),
         ('indicator_calculator', IndicatorCalculator()),
         ('signal_calculator', SignalCalculator()),
         ('transaction_metrics_calculator', TransactionMetricsCalculator(risk_free_rate)),
@@ -479,6 +668,6 @@ def create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_ra
 def create_data_cleaning_pipeline(correlation_threshold = 0.95):
   return Pipeline([
       ('missing_value_handler', MissingValueHandler()),
-      ('outlier_handler', OutlierHandler()),
+      ('outlier_handler', ComprehensiveOutlierHandler()),
       ('correlation_handler', CorrelationHandler(correlation_threshold))
   ])
