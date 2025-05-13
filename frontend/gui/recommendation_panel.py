@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QTableWidget, QTableWidgetItem, QPushButton, 
                              QMessageBox, QComboBox)
 from PyQt5.QtCore import Qt
-from trading_logic import get_orders, get_portfolio_history
+from backend.trading_logic import get_orders, get_portfolio_history
 import pandas as pd
 import logging
 

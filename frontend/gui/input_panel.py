@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdi
 from datetime import datetime
 import logging
 from data.trading_connector import execute_trading_strategy
-from trading_logic import run_trading_strategy
+from backend.trading_logic import run_trading_strategy
 import pandas as pd
 import os
 

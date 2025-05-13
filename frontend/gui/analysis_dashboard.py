@@ -4,7 +4,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import pandas as pd
-from trading_logic import get_portfolio_history, get_orders
+from backend.trading_logic import get_portfolio_history, get_orders
 import logging
 import numpy as np
 import seaborn as sns

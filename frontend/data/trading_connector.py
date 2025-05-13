@@ -1,6 +1,6 @@
 import pandas as pd
 import logging 
-from trading_logic import run_trading_strategy, get_orders, get_portfolio_history
+from backend.trading_logic import run_trading_strategy, get_orders, get_portfolio_history
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
