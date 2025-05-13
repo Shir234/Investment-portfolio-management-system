@@ -367,51 +367,45 @@ class TransactionMetricsCalculator(BaseEstimator, TransformerMixin):
     def transform(self, X):
         data = X.copy()
 
-        # Initialize the transaction metrics columns
-        data['Transaction_Volatility'] = np.nan
-        data['Transaction_Returns'] = np.nan
-        data['Transaction_Sharpe'] = np.nan
-        data['Transaction_Duration'] = np.nan
+        # Initialize the transaction metrics columns with -1 (instead of np.nan)
+        data['Transaction_Volatility'] = -1
+        data['Transaction_Returns'] = -1
+        data['Transaction_Sharpe'] = -1
+        data['Transaction_Duration'] = -1
         
         last_buy_index = None
         last_buy_price = None
-        in_active_position = False
 
         # Process the data in a single pass
         for i in range(len(data)):
             # Record buy signal
             if not np.isnan(data['Buy'].iloc[i]):
                 last_buy_index = i
-                last_buy_price = data['Close'].iloc[i]
-                in_active_position = True
+                last_buy_price = data['Buy'].iloc[i]  # Use Buy price as the purchase price
 
-            # Calculate metrics based on the last known buy signal
-            if last_buy_index is not None:
+            # Calculate metrics only on sell signal
+            if not np.isnan(data['Sell'].iloc[i]) and last_buy_index is not None:
                 buy_date = data.index[last_buy_index]
                 current_date = data.index[i]
                 duration = (current_date - buy_date).days
 
                 # Calculate raw return for this transaction
-                returns = (data['Close'].iloc[i] - last_buy_price) / last_buy_price
+                returns = (data['Sell'].iloc[i] - last_buy_price) / last_buy_price
 
                 # Calculate volatility (standard deviation of daily returns) for this transaction
+                # Use Close prices between buy and sell to calculate volatility
                 daily_returns = data['Close'].iloc[last_buy_index:i+1].pct_change().dropna()
                 volatility = daily_returns.std() if len(daily_returns) > 1 else 0
 
                 # Calculate Sharpe ratio for this transaction
                 transaction_risk_free_rate = self.risk_free_rate * (duration / 365)
-                sharpe_ratio = (returns - transaction_risk_free_rate) / volatility if volatility != 0 else 0                        # all in the same scale: returns is the return ratio, the vplatility is pct
+                sharpe_ratio = (returns - transaction_risk_free_rate) / volatility if volatility != 0 else 0
 
-                # Store the metrics for every day while in a position
+                # Store the metrics only on the sell date
                 data.loc[data.index[i], 'Transaction_Volatility'] = volatility
                 data.loc[data.index[i], 'Transaction_Returns'] = returns
                 data.loc[data.index[i], 'Transaction_Sharpe'] = sharpe_ratio
                 data.loc[data.index[i], 'Transaction_Duration'] = duration
-
-                # If this is a sell day, mark that we're no longer in an active position
-                # but continue calculating using the same buy reference point
-                if not np.isnan(data['Sell'].iloc[i]):
-                    in_active_position = False
 
         return data
     
@@ -434,7 +428,8 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
         # 'RSI_Overbought', 'RSI_Oversold',
         # 'STOCH_Signal', 'MACD_CrossOver', 'ADX_Signal',
         # 'Ichimoku_Signal', 'BB_Signal'
-        'ADX_Trend'
+        'ADX_Trend',
+        'Transaction_Volatility', 'Transaction_Returns', 'Transaction_Sharpe', 'Transaction_Duration'
     ]):
         self.exclude_columns = exclude_columns
 
