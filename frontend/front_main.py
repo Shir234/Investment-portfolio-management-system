@@ -1,10 +1,12 @@
 import sys
 import os
 import logging
+import pandas as pd
+
 
 # Suppress matplotlib and NumExpr logs
 os.environ["NUMEXPR_MAX_THREADS"] = "8"
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 
@@ -102,6 +104,7 @@ def main():
     
     # Construct the absolute path to the logo file
     logo_path = os.path.join(os.path.dirname(__file__), 'logo.JPG')
+    
     if os.path.exists(logo_path):
         app_icon = QIcon(logo_path)
         app.setWindowIcon(app_icon)
@@ -111,10 +114,6 @@ def main():
     # Apply dark mode
     set_dark_mode(app)
     
-    # Show splash screen
-    splash = SplashScreen()
-    splash.show()
-    
     # Prompt user to select the CSV file
     csv_path, _ = QFileDialog.getOpenFileName(None, "Select CSV File", "", "CSV Files (*.csv)")
     if not csv_path:
@@ -123,6 +122,10 @@ def main():
     
     # Load data with the selected file
     data_manager = DataManager(csv_path=csv_path)
+    
+    # Show splash screen
+    splash = SplashScreen()
+    splash.show()
     
     # Initialize and show the main window
     window = MainWindow(data_manager)
@@ -134,4 +137,5 @@ def main():
     sys.exit(app.exec_())
 
 if __name__ == '__main__':
+
     main()

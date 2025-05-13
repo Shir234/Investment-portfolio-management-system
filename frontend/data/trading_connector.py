@@ -2,12 +2,12 @@ import pandas as pd
 import logging 
 from trading_logic import run_trading_strategy, get_orders, get_portfolio_history
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 logger = logging.getLogger('trading_connector')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
-def execute_trading_strategy(investment_amount, risk_level, start_date, end_date, data_manager, mode="automatic", reset_state=False):
+def execute_trading_strategy(investment_amount, risk_level, start_date, end_date, data_manager, mode="automatic", reset_state=True):
     """Execute the trading strategy with user inputs from the frontend."""
     logger.debug("Starting execute_trading_strategy")
     try:
@@ -35,27 +35,26 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
         )
         
         if mode == "semi-automatic":
-            suggestions = result
+            orders, warning_message = result
             portfolio_history = get_portfolio_history()  # Fetch history for UI
+            portfolio_value = portfolio_history[-1]['value'] if portfolio_history else investment_amount
         else:
-            orders, portfolio_history, portfolio_value = result  # Include portfolio_history
-            suggestions = orders
-        
-        # Extract final portfolio value
-        portfolio_value = portfolio_history[-1]['value'] if portfolio_history else 0.0
+            orders, portfolio_history, portfolio_value, warning_message = result
         
         logger.debug("run_trading_strategy completed successfully")
         return True, {
-            'orders': suggestions,
+            'orders': orders,
             'portfolio_history': portfolio_history,
-            'portfolio_value': portfolio_value
+            'portfolio_value': portfolio_value,
+            'warning_message': warning_message
         }
     except Exception as e:
         logger.error(f"Error in execute_trading_strategy: {e}", exc_info=True)
         return False, {
             'orders': [],
             'portfolio_history': [],
-            'portfolio_value': 0.0
+            'portfolio_value': 0.0,
+            'warning_message': f"Error executing strategy: {e}"
         }
 
 def get_order_history_df():

@@ -32,7 +32,7 @@ class SplashScreen(QWidget):  # Changed from QSplashScreen to QWidget
         
         # Load and scale the logo
         logo_label = QLabel()
-        pixmap = QPixmap("frontend\\logo.JPG")
+        pixmap = QPixmap("logo.JPG")
         scaled_pixmap = pixmap.scaled(300, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         logo_label.setPixmap(scaled_pixmap)
         logo_label.setAlignment(Qt.AlignCenter)
@@ -69,7 +69,7 @@ class SplashScreen(QWidget):  # Changed from QSplashScreen to QWidget
         self.setGraphicsEffect(self.opacity_effect)
         
         self.animation = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.animation.setDuration(1000)  # 1 second
+        self.animation.setDuration(2500)  # 1 second
         self.animation.setStartValue(1)
         self.animation.setEndValue(0)
         self.animation.finished.connect(lambda: self.finish_fade(next_window))
