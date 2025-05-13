@@ -16,7 +16,7 @@ from scipy.stats import uniform, randint
 
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Input, Bidirectional, BatchNormalization
 from tensorflow.keras.optimizers import Adam
 
 from joblib import parallel_backend
@@ -57,53 +57,68 @@ Gradient Boosting Regression (GBR)
 Long Short Term Memory model (LSTM)
 """
 def create_models():
+
     try:
         models = {
             'SVR': (SVR(), {
-                'kernel': ['rbf', 'linear'],
-                'C': ('float', 0.1, 10.0),
-                'epsilon': ('float', 0.01, 0.2),
-                'gamma': ('float', 0.001, 0.1),  # Added for rbf kernel
-                'max_iter': [10000]  # Increased to ensure convergence
+                'kernel': ['rbf', 'linear', 'poly'],
+                'C': ('float', 0.1, 20.0),
+                'epsilon': ('float', 0.01, 0.3),
+                'gamma': ('float', 0.001, 0.5),  # Added for rbf kernel
+                'max_iter': [15000]  # Increased to ensure convergence
             }),
             'XGBoost': (XGBRegressor(random_state=42), {
-                'n_estimators': ('int', 100, 500),  # Expanded range
-                'max_depth': ('int', 3, 10),  # Expanded range
-                'learning_rate': ('float', 0.005, 0.2),  # Expanded range
-                'subsample': ('float', 0.7, 1.0),
-                'colsample_bytree': ('float', 0.7, 1.0),
-                'min_child_weight': ('float', 1, 10)  # Added to control overfitting
+                'n_estimators': ('int', 100, 1000),  # Expanded range
+                'max_depth': ('int', 3, 15),  # Expanded range
+                'learning_rate': ('float', 0.001, 0.2),  # Expanded range
+                'subsample': ('float', 0.5, 1.0),
+                'colsample_bytree': ('float', 0.5, 1.0),
+                'min_child_weight': ('float', 1, 20),  # Expanded upper range from 10 to 20
+                'gamma': ('float', 0, 0.5),  # Controls minimum loss reduction for partition
+                'reg_alpha': ('float', 0, 1.0),  # L1 regularization
+                'reg_lambda': ('float', 0, 1.0)   # L2 regularization
             }),
             'LightGBM': (LGBMRegressor(random_state=42, verbose=-1), {
-                'n_estimators': ('int', 100, 500),  # Expanded range
-                'max_depth': ('int', 3, 10),  # Expanded range
-                'learning_rate': ('float', 0.005, 0.2),  # Expanded range
-                'subsample': ('float', 0.7, 1.0),
-                'colsample_bytree': ('float', 0.7, 1.0),
-                'num_leaves': ('int', 20, 50),  # Added to control tree complexity
+                'n_estimators': ('int', 100, 1000),  # Expanded upper range from 500 to 1000
+                'max_depth': ('int', 3, 15),  # Expanded upper range from 10 to 15
+                'learning_rate': ('float', 0.001, 0.2),  # Added lower values for learning rate
+                'subsample': ('float', 0.5, 1.0),  # Expanded lower range from 0.7 to 0.5
+                'colsample_bytree': ('float', 0.5, 1.0),  # Expanded lower range from 0.7 to 0.5
+                'num_leaves': ('int', 20, 150),  # Expanded upper range from 50 to 150
+                'min_child_samples': ('int', 5, 50),  # Controls min samples per leaf
+                'reg_alpha': ('float', 0, 1.0),   # L1 regularization
+                'reg_lambda': ('float', 0, 1.0),  # L2 regularization
                 'force_row_wise': [True]
             }),
             'RandomForest': (RandomForestRegressor(random_state=42), {
-                'n_estimators': ('int', 100, 500),  # Expanded range
-                'max_depth': ('int', 3, 10),  # Expanded range
-                'min_samples_split': ('int', 2, 10),
-                'min_samples_leaf': ('int', 1, 4),
-                'max_features': ['sqrt', 'log2', 0.3, 0.5, 0.7]  # Expanded options
+                'n_estimators': ('int', 100, 1000),  # Expanded upper range from 500 to 1000
+                'max_depth': ('int', 3, 15),  # Expanded upper range from 10 to 15
+                'min_samples_split': ('int', 2, 15),  # Expanded upper range from 10 to 15
+                'min_samples_leaf': ('int', 1, 10),  # Expanded upper range from 4 to 10
+                'max_features': ['sqrt', 'log2', 0.3, 0.5, 0.7, 1.0],  # Added 1.0 option
+                'bootstrap': [True, False],  # Added bootstrap option
+                'warm_start': [True, False]  # Added warm start option
             }),
             'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
-                'n_estimators': ('int', 100, 500),  # Expanded range
-                'max_depth': ('int', 3, 10),  # Expanded range
-                'learning_rate': ('float', 0.005, 0.2),  # Expanded range
-                'subsample': ('float', 0.7, 1.0),
-                'min_samples_split': ('int', 5, 14)
+                'n_estimators': ('int', 100, 1000),  # Expanded upper range from 500 to 1000
+                'max_depth': ('int', 3, 15),  # Expanded upper range from 10 to 15
+                'learning_rate': ('float', 0.001, 0.2),  # Added lower values for learning rate
+                'subsample': ('float', 0.5, 1.0),  # Expanded lower range from 0.7 to 0.5
+                'min_samples_split': ('int', 2, 15),  # Expanded upper range from 14 to 15
+                'min_samples_leaf': ('int', 1, 10),  # Added parameter
+                'max_features': ['sqrt', 'log2', 0.3, 0.5, 0.7, 1.0],  # Added options
+                'alpha': ('float', 0.1, 0.9)  # Controls quantile loss for quantile regression
             }),
             'LSTM': (None, {
-                'epochs': ('int', 50, 150),
-                'batch_size': ('int', 32, 64),
-                'units': ('int', 16, 64),  # Expanded range
-                'learning_rate': ('float', 0.001, 0.01),  # Adjusted range
-                'dropout': ('float', 0.1, 0.3),  # Expanded range
-                'time_steps': ('int', 3, 10)  # Expanded range
+                'epochs': ('int', 50, 200),  # Expanded upper range from 150 to 200
+                'batch_size': ('int', 16, 128),  # Expanded ranges from 32-64 to 16-128
+                'units': ('int', 16, 128),  # Expanded upper range from 64 to 128
+                'learning_rate': ('float', 0.0005, 0.01),  # Expanded lower range for more stability
+                'dropout': ('float', 0.1, 0.5),  # Expanded upper range from 0.3 to 0.5
+                'time_steps': ('int', 3, 20),  # Expanded upper range from 10 to 20
+                'layers': ('int', 1, 3),  # Added parameter for network depth
+                'bidirectional': [True, False],  # Added parameter for architecture choice
+                'use_batch_norm': [True, False]  # Added parameter for normalization choice
             })
         }
         return models
@@ -214,8 +229,6 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             results[model_name] = train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, None, target_scaler)
             continue
 
-        
-
         # Each fold: split the data and to train and val (using the tcsv indices) then scale
         # For each fold, use the pre-scaled data with the global scalers
         for fold, (train_idx, val_idx) in enumerate(tscv.split(X_train_val)): 
@@ -235,7 +248,8 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
 
             # Grid search
             logger.info(f"  Running Optuna optimization for {model_name} on fold {fold + 1}...")
-            n_trials = 40 if model_name != 'SVR' else 30  # increased from 30->40 and from 20->30
+            # Increased number of trials by 50% for all models
+            n_trials = 60 if model_name != 'SVR' else 40  # increased from 40->60 and from 30->40
 
             try:
                 best_params_fold, best_mse, _ = optimize_model_with_optuna(
@@ -452,38 +466,90 @@ def create_rolling_window_data(X, y, time_steps=5):
 
 
 def train_lstm_model(X_train, y_train, X_val, y_val, params, trial=None):
+    """
+    Train an enhanced LSTM model with various architecture configurations.
+    
+    Parameters:
+    -----------
+    X_train : array-like, Input features for training
+    y_train : array-like, Target values for training
+    X_val : array-like, Input features for validation
+    y_val : array-like, Target values for validation
+    params : dict, Model hyperparameters
+    trial : optuna.Trial, optional, Trial object for hyperparameter optimization
+    
+    Returns:
+    --------
+    model : keras.Model, Trained LSTM model
+    mse : float, Mean squared error on validation set
+    rmse : float, Root mean squared error on validation set
+    y_pred : array, Predicted values on validation set
+    """
+
     try:
-        epochs = params.get('epochs', 100)
+        epochs = params.get('epochs', 150)
         batch_size = params.get('batch_size', 32)
-        units = params.get('units', 32)
-        learning_rate = params.get('learning_rate', 0.01)
+        units = params.get('units', 64)
+        learning_rate = params.get('learning_rate', 0.005)
         dropout_rate = params.get('dropout', 0.2)
-        time_steps = params.get('time_steps', 5)
+        time_steps = params.get('time_steps', 10)
+        num_layers = params.get('layers', 2)
+        use_bidirectional = params.get('bidirectional', True)  
+        use_batch_norm = params.get('use_batch_norm', True)  
 
-        print(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
-        print(f"X_val shape: {X_val.shape}, y_val shape: {y_val.shape}")
-
+        # Create rolled windows
         X_train_rolled, y_train_rolled = create_rolling_window_data(X_train, y_train, time_steps)
         X_val_rolled, y_val_rolled = create_rolling_window_data(X_val, y_val, time_steps)
 
-        print(f"After windowing - X_train_rolled: {X_train_rolled.shape}, y_train_rolled: {y_train_rolled.shape}")
-        print(f"After windowing - X_val_rolled: {X_val_rolled.shape}, y_val_rolled: {y_val_rolled.shape}")
-        print(f"Input scale - X_train_rolled mean: {np.mean(X_train_rolled):.4f}, std: {np.std(X_train_rolled):.4f}")
-
+        # Create enhanced model architecture with bidirectional layers
         feature_dim = X_train.shape[1]
         inputs = Input(shape=(time_steps, feature_dim))
-        lstm_layer1 = LSTM(units, activation='tanh', return_sequences=True)(inputs)
-        lstm_layer2 = LSTM(units // 2, activation='tanh', return_sequences=False)(lstm_layer1)
-        dropout_layer = Dropout(dropout_rate)(lstm_layer2)
-        outputs = Dense(1)(dropout_layer)
+        x = inputs
+
+         # Add LSTM layers
+        for i in range(num_layers):
+            return_sequences = (i < num_layers - 1)  # True for all layers except the last one
+            
+            if use_bidirectional:
+                x = Bidirectional(
+                    LSTM(
+                        units // (i + 1),  # Decrease units in deeper layers
+                        activation='tanh',
+                        return_sequences=return_sequences
+                    )
+                )(x)
+            else:
+                x = LSTM(
+                    units // (i + 1),  # Decrease units in deeper layers
+                    activation='tanh',
+                    return_sequences=return_sequences
+                )(x)
+                
+            # Add dropout after each LSTM layer
+            x = Dropout(dropout_rate)(x)
+            
+            # Add batch normalization if specified
+            if use_batch_norm:
+                x = BatchNormalization()(x)
+                
+        # Add a dense layer before the output
+        x = Dense(units // 2, activation='relu')(x)
+        x = Dropout(dropout_rate / 2)(x)  # Less dropout before output
+        
+        # Output layer
+        outputs = Dense(1)(x)
         model = Model(inputs=inputs, outputs=outputs)
 
-        model.compile(optimizer=Adam(learning_rate=learning_rate), loss='mse')
+        # Compile with Adam optimizer
+        optimizer = Adam(learning_rate=learning_rate)
+        model.compile(optimizer=optimizer, loss='mse')
 
-        callbacks = [EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)]
+        # Early stopping with longer patience
+        callbacks = [EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)]
         if trial:
             callbacks.append(TFKerasPruningCallback(trial, 'val_loss'))
 
+        # Train the model
         history = model.fit(
             X_train_rolled, y_train_rolled,
             epochs=epochs,
@@ -493,7 +559,10 @@ def train_lstm_model(X_train, y_train, X_val, y_val, params, trial=None):
             verbose=1
         )
 
+        # Predict on validation set
         y_pred = model.predict(X_val_rolled).flatten()
+        
+        # Calculate metrics
         mse = mean_squared_error(y_val_rolled, y_pred)
         rmse = np.sqrt(mse)
         r2 = r2_score(y_val_rolled, y_pred)
@@ -530,6 +599,7 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
         - best_model_prediction: Predictions from the best model
         - Y_val_best: Validation targets for the best model
     """
+
     def is_pca_transformed_data(X_data):
         """
         Check if the data appears to be PCA-transformed based on column names.
@@ -554,12 +624,15 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
 
         def objective(trial):
             params = {
-                'epochs': trial.suggest_int('epochs', 50, 150),
-                'batch_size': trial.suggest_int('batch_size', 32, 64),
-                'units': trial.suggest_int('units', 16, 32),
-                'learning_rate': trial.suggest_float('learning_rate', 0.002, 0.01),
-                'dropout': trial.suggest_float('dropout', 0.1, 0.2),
-                'time_steps': trial.suggest_int('time_steps', 3, 5)
+                'epochs': trial.suggest_int('epochs', 50, 200),  # Expanded range
+                'batch_size': trial.suggest_int('batch_size', 16, 128),  # Expanded range
+                'units': trial.suggest_int('units', 16, 128),  # Expanded range
+                'learning_rate': trial.suggest_float('learning_rate', 0.0005, 0.01, log=True),  # Log scale for learning rate
+                'dropout': trial.suggest_float('dropout', 0.1, 0.5),  # Expanded range
+                'time_steps': trial.suggest_int('time_steps', 3, 20),  # Expanded range
+                'layers': trial.suggest_int('layers', 1, 3),  # New parameter
+                'bidirectional': trial.suggest_categorical('bidirectional', [True, False]),  # New parameter
+                'use_batch_norm': trial.suggest_categorical('use_batch_norm', [True, False])  # New parameter
             }
             mse_scores = []
 
@@ -572,11 +645,10 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
                 X_train_scaled = X_train_fold.values if isinstance(X_train_fold, pd.DataFrame) else X_train_fold
                 X_val_scaled = X_val_fold.values if isinstance(X_val_fold, pd.DataFrame) else X_val_fold
 
-                fold_target_scaler = RobustScaler()
                 Y_train_fold_array = Y_train_fold.values if isinstance(Y_train_fold, pd.Series) else Y_train_fold
                 Y_val_fold_array = Y_val_fold.values if isinstance(Y_val_fold, pd.Series) else Y_val_fold
-                Y_train_scaled = fold_target_scaler.fit_transform(Y_train_fold_array.reshape(-1, 1)).flatten()
-                Y_val_scaled = fold_target_scaler.transform(Y_val_fold_array.reshape(-1, 1)).flatten()
+                Y_train_scaled = target_scaler.transform(Y_train_fold_array.reshape(-1, 1)).flatten()
+                Y_val_scaled = target_scaler.transform(Y_val_fold_array.reshape(-1, 1)).flatten()
 
                 model, mse, _, y_pred_scaled = train_lstm_model(
                     X_train_scaled, Y_train_scaled, X_val_scaled, Y_val_scaled, params, trial
@@ -584,7 +656,7 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
                 if model is None:
                     return float('inf')
 
-                y_pred_original = fold_target_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
+                y_pred_original = target_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
                 adjusted_val_fold = Y_val_fold.iloc[:(len(y_pred_original))] if isinstance(Y_val_fold, pd.Series) else Y_val_fold[:(len(y_pred_original))]
                 mse_original = mean_squared_error(adjusted_val_fold, y_pred_original)
                 mse_scores.append(mse_original)
@@ -611,19 +683,18 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
             X_train_scaled = X_train_fold.values if isinstance(X_train_fold, pd.DataFrame) else X_train_fold
             X_val_scaled = X_val_fold.values if isinstance(X_val_fold, pd.DataFrame) else X_val_fold
 
-            fold_target_scaler = RobustScaler()
             Y_train_fold_array = Y_train_fold.values if isinstance(Y_train_fold, pd.Series) else Y_train_fold
             Y_val_fold_array = Y_val_fold.values if isinstance(Y_val_fold, pd.Series) else Y_val_fold
-            Y_train_scaled = fold_target_scaler.fit_transform(Y_train_fold_array.reshape(-1, 1)).flatten()
-            Y_val_scaled = fold_target_scaler.transform(Y_val_fold_array.reshape(-1, 1)).flatten()
-
+            Y_train_scaled = target_scaler.transform(Y_train_fold_array.reshape(-1, 1)).flatten()
+            Y_val_scaled = target_scaler.transform(Y_val_fold_array.reshape(-1, 1)).flatten()
+            
             model, mse, rmse, y_pred_scaled = train_lstm_model(
                 X_train_scaled, Y_train_scaled, X_val_scaled, Y_val_scaled, best_params_fold
             )
             if model is None:
                 continue
-
-            y_pred_original = fold_target_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
+            
+            y_pred_original = target_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
             adjusted_val_fold = Y_val_fold.iloc[:(len(y_pred_original))] if isinstance(Y_val_fold, pd.Series) else Y_val_fold[:(len(y_pred_original))]
             mse_original = mean_squared_error(adjusted_val_fold, y_pred_original)
             rmse_original = np.sqrt(mse_original)
@@ -652,39 +723,10 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
                 X_train_val_scaled = X_train_val_array
                 Y_train_val_scaled = target_scaler.transform(Y_train_val_array.reshape(-1, 1)).flatten()
 
-                time_steps = final_best_params['time_steps']
-                try:
-                    X_rolled, Y_rolled = create_rolling_window_data(X_train_val_scaled, Y_train_val_scaled, time_steps)
-                    print(f"Created rolling window data: X shape: {X_rolled.shape}, Y shape: {Y_rolled.shape}")
-                except Exception as e:
-                    print(f"Error creating rolling windows: {e}")
-                    return {
-                        'best_mse_scores': best_mse_scores,
-                        'best_rmse_scores': best_rmse_scores,
-                        'best_params': best_params,
-                        'best_model': best_model,
-                        'best_model_prediction': best_model_prediction,
-                        'Y_val_best': Y_val_best
-                    }
-
-                features_count = X_train_val_scaled.shape[1]
-                inputs = Input(shape=(time_steps, features_count))
-                lstm_layer = LSTM(final_best_params['units'], activation='relu', return_sequences=False)(inputs)
-                dropout_layer = Dropout(final_best_params['dropout'])(lstm_layer)
-                outputs = Dense(1)(dropout_layer)
-                final_model = Model(inputs=inputs, outputs=outputs)
-
-                final_model.compile(optimizer=Adam(learning_rate=final_best_params['learning_rate']), loss='mse')
-
-                final_model.fit(
-                    X_rolled, Y_rolled,
-                    epochs=final_best_params['epochs'],
-                    batch_size=final_best_params['batch_size'],
-                    callbacks=[EarlyStopping(monitor='loss', patience=10, restore_best_weights=True)],
-                    verbose=1
+                model, mse, rmse, y_pred_scaled = train_lstm_model(
+                    X_train_val_scaled, Y_train_val_scaled, X_train_val_scaled, Y_train_val_scaled, final_best_params
                 )
-
-                best_model = final_model
+                best_model = model
                 print("Successfully retrained LSTM on full dataset")
 
             except Exception as e:

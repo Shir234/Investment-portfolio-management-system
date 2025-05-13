@@ -55,20 +55,7 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
 
         # Process the loaded clean data
         logger.info(f"\n{'-'*30}\nProcessing loaded clean data for {ticker_symbol}\n{'-'*30}")
-        
-        # Handle the index column if it was read as a normal column
-        if 'Unnamed: 0' in data_clean.columns:
-            # This is likely the index column saved by to_csv
-            data_clean = data_clean.set_index('Unnamed: 0')
-        
-        # Convert the index to datetime if it's a string date
-        if isinstance(data_clean.index[0], str):
-            try:
-                data_clean.index = pd.to_datetime(data_clean.index)
-                logger.info(f"Converted index to datetime for {ticker_symbol}")
-            except Exception as e:
-                logger.warning(f"Could not convert index to datetime: {e}")
-        
+    
         # Check if we have transaction metrics
         if 'Transaction_Sharpe' not in data_clean.columns:
             logger.error(f"No Transaction_Sharpe data for {ticker_symbol}. Skipping.")

@@ -444,16 +444,9 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, featu
         raise ValueError("Insufficient data for GBDT training after alignment")
 
     # Scale meta-features
-    meta_scaler = StandardScaler()
-    train_features_scaled = meta_scaler.fit_transform(train_features_aligned)
-    val_features_scaled = meta_scaler.transform(val_features_aligned)
-    test_features_scaled = meta_scaler.transform(test_features_aligned)
-
-    if logger:
-        logger.info(f"Meta-features scaled - Train shape: {train_features_scaled.shape}, "
-                    f"Val shape: {val_features_scaled.shape}, Test shape: {test_features_scaled.shape}")
-        logger.info(f"Meta-features stats - Train mean: {np.mean(train_features_scaled, axis=0)}, "
-                    f"std: {np.std(train_features_scaled, axis=0)}")
+    train_features_scaled = train_features_aligned
+    val_features_scaled = val_features_aligned
+    test_features_scaled = test_features_aligned
 
     # Train GBDT on scaled meta-features
     gb_model = GradientBoostingRegressor(
