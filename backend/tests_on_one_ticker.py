@@ -43,7 +43,7 @@ date_folder = f'results/{current_date}'
 os.makedirs(date_folder, exist_ok=True)
 
 base_directory = "results" 
-clean_data_date_folder = "20250511"
+clean_data_date_folder = "20250513"
 date_path = os.path.join(base_directory, clean_data_date_folder)
 
 if not os.path.exists(date_path):
@@ -55,6 +55,12 @@ if not os.path.exists(ticker_csv_path):
     logger.warning(f"File not found: {ticker_csv_path}")
 
 # Read the CSV file
-ticker_clean_data = pd.read_csv(ticker_csv_path)
+# ticker_clean_data = pd.read_csv(ticker_csv_path)
+
+ticker_clean_data = pd.read_csv(ticker_csv_path, parse_dates=['Date'], index_col='Date')
+if not isinstance(ticker_clean_data.index, pd.DatetimeIndex):
+    logger.warning(f"Index for {ticker} is not a DatetimeIndex. Converting to datetime.")
+    ticker_clean_data.index = pd.to_datetime(ticker_clean_data.index)
+
 
 full_pipeline_for_single_stock(ticker_clean_data, logger, date_folder, current_date, 'AAPL', "2013-01-01", "2024-01-01")

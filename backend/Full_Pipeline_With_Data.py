@@ -57,8 +57,8 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
         logger.info(f"\n{'-'*30}\nProcessing loaded clean data for {ticker_symbol}\n{'-'*30}")
     
         # Check if we have transaction metrics
-        if 'Transaction_Sharpe' not in data_clean.columns:
-            logger.error(f"No Transaction_Sharpe data for {ticker_symbol}. Skipping.")
+        if 'Daily_Sharpe_Ratio' not in data_clean.columns:
+            logger.error(f"No Daily_Sharpe_Ratio data for {ticker_symbol}. Skipping.")
             return False
 
         """
@@ -108,12 +108,12 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
 
         # Make sure we're working with numeric data only for X
         numeric_columns = data_clean.select_dtypes(include=np.number).columns.tolist()
-        # Ensure Transaction_Sharpe is included if it's numeric
-        numeric_columns = [col for col in numeric_columns if col != 'Transaction_Sharpe']
+        # Ensure 'Daily_Sharpe_Ratio' is included if it's numeric
+        numeric_columns = [col for col in numeric_columns if col != 'Daily_Sharpe_Ratio']
         
         # Use only numeric columns for X
         X = data_clean[numeric_columns]
-        Y = data_clean['Transaction_Sharpe']
+        Y = data_clean['Daily_Sharpe_Ratio']
 
         logger.info(f"Using {len(numeric_columns)} numeric features for modeling")
         logger.info(f"First 5 features: {numeric_columns[:5]}")
@@ -185,28 +185,22 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
 
             # Use the same index as X_test but only up to the prediction length
             results_index = X_test.index[:prediction_length]
-
             # Create the DataFrame with all aligned data - trimming all data to match prediction length
             # Get the original columns that we need for the results dataframe
-            if 'Close' in data_clean.columns and 'Buy' in data_clean.columns and 'Sell' in data_clean.columns:
-                results_df = pd.DataFrame({
-                    'Ticker': ticker_symbol,
-                    'Close': data_clean.loc[X_test.index[:prediction_length], 'Close'],
-                    'Buy': data_clean.loc[X_test.index[:prediction_length], 'Buy'],
-                    'Sell': data_clean.loc[X_test.index[:prediction_length], 'Sell'],
-                    'Actual_Sharpe': Y_test.iloc[:prediction_length],
-                    'Best_Prediction': best_prediction
-                }, index=results_index)
-            else:
-                # Fallback if we don't have those specific columns
-                results_df = pd.DataFrame({
-                    'Ticker': ticker_symbol,
-                    'Actual_Sharpe': Y_test.iloc[:prediction_length],
-                    'Best_Prediction': best_prediction
-                }, index=results_index)
-                logger.warning(f"Some columns (Close/Buy/Sell) not found in the data. Created simplified results.")
-            
+            results_df = pd.DataFrame({
+                'Ticker': ticker_symbol,
+                'Close': data_clean.loc[X_test.index[:prediction_length], 'Close'],
+                'Buy': data_clean.loc[X_test.index[:prediction_length], 'Buy'],
+                'Sell': data_clean.loc[X_test.index[:prediction_length], 'Sell'],
+                'Actual_Sharpe': Y_test.iloc[:prediction_length],
+                'Best_Prediction': best_prediction
+            }, index=results_index)
+
+
+            results_df.index = pd.to_datetime(results_index)
             results_df.index.name = "Date"
+
+            # results_df.index.name = "Date"
             results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensemble_prediction_results.csv')
             results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensemble_prediction_results.csv"))
             logger.info(f"Saved results for {ticker_symbol} to Google Drive dated folder")
@@ -279,7 +273,7 @@ def run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers.
     logger.info(f"Loaded {len(valid_tickers)} valid tickers.")
 
     base_directory = "results" 
-    clean_data_date_folder = "20250426"
+    clean_data_date_folder = "20250513"
     date_path = os.path.join(base_directory, clean_data_date_folder)
 
     if not os.path.exists(date_path):
@@ -304,7 +298,12 @@ def run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers.
                 continue
 
             # Read the CSV file - use date parsing to handle the index correctly
-            ticker_clean_data = pd.read_csv(ticker_csv_path, parse_dates=True)
+            #ticker_clean_data = pd.read_csv(ticker_csv_path, parse_dates=True)
+            ticker_clean_data = pd.read_csv(ticker_csv_path, parse_dates=['Date'], index_col='Date')
+            if not isinstance(ticker_clean_data.index, pd.DatetimeIndex):
+                logger.warning(f"Index for {ticker} is not a DatetimeIndex. Converting to datetime.")
+                ticker_clean_data.index = pd.to_datetime(ticker_clean_data.index)
+
             logger.info(f"Successfully loaded clean data for {ticker}")
 
             # Debug information about the loaded data

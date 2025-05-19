@@ -110,16 +110,27 @@ def create_models():
                 'alpha': ('float', 0.1, 0.9)  # Controls quantile loss for quantile regression
             }),
             'LSTM': (None, {
-                'epochs': ('int', 50, 200),  # Expanded upper range from 150 to 200
-                'batch_size': ('int', 16, 128),  # Expanded ranges from 32-64 to 16-128
-                'units': ('int', 16, 128),  # Expanded upper range from 64 to 128
-                'learning_rate': ('float', 0.0005, 0.01),  # Expanded lower range for more stability
-                'dropout': ('float', 0.1, 0.5),  # Expanded upper range from 0.3 to 0.5
-                'time_steps': ('int', 3, 20),  # Expanded upper range from 10 to 20
-                'layers': ('int', 1, 3),  # Added parameter for network depth
-                'bidirectional': [True, False],  # Added parameter for architecture choice
-                'use_batch_norm': [True, False]  # Added parameter for normalization choice
-            })
+            'epochs': ('int', 50, 150),         # CHANGE: reduced from 200 to 150
+            'batch_size': ('int', 16, 64),      # CHANGE: reduced upper limit from 128 to 64
+            'units': ('int', 8, 48),            # CHANGE: reduced from 16-128 to 8-48
+            'learning_rate': ('float', 0.0005, 0.01),
+            'dropout': ('float', 0.1, 0.5),
+            'time_steps': ('int', 3, 10),       # CHANGE: reduced upper limit from 20 to 10
+            'layers': ('int', 1, 2),            # CHANGE: reduced upper limit from 3 to 2
+            'bidirectional': [False],           # CHANGE: removed True option
+            'use_batch_norm': [False]           # CHANGE: default to False
+        })
+            # 'LSTM': (None, {
+            #     'epochs': ('int', 50, 200),  # Expanded upper range from 150 to 200
+            #     'batch_size': ('int', 16, 128),  # Expanded ranges from 32-64 to 16-128
+            #     'units': ('int', 16, 128),  # Expanded upper range from 64 to 128
+            #     'learning_rate': ('float', 0.0005, 0.01),  # Expanded lower range for more stability
+            #     'dropout': ('float', 0.1, 0.5),  # Expanded upper range from 0.3 to 0.5
+            #     'time_steps': ('int', 3, 20),  # Expanded upper range from 10 to 20
+            #     'layers': ('int', 1, 3),  # Added parameter for network depth
+            #     'bidirectional': [True, False],  # Added parameter for architecture choice
+            #     'use_batch_norm': [True, False]  # Added parameter for normalization choice
+            # })
         }
         return models
     except Exception as e:
@@ -192,8 +203,6 @@ def optimize_model_with_optuna(model, params_grid, X_train, Y_train, X_val, Y_va
 
 def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ticker_symbol, date_folder):
     logger.info(f"\n{'-'*30}\nInitializing model training\n{'-'*30}")
-    # log_data_stats(logger, X_train_val, "X_train_val for models", include_stats=False)
-    # log_data_stats(logger, Y_train_val, "Y_train_val for models", include_stats=True)
 
     # We assume X_train_val is already PCA-transformed data
     logger.info("Using PCA-transformed input data without additional scaling")
@@ -211,6 +220,9 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
     models = create_models()
     results = {}
 
+    # Dictionary to store fold metrics for each model
+    all_fold_metrics = {}
+
     # Iterate each model
     for model_name, (model, params_grid) in models.items():    
         logger.info(f"\n{'-'*30}\nTraining {model_name}\n{'-'*30}")                     
@@ -223,10 +235,19 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
         best_model_prediction = None
         Y_val_best = None
 
+        # Create a list to store fold metrics for this model
+        fold_metrics = []
+
         # Reshape the data for LSTM model
         if model_name == 'LSTM':
             logger.info(f"Handling LSTM model separately with special reshaping")
-            results[model_name] = train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, None, target_scaler)
+            lstm_results = train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, None, target_scaler)
+            results[model_name] = lstm_results
+            #results[model_name] = train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, None, target_scaler)
+
+            # Extract LSTM fold metrics from the results
+            if 'fold_metrics' in lstm_results:
+                all_fold_metrics[model_name] = lstm_results['fold_metrics']
             continue
 
         # Each fold: split the data and to train and val (using the tcsv indices) then scale
@@ -276,6 +297,18 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                 best_rmse_scores.append(rmse)
                 logger.info(f"  Fold {fold + 1} - MSE: {mse:.4f}, RMSE: {rmse:.4f},  MAE: {mae:.4f}")
 
+                # Store fold metrics
+                fold_metrics.append({
+                    'Fold': fold + 1,
+                    'MSE': mse,
+                    'RMSE': rmse,
+                    'MAE': mae,
+                    'Min_Ratio': min_ratio,
+                    'Max_Ratio': max_ratio,
+                    'Parameters': str(best_params_fold)
+                })
+
+
                 # Update best model
                 if mse < best_score:
                     best_score = mse
@@ -288,6 +321,10 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             except Exception as e:
                 logger.error(f"  Error in {model_name} training on fold {fold + 1}: {e}")
                 continue
+
+        # Store fold metrics for this model
+        if fold_metrics:
+            all_fold_metrics[model_name] = fold_metrics
             
         # Save the best model for each model type, the results and the parameters
         results[model_name] = {                                                       
@@ -296,7 +333,8 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             'best_params': best_params,
             'best_model': best_model,
             'best_model_prediction': best_model_prediction,
-            'Y_val_best' : Y_val_best
+            'Y_val_best' : Y_val_best,
+            'fold_metrics': fold_metrics
         }
 
         logger.info(f"\nSummary for {model_name}:")
@@ -333,10 +371,17 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                 retrain_rmse = np.sqrt(retrain_mse)
 
                 logger.info(f"  Retrained {model_name} - MSE: {retrain_mse:.4f}, RMSE: {retrain_rmse:.4f}")
-                verify_prediction_scale(logger, Y_train_val, Y_retrain_pred, f"{model_name} retrained")
+                min_ratio, max_ratio = verify_prediction_scale(logger, Y_train_val, Y_retrain_pred, f"{model_name} retrained")
             
                 # Replace the best model
                 results[model_name]['best_model'] = base_model
+                 # Add retrained metrics
+                results[model_name]['retrained_metrics'] = {
+                    'MSE': retrain_mse,
+                    'RMSE': retrain_rmse,
+                    'Min_Ratio': min_ratio,
+                    'Max_Ratio': max_ratio
+                }
                 logger.info(f"  Successfully retrained {model_name}")
                 
             except Exception as e:
@@ -394,12 +439,31 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
         try:
             metrics_df.to_csv(f'{date_folder}/{ticker_symbol}_training_validation_results.csv')
             metrics_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_training_validation_results.csv"))
+            
+            # Save detailed fold metrics for each model separately
+            for model_name, fold_metrics in all_fold_metrics.items():
+                if fold_metrics:
+                    # Create DataFrame for the fold metrics
+                    fold_df = pd.DataFrame(fold_metrics)               
+                    # Save to local folder
+                    fold_df.to_csv(f'{date_folder}/{ticker_symbol}_{model_name}_fold_metrics.csv', index=False)                 
+                    # Save to Google Drive folder
+                    fold_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_{model_name}_fold_metrics.csv"), index=False)
+
             logger.info(f"Saved clean data for {ticker_symbol} to folders")
+
         except Exception as e:
             logger.error(f"Error saving to Google Drive: {e}")
             os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
             metrics_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_training_validation_results.csv"))
+
+            # Save fold metrics locally
+            for model_name, fold_metrics in all_fold_metrics.items():
+                if fold_metrics:
+                    fold_df = pd.DataFrame(fold_metrics)
+                    fold_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_{model_name}_fold_metrics.csv"), index=False)
                 
+
         # Print ranking to log
         logger.info("\nModel Ranking (by Average MSE):")
         for i, row in metrics_df.iterrows():
@@ -487,15 +551,15 @@ def train_lstm_model(X_train, y_train, X_val, y_val, params, trial=None):
     """
 
     try:
-        epochs = params.get('epochs', 150)
+        epochs = params.get('epochs', 100)
         batch_size = params.get('batch_size', 32)
-        units = params.get('units', 64)
+        units = params.get('units', 32)
         learning_rate = params.get('learning_rate', 0.005)
         dropout_rate = params.get('dropout', 0.2)
-        time_steps = params.get('time_steps', 10)
-        num_layers = params.get('layers', 2)
-        use_bidirectional = params.get('bidirectional', True)  
-        use_batch_norm = params.get('use_batch_norm', True)  
+        time_steps = params.get('time_steps', 5)
+        num_layers = params.get('layers', 1)
+        use_bidirectional = params.get('bidirectional', False)  
+        use_batch_norm = params.get('use_batch_norm', False)  
 
         # Create rolled windows
         X_train_rolled, y_train_rolled = create_rolling_window_data(X_train, y_train, time_steps)
@@ -506,14 +570,14 @@ def train_lstm_model(X_train, y_train, X_val, y_val, params, trial=None):
         inputs = Input(shape=(time_steps, feature_dim))
         x = inputs
 
-         # Add LSTM layers
+        # Simplified LSTM layers implementation
         for i in range(num_layers):
             return_sequences = (i < num_layers - 1)  # True for all layers except the last one
             
             if use_bidirectional:
                 x = Bidirectional(
                     LSTM(
-                        units // (i + 1),  # Decrease units in deeper layers
+                        units // 2,  # Decrease units in deeper layers
                         activation='tanh',
                         return_sequences=return_sequences
                     )
@@ -545,7 +609,7 @@ def train_lstm_model(X_train, y_train, X_val, y_val, params, trial=None):
         model.compile(optimizer=optimizer, loss='mse')
 
         # Early stopping with longer patience
-        callbacks = [EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)]
+        callbacks = [EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)]
         if trial:
             callbacks.append(TFKerasPruningCallback(trial, 'val_loss'))
 
@@ -600,6 +664,9 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
         - Y_val_best: Validation targets for the best model
     """
 
+    # Create a list to store fold metrics
+    fold_metrics = []
+
     def is_pca_transformed_data(X_data):
         """
         Check if the data appears to be PCA-transformed based on column names.
@@ -624,19 +691,22 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
 
         def objective(trial):
             params = {
-                'epochs': trial.suggest_int('epochs', 50, 200),  # Expanded range
-                'batch_size': trial.suggest_int('batch_size', 16, 128),  # Expanded range
-                'units': trial.suggest_int('units', 16, 128),  # Expanded range
+                'epochs': trial.suggest_int('epochs', 50, 100),  # Expanded range
+                'batch_size': trial.suggest_int('batch_size', 16, 64),  # Expanded range
+                'units': trial.suggest_int('units', 8, 32),  # Expanded range
                 'learning_rate': trial.suggest_float('learning_rate', 0.0005, 0.01, log=True),  # Log scale for learning rate
                 'dropout': trial.suggest_float('dropout', 0.1, 0.5),  # Expanded range
-                'time_steps': trial.suggest_int('time_steps', 3, 20),  # Expanded range
-                'layers': trial.suggest_int('layers', 1, 3),  # New parameter
-                'bidirectional': trial.suggest_categorical('bidirectional', [True, False]),  # New parameter
-                'use_batch_norm': trial.suggest_categorical('use_batch_norm', [True, False])  # New parameter
+                'time_steps': trial.suggest_int('time_steps', 3, 8),  # Expanded range
+                'layers': trial.suggest_int('layers', 1, 1),  # New parameter
+                'bidirectional': trial.suggest_categorical('bidirectional', [False]),  # New parameter
+                'use_batch_norm': trial.suggest_categorical('use_batch_norm', [False])  # New parameter
             }
             mse_scores = []
 
+            fold_idx = 0
             for train_idx, val_idx in tscv.split(X_train_val):
+                if fold_idx > 0:  # Only use the first fold
+                    break
                 X_train_fold = X_train_val.iloc[train_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[train_idx]
                 X_val_fold = X_train_val.iloc[val_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[val_idx]
                 Y_train_fold = Y_train_val.iloc[train_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[train_idx]
@@ -660,6 +730,8 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
                 adjusted_val_fold = Y_val_fold.iloc[:(len(y_pred_original))] if isinstance(Y_val_fold, pd.Series) else Y_val_fold[:(len(y_pred_original))]
                 mse_original = mean_squared_error(adjusted_val_fold, y_pred_original)
                 mse_scores.append(mse_original)
+                
+                fold_idx += 1
 
             return np.mean(mse_scores)
 
@@ -706,6 +778,17 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
             print(f"Best parameters for fold {fold + 1}: {best_params_fold}")
             print(f"End of Fold {fold + 1} - MSE: {mse_original:.4f}, RMSE: {rmse_original:.4f}")
 
+            # After metrics calculation, store fold metrics:
+            fold_metrics.append({
+                'Fold': fold + 1,
+                'MSE': mse,
+                'RMSE': rmse,
+                'MAE': mae,
+                'Min_Ratio': min_ratio,
+                'Max_Ratio': max_ratio,
+                'Parameters': str(best_params)  # Assuming best_params is defined in your LSTM function
+            })
+
             if mse_original < best_score:
                 best_score = mse_original
                 best_model = model
@@ -749,5 +832,6 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
             'best_params': [],
             'best_model': None,
             'best_model_prediction': None,
-            'Y_val_best': None
+            'Y_val_best': None,
+            'fold_metrics': fold_metrics
         }

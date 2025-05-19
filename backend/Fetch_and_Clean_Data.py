@@ -84,8 +84,6 @@ def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date,
         # Adjust this number based on your actual pipeline implementation
         requests_this_minute += 10
         logger.info(f"API request count: {requests_this_minute}/75 this minute")
-        
-        data.to_csv(f'{date_folder}/{ticker_symbol}_data.csv')        
 
         if data.empty:
             logger.error(f"No data returned for ticker {ticker_symbol}")

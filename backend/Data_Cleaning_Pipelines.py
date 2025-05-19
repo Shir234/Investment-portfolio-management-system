@@ -117,6 +117,45 @@ class AlphaVantageDataFetcher(BaseEstimator, TransformerMixin):
                     print(f"Error fetching data for ticker {self.ticker_symbol}: {e}")
                     raise ValueError(f"Failed to fetch data for {self.ticker_symbol}: {e}")
 
+
+class RollingSharpeCalculator(BaseEstimator, TransformerMixin):
+    """
+    Transformer to calculate the rolling daily Sharpe ratio for a stock.
+    
+    Parameters:
+    - window (int): Number of days for the rolling window (default: 30).
+    - risk_free_rate (float): Annual risk-free rate (default: 0.02).
+    """
+    def __init__(self, window=30, risk_free_rate=0.02):
+        self.window = window
+        self.risk_free_rate = risk_free_rate
+    
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        # Copy input to avoid modifying original
+        X = X.copy()
+        
+        # Calculate daily returns
+        X['Daily_Return'] = X['Close'].pct_change()
+        
+        # Calculate rolling mean and standard deviation
+        X['Rolling_Mean'] = X['Daily_Return'].rolling(window=self.window).mean()
+        X['Rolling_Std'] = X['Daily_Return'].rolling(window=self.window).std()
+        
+        # Calculate daily risk-free rate
+        daily_risk_free = self.risk_free_rate / 252  # Assuming 252 trading days
+        
+        # Calculate rolling Sharpe ratio
+        X['Daily_Sharpe_Ratio'] = (X['Rolling_Mean'] - daily_risk_free) / X['Rolling_Std']
+        
+        # Drop intermediate columns
+        X.drop(['Daily_Return', 'Rolling_Mean', 'Rolling_Std'], axis=1, inplace=True)
+        
+        return X
+
+
 # TODO -> ADD INDICATORS
 # Add market indicators
 class IndicatorCalculator(BaseEstimator, TransformerMixin):
@@ -429,7 +468,7 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
         # 'STOCH_Signal', 'MACD_CrossOver', 'ADX_Signal',
         # 'Ichimoku_Signal', 'BB_Signal'
         'ADX_Trend',
-        'Transaction_Volatility', 'Transaction_Returns', 'Transaction_Sharpe', 'Transaction_Duration'
+        'Transaction_Volatility', 'Transaction_Returns', 'Transaction_Sharpe', 'Transaction_Duration', 'Daily_Sharpe_Ratio'
     ]):
         self.exclude_columns = exclude_columns
 
@@ -627,8 +666,8 @@ class CorrelationHandler(BaseEstimator, TransformerMixin):
         self.columns_to_drop = [col for col in upper.columns if any(upper[col] > self.threshold)]
 
         # check all columns correlation with the target variable, if nan - remove (doesn't help for prediction later)
-        if 'Transaction_Sharpe' in X.columns:
-            target_corr = X.corr()['Transaction_Sharpe']
+        if 'Daily_Sharpe_Ratio' in X.columns:
+            target_corr = X.corr()['Daily_Sharpe_Ratio']
             nan_corr_columns = target_corr[target_corr.isna()].index.tolist()
             self.columns_to_drop.extend(nan_corr_columns)
     
@@ -636,8 +675,8 @@ class CorrelationHandler(BaseEstimator, TransformerMixin):
             if col in self.columns_to_drop:
                 self.columns_to_drop.remove(col)
 
-        if 'Transaction_Sharpe' in self.columns_to_drop:
-            self.columns_to_drop.remove('Transaction_Sharpe')
+        if 'Daily_Sharpe_Ratio' in self.columns_to_drop:
+            self.columns_to_drop.remove('Daily_Sharpe_Ratio')
 
         return self
   
@@ -653,8 +692,22 @@ class CorrelationHandler(BaseEstimator, TransformerMixin):
 # Create The Pipelines
 # ===============================================================================
 def create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate, api_key):
+    """
+    Creates a pipeline for fetching and processing stock data.
+    
+    Parameters:
+    - ticker_symbol (str): Stock ticker symbol.
+    - start_date (str): Start date for data (YYYY-MM-DD).
+    - end_date (str): End date for data (YYYY-MM-DD).
+    - risk_free_rate (float): Annual risk-free rate.
+    - api_key (str): Alpha Vantage API key.
+    
+    Returns:
+    - Pipeline: Scikit-learn pipeline object.
+    """
     return Pipeline([
         ('data_fetcher', AlphaVantageDataFetcher(ticker_symbol, start_date, end_date, api_key)),
+        ('rolling_sharpe_calculator', RollingSharpeCalculator(window=30, risk_free_rate=risk_free_rate)),
         ('indicator_calculator', IndicatorCalculator()),
         ('signal_calculator', SignalCalculator()),
         ('transaction_metrics_calculator', TransactionMetricsCalculator(risk_free_rate)),
