@@ -468,7 +468,7 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
         # 'STOCH_Signal', 'MACD_CrossOver', 'ADX_Signal',
         # 'Ichimoku_Signal', 'BB_Signal'
         'ADX_Trend',
-        'Transaction_Volatility', 'Transaction_Returns', 'Transaction_Sharpe', 'Transaction_Duration', 'Daily_Sharpe_Ratio'
+    # 'Transaction_Volatility', 'Transaction_Returns', 'Transaction_Sharpe', 'Transaction_Duration', 'Daily_Sharpe_Ratio'
     ]):
         self.exclude_columns = exclude_columns
 
@@ -567,6 +567,7 @@ class OutlierHandler(BaseEstimator, TransformerMixin):
         return X_
   
 
+
 class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
     """
     Handles outliers using percentile-based capping and optional log transformation.
@@ -574,7 +575,7 @@ class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
     - For other numeric columns: Applies capping and log transformation to address skewness.
     """
 
-    def __init__(self, target_column='Transaction_Sharpe', lower_percentile=1, 
+    def __init__(self, target_columns=['Transaction_Sharpe', 'Daily_Sharpe_Ratio'], lower_percentile=1, 
                  upper_percentile=99, exclude_columns=[
         # Price data - should not be transformed
         'Open', 'High', 'Low', 'Close', 'Volume',
@@ -590,7 +591,7 @@ class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
         # External data 
         'Prime_Rate'
     ]):
-        self.target_column = target_column
+        self.target_columns = target_columns
         self.lower_percentile = lower_percentile
         self.upper_percentile = upper_percentile
         self.exclude_columns = exclude_columns
@@ -605,8 +606,12 @@ class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
             if X[col].dtype in ['float64', 'int64']
             and not any(exclude in col for exclude in self.exclude_columns)
             ]
+        
         # Exclude target_column from log transformation
-        self.log_transform_columns = [col for col in self.numeric_columns if col != self.target_column]
+        # Columns to log-transform = numeric columns excluding target columns
+        self.log_transform_columns = [
+            col for col in self.numeric_columns if col not in self.target_columns
+        ]
 
         # Compute percentiles for capping
         for col in self.numeric_columns:
@@ -651,6 +656,7 @@ class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
                     # For Transaction_Sharpe, only ensure capping
                     X_[col] = np.clip(col_data, p1, p99)
         return X_
+
 
 # Handle highly correlated features
 class CorrelationHandler(BaseEstimator, TransformerMixin):
