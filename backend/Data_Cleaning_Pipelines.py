@@ -148,7 +148,8 @@ class RollingSharpeCalculator(BaseEstimator, TransformerMixin):
         daily_risk_free = self.risk_free_rate / 252  # Assuming 252 trading days
         
         # Calculate rolling Sharpe ratio
-        X['Daily_Sharpe_Ratio'] = (X['Rolling_Mean'] - daily_risk_free) / X['Rolling_Std']
+        #X['Daily_Sharpe_Ratio'] = (X['Rolling_Mean'] - daily_risk_free) / X['Rolling_Std'] #(None Annulized daily sharpe calc)
+        X['Daily_Sharpe_Ratio'] = (X['Rolling_Mean'] - daily_risk_free) / X['Rolling_Std'] * np.sqrt(252)
         
         # Drop intermediate columns
         X.drop(['Daily_Return', 'Rolling_Mean', 'Rolling_Std'], axis=1, inplace=True)

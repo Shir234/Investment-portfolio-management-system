@@ -43,13 +43,13 @@ date_folder = f'results/{current_date}'
 os.makedirs(date_folder, exist_ok=True)
 
 base_directory = "results" 
-clean_data_date_folder = "20250513"
+clean_data_date_folder = "20250522"
 date_path = os.path.join(base_directory, clean_data_date_folder)
 
 if not os.path.exists(date_path):
     print(f"Folder path '{date_path}' does not exist.")
 # read csv -> {ticker}_clean_data: send clean data to full pipelin
-ticker_csv_path = os.path.join(date_path, f"AAPL_clean_data.csv")
+ticker_csv_path = os.path.join(date_path, f"IFF_clean_data.csv")
 # Check if the file exists
 if not os.path.exists(ticker_csv_path):
     logger.warning(f"File not found: {ticker_csv_path}")
@@ -63,4 +63,4 @@ if not isinstance(ticker_clean_data.index, pd.DatetimeIndex):
     ticker_clean_data.index = pd.to_datetime(ticker_clean_data.index)
 
 
-full_pipeline_for_single_stock(ticker_clean_data, logger, date_folder, current_date, 'AAPL', "2013-01-01", "2024-01-01")
+full_pipeline_for_single_stock(ticker_clean_data, logger, date_folder, current_date, 'IFF', "2013-01-01", "2024-01-01")
