@@ -157,7 +157,6 @@ class RollingSharpeCalculator(BaseEstimator, TransformerMixin):
         return X
 
 
-# TODO -> ADD INDICATORS
 # Add market indicators
 class IndicatorCalculator(BaseEstimator, TransformerMixin):
     def __init__(self, include_prime_rate=True, prime_start="2013-01-01", prime_end="2024-01-01"):
@@ -455,6 +454,14 @@ class TransactionMetricsCalculator(BaseEstimator, TransformerMixin):
 # ===============================================================================
 # Use forward fill then backward fill (normal in financial data) on all continues columns
 class MissingValueHandler(BaseEstimator, TransformerMixin):
+    """
+    Handle missing values in financial data.
+    
+    For the Daily_Sharpe_Ratio column, use the median of the entire dataset to fill the initial null values.
+    For other continuous columns, use forward-fill then backward-fill (standard approach for financial time series).
+    For categorical/binary columns, fill with a sentinel value (-1).
+    """
+    
     def __init__(self, exclude_columns=[
         # Signal and binary columns
         'Signal', 'Signal_Shift', 'Buy', 'Sell', 
@@ -464,19 +471,17 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
         
         # Binary indicators
         'Is_Month_End', 'Is_Month_Start', 'Is_Quarter_End',
-        # TODO -> ADD THESE IF WE ADD THEM IN THE INDICATOR CALCULATOR
-        # 'RSI_Overbought', 'RSI_Oversold',
-        # 'STOCH_Signal', 'MACD_CrossOver', 'ADX_Signal',
-        # 'Ichimoku_Signal', 'BB_Signal'
         'ADX_Trend',
-    # 'Transaction_Volatility', 'Transaction_Returns', 'Transaction_Sharpe', 'Transaction_Duration', 'Daily_Sharpe_Ratio'
     ]):
         self.exclude_columns = exclude_columns
+        self.sharpe_median = None
 
-    # def __init__(self, fill_columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'PSAR', 'MFI', 'MVP']):
-    #     self.fill_columns = fill_columns
-
+    
     def fit(self, X, y=None):
+        # Calculate median Sharpe ratio from non-null values
+        if 'Daily_Sharpe_Ratio' in X.columns:
+            self.sharpe_median = X['Daily_Sharpe_Ratio'].dropna().median()
+            print(f"Median Sharpe ratio (for filling null values): {self.sharpe_median}")
         return self
 
     def transform(self, X):
@@ -484,6 +489,10 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
 
         # Handle all columns except those in exclude_columns
         for col in X_.columns:
+            # Skip Daily_Sharpe_Ratio as it's already handled
+            if col == 'Daily_Sharpe_Ratio':
+                continue
+
             if any(exclude in col for exclude in self.exclude_columns):
                 # For categorical/binary columns, fill with -1 as a sentinel value
                 X_[col] = X_[col].fillna(-1).infer_objects(copy=False)
@@ -576,8 +585,8 @@ class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
     - For other numeric columns: Applies capping and log transformation to address skewness.
     """
 
-    def __init__(self, target_columns=['Transaction_Sharpe', 'Daily_Sharpe_Ratio'], lower_percentile=1, 
-                 upper_percentile=99, exclude_columns=[
+    def __init__(self, target_columns=['Transaction_Sharpe', 'Daily_Sharpe_Ratio'], lower_percentile=5, 
+                 upper_percentile=95, exclude_columns=[
         # Price data - should not be transformed
         'Open', 'High', 'Low', 'Close', 'Volume',
         # Signal and binary columns
@@ -721,6 +730,21 @@ def create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_ra
     ])
 
 def create_data_cleaning_pipeline(correlation_threshold = 0.95):
+  """
+    Creates a pipeline for cleaning financial data.
+    
+    The pipeline handles:
+    1. Missing values - using median for Sharpe ratio and ffill/bfill for other numeric columns
+    2. Outliers - using percentile-based capping
+    3. Correlation - removing highly correlated features
+    
+    Parameters:
+    - correlation_threshold (float): Threshold for removing highly correlated features.
+    
+    Returns:
+    - Pipeline: Scikit-learn pipeline object.
+    """
+  
   return Pipeline([
       ('missing_value_handler', MissingValueHandler()),
       ('outlier_handler', ComprehensiveOutlierHandler()),
