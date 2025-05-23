@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.base import BaseEstimator, TransformerMixin
 
 # Define the RollingSharpeCalculator for verification
@@ -30,6 +31,58 @@ class RollingSharpeCalculator(BaseEstimator, TransformerMixin):
         X.drop(['Daily_Return', 'Rolling_Mean', 'Rolling_Std'], axis=1, inplace=True)
         return X
 
+# Define correlation analysis function
+def analyze_correlations(df, ticker, folder_path):
+    """
+    Analyze correlations between features and Daily_Sharpe_Ratio, and between features.
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame containing the data with Daily_Sharpe_Ratio and other features
+    ticker : str
+        Ticker symbol for the stock
+    folder_path : str
+        Path to save the correlation results and heatmap
+    
+    Returns:
+    --------
+    None
+        Saves correlation matrix to CSV and heatmap to PNG
+    """
+    # Select numeric columns
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    df_numeric = df[numeric_cols]
+    
+    # Calculate correlation matrix
+    corr_matrix = df_numeric.corr()
+    
+    # Save correlation matrix to CSV
+    corr_file_path = os.path.join(folder_path, f"{ticker}_correlation_matrix.csv")
+    corr_matrix.to_csv(corr_file_path)
+    print(f"Correlation matrix saved to: {corr_file_path}")
+    
+    # Create heatmap
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0, fmt='.2f')
+    plt.title(f'Correlation Heatmap for {ticker}')
+    plt.tight_layout()
+    
+    # Save heatmap
+    heatmap_file_path = os.path.join(folder_path, f"{ticker}_correlation_heatmap.png")
+    plt.savefig(heatmap_file_path)
+    plt.close()
+    print(f"Correlation heatmap saved to: {heatmap_file_path}")
+    
+    # Extract correlations with Daily_Sharpe_Ratio
+    if 'Daily_Sharpe_Ratio' in corr_matrix:
+        sharpe_corrs = corr_matrix['Daily_Sharpe_Ratio'].sort_values(ascending=False)
+        sharpe_corr_file_path = os.path.join(folder_path, f"{ticker}_sharpe_correlations.csv")
+        sharpe_corrs.to_csv(sharpe_corr_file_path)
+        print(f"Daily_Sharpe_Ratio correlations saved to: {sharpe_corr_file_path}")
+
+
+
 # Define folder path
 folder_path = r"C:\Users\Shir.Falach\Desktop\SharpSight\Investment-portfolio-management-system\backend\results\20250522"
 
@@ -57,6 +110,9 @@ for file_name in os.listdir(folder_path):
         
         # Read clean data
         df_clean = pd.read_csv(clean_file_path)
+
+        # Perform correlation analysis
+        analyze_correlations(df_clean, ticker, folder_path)
         
         # Read raw data if available
         if os.path.exists(raw_file_path):

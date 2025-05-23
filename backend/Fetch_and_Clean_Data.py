@@ -249,8 +249,8 @@ if __name__ == "__main__":
         date_folder, 
         current_date, 
         api_key=API_KEY,
-        #tickers_file="valid_tickers_av.csv", # for more than 1 ticker
-        tickers_file="one_ticker.csv", # for 1 ticker
+        tickers_file="valid_tickers_av.csv", # for more than 1 ticker
+        #tickers_file="one_ticker.csv", # for 1 ticker
         start_date="2013-01-01", 
         end_date="2024-01-01"
     )

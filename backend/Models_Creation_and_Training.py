@@ -61,76 +61,65 @@ def create_models():
     try:
         models = {
             'SVR': (SVR(), {
-                'kernel': ['rbf', 'linear', 'poly'],
-                'C': ('float', 0.1, 20.0),
-                'epsilon': ('float', 0.01, 0.3),
-                'gamma': ('float', 0.001, 0.5),  # Added for rbf kernel
-                'max_iter': [15000]  # Increased to ensure convergence
+                'kernel': ['rbf'],  # Focus on RBF based on fold results
+                'C': ('float', 5.0, 20.0),  # Narrowed from 0.1–20
+                'epsilon': ('float', 0.05, 0.3),  # Narrowed from 0.01–0.3
+                'gamma': ('float', 0.05, 0.5),  # Narrowed from 0.001–0.5
+                'max_iter': [15000]
             }),
             'XGBoost': (XGBRegressor(random_state=42), {
-                'n_estimators': ('int', 100, 1000),  # Expanded range
-                'max_depth': ('int', 3, 15),  # Expanded range
-                'learning_rate': ('float', 0.001, 0.2),  # Expanded range
-                'subsample': ('float', 0.5, 1.0),
-                'colsample_bytree': ('float', 0.5, 1.0),
-                'min_child_weight': ('float', 1, 20),  # Expanded upper range from 10 to 20
-                'gamma': ('float', 0, 0.5),  # Controls minimum loss reduction for partition
-                'reg_alpha': ('float', 0, 1.0),  # L1 regularization
-                'reg_lambda': ('float', 0, 1.0)   # L2 regularization
+                'n_estimators': ('int', 100, 300),  # Narrowed from 100–1000
+                'max_depth': ('int', 3, 7),  # Narrowed from 3–15
+                'learning_rate': ('float', 0.01, 0.1),  # Narrowed from 0.001–0.2
+                'subsample': ('float', 0.7, 1.0),  # Narrowed from 0.5–1.0
+                'colsample_bytree': ('float', 0.6, 0.9),  # Narrowed from 0.5–1.0
+                'min_child_weight': ('float', 5, 20),  # Narrowed from 1–20
+                'gamma': ('float', 0.3, 0.5),
+                'reg_alpha': ('float', 0.3, 1.0),
+                'reg_lambda': ('float', 0.1, 1.0)
             }),
             'LightGBM': (LGBMRegressor(random_state=42, verbose=-1), {
-                'n_estimators': ('int', 100, 1000),  # Expanded upper range from 500 to 1000
-                'max_depth': ('int', 3, 15),  # Expanded upper range from 10 to 15
-                'learning_rate': ('float', 0.001, 0.2),  # Added lower values for learning rate
-                'subsample': ('float', 0.5, 1.0),  # Expanded lower range from 0.7 to 0.5
-                'colsample_bytree': ('float', 0.5, 1.0),  # Expanded lower range from 0.7 to 0.5
-                'num_leaves': ('int', 20, 150),  # Expanded upper range from 50 to 150
-                'min_child_samples': ('int', 5, 50),  # Controls min samples per leaf
-                'reg_alpha': ('float', 0, 1.0),   # L1 regularization
-                'reg_lambda': ('float', 0, 1.0),  # L2 regularization
+                'n_estimators': ('int', 100, 500),  # Narrowed from 100–1000
+                'max_depth': ('int', 3, 10),  # Narrowed from 3–15
+                'learning_rate': ('float', 0.01, 0.05),  # Narrowed from 0.001–0.2
+                'subsample': ('float', 0.6, 1.0),  # Narrowed from 0.5–1.0
+                'colsample_bytree': ('float', 0.6, 0.9),  # Narrowed from 0.5–1.0
+                'num_leaves': ('int', 20, 100),  # Narrowed from 20–150
+                'min_child_samples': ('int', 20, 50),  # Narrowed from 5–50
+                'reg_alpha': ('float', 0.1, 0.7),
+                'reg_lambda': ('float', 0.2, 0.6),
                 'force_row_wise': [True]
             }),
             'RandomForest': (RandomForestRegressor(random_state=42), {
-                'n_estimators': ('int', 100, 1000),  # Expanded upper range from 500 to 1000
-                'max_depth': ('int', 3, 15),  # Expanded upper range from 10 to 15
-                'min_samples_split': ('int', 2, 15),  # Expanded upper range from 10 to 15
-                'min_samples_leaf': ('int', 1, 10),  # Expanded upper range from 4 to 10
-                'max_features': ['sqrt', 'log2', 0.3, 0.5, 0.7, 1.0],  # Added 1.0 option
-                'bootstrap': [True, False],  # Added bootstrap option
-                'warm_start': [True, False]  # Added warm start option
+                'n_estimators': ('int', 200, 600),  # Narrowed from 100–1000
+                'max_depth': ('int', 3, 10),  # Narrowed from 3–15
+                'min_samples_split': ('int', 5, 15),  # Narrowed from 2–15
+                'min_samples_leaf': ('int', 5, 10),  # Narrowed from 1–10
+                'max_features': ['sqrt', 0.3, 0.5, 1.0],  # Removed log2
+                'bootstrap': [True],  # Fixed to True
+                'warm_start': [False]  # Fixed to False
             }),
             'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
-                'n_estimators': ('int', 100, 1000),  # Expanded upper range from 500 to 1000
-                'max_depth': ('int', 3, 15),  # Expanded upper range from 10 to 15
-                'learning_rate': ('float', 0.001, 0.2),  # Added lower values for learning rate
-                'subsample': ('float', 0.5, 1.0),  # Expanded lower range from 0.7 to 0.5
-                'min_samples_split': ('int', 2, 15),  # Expanded upper range from 14 to 15
-                'min_samples_leaf': ('int', 1, 10),  # Added parameter
-                'max_features': ['sqrt', 'log2', 0.3, 0.5, 0.7, 1.0],  # Added options
-                'alpha': ('float', 0.1, 0.9)  # Controls quantile loss for quantile regression
+                'n_estimators': ('int', 100, 500),  # Narrowed from 100–1000
+                'max_depth': ('int', 3, 7),  # Narrowed from 3–15
+                'learning_rate': ('float', 0.01, 0.05),  # Narrowed from 0.001–0.2
+                'subsample': ('float', 0.6, 1.0),  # Narrowed from 0.5–1.0
+                'min_samples_split': ('int', 2, 10),  # Narrowed from 2–15
+                'min_samples_leaf': ('int', 5, 10),  # Narrowed from 1–10
+                'max_features': ['sqrt', 0.3, 0.5],  # Removed log2, 0.7, 1.0
+                'alpha': ('float', 0.1, 0.7)  # Narrowed from 0.1–0.9
             }),
             'LSTM': (None, {
-            'epochs': ('int', 50, 150),         # CHANGE: reduced from 200 to 150
-            'batch_size': ('int', 16, 64),      # CHANGE: reduced upper limit from 128 to 64
-            'units': ('int', 8, 48),            # CHANGE: reduced from 16-128 to 8-48
-            'learning_rate': ('float', 0.0005, 0.01),
-            'dropout': ('float', 0.1, 0.5),
-            'time_steps': ('int', 3, 10),       # CHANGE: reduced upper limit from 20 to 10
-            'layers': ('int', 1, 2),            # CHANGE: reduced upper limit from 3 to 2
-            'bidirectional': [False],           # CHANGE: removed True option
-            'use_batch_norm': [False]           # CHANGE: default to False
-        })
-            # 'LSTM': (None, {
-            #     'epochs': ('int', 50, 200),  # Expanded upper range from 150 to 200
-            #     'batch_size': ('int', 16, 128),  # Expanded ranges from 32-64 to 16-128
-            #     'units': ('int', 16, 128),  # Expanded upper range from 64 to 128
-            #     'learning_rate': ('float', 0.0005, 0.01),  # Expanded lower range for more stability
-            #     'dropout': ('float', 0.1, 0.5),  # Expanded upper range from 0.3 to 0.5
-            #     'time_steps': ('int', 3, 20),  # Expanded upper range from 10 to 20
-            #     'layers': ('int', 1, 3),  # Added parameter for network depth
-            #     'bidirectional': [True, False],  # Added parameter for architecture choice
-            #     'use_batch_norm': [True, False]  # Added parameter for normalization choice
-            # })
+                'epochs': ('int', 50, 100),  # Reduced from 50–150
+                'batch_size': ('int', 16, 32),  # Reduced from 16–64
+                'units': ('int', 8, 32),  # Reduced from 8–48
+                'learning_rate': ('float', 0.001, 0.01),
+                'dropout': ('float', 0.1, 0.3),  # Narrowed from 0.1–0.5
+                'time_steps': ('int', 3, 5),  # Narrowed from 3–10
+                'layers': ('int', 1, 1),  # Fixed to 1
+                'bidirectional': [False],
+                'use_batch_norm': [False]
+            })
         }
         return models
     except Exception as e:
@@ -229,6 +218,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
 
         best_mse_scores = []                                                               # lists to store scores and parameters for the models
         best_rmse_scores = []
+        best_r2_scores = []
         best_params = []
         best_score = float('inf')
         best_model = None
@@ -270,7 +260,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             # Grid search
             logger.info(f"  Running Optuna optimization for {model_name} on fold {fold + 1}...")
             # Increased number of trials by 50% for all models
-            n_trials = 60 if model_name != 'SVR' else 40  # increased from 40->60 and from 30->40
+            n_trials = 30 if model_name != 'SVR' else 20  # increased from 40->60 and from 30->40
 
             try:
                 best_params_fold, best_mse, _ = optimize_model_with_optuna(
@@ -293,8 +283,10 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                 mse = mean_squared_error(Y_val_original, Y_pred)
                 rmse = np.sqrt(mse)
                 mae = mean_absolute_error(Y_val_original, Y_pred)
+                r2 = r2_score(Y_val_original, Y_pred)
                 best_mse_scores.append(mse)
                 best_rmse_scores.append(rmse)
+                best_r2_scores.append(r2)
                 logger.info(f"  Fold {fold + 1} - MSE: {mse:.4f}, RMSE: {rmse:.4f},  MAE: {mae:.4f}")
 
                 # Store fold metrics
@@ -303,6 +295,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                     'MSE': mse,
                     'RMSE': rmse,
                     'MAE': mae,
+                    'R2': r2,
                     'Min_Ratio': min_ratio,
                     'Max_Ratio': max_ratio,
                     'Parameters': str(best_params_fold)
@@ -330,6 +323,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
         results[model_name] = {                                                       
             'best_mse_scores': best_mse_scores,
             'best_rmse_scores': best_rmse_scores,
+            'best_r2_scores': best_r2_scores,
             'best_params': best_params,
             'best_model': best_model,
             'best_model_prediction': best_model_prediction,
@@ -341,6 +335,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
         if best_mse_scores:
             avg_mse = np.mean(best_mse_scores)
             avg_rmse = np.mean(best_rmse_scores)
+            avg_r2 = np.mean(best_r2_scores)
             logger.info(f"  Average MSE: {avg_mse:.4f}, Average RMSE: {avg_rmse:.4f}")
         else:
             logger.info(f"  No successful folds for {model_name}")
@@ -369,6 +364,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                 Y_retrain_pred = target_scaler.inverse_transform(Y_retrain_pred_scaled.reshape(-1, 1)).flatten()
                 retrain_mse = mean_squared_error(Y_train_val, Y_retrain_pred)
                 retrain_rmse = np.sqrt(retrain_mse)
+                retrain_r2 = r2_score(Y_train_val, Y_retrain_pred)
 
                 logger.info(f"  Retrained {model_name} - MSE: {retrain_mse:.4f}, RMSE: {retrain_rmse:.4f}")
                 min_ratio, max_ratio = verify_prediction_scale(logger, Y_train_val, Y_retrain_pred, f"{model_name} retrained")
@@ -379,6 +375,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                 results[model_name]['retrained_metrics'] = {
                     'MSE': retrain_mse,
                     'RMSE': retrain_rmse,
+                    'R2': retrain_r2,
                     'Min_Ratio': min_ratio,
                     'Max_Ratio': max_ratio
                 }
@@ -402,11 +399,13 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             # Calculate metrics
             avg_mse = np.mean(result['best_mse_scores'])
             avg_rmse = np.mean(result['best_rmse_scores'])
+            avg_r2 = np.mean(result['best_r2_scores'])
             
             # Find best fold
             best_fold_idx = np.argmin(result['best_mse_scores'])
             best_fold_mse = result['best_mse_scores'][best_fold_idx]
             best_fold_rmse = result['best_rmse_scores'][best_fold_idx]
+            best_fold_r2 = result['best_r2_scores'][best_fold_idx]
 
             # Get best parameters
             best_fold_params = None
@@ -418,8 +417,10 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                 'Model': model_name,
                 'Average_MSE': avg_mse,
                 'Average_RMSE': avg_rmse,
+                'Average_R2': avg_r2,
                 'Best_Fold_MSE': best_fold_mse,
                 'Best_Fold_RMSE': best_fold_rmse,
+                'Best_Fold_R2': best_fold_r2,
                 'Best_Parameters': best_fold_params
             })
 
@@ -609,7 +610,7 @@ def train_lstm_model(X_train, y_train, X_val, y_val, params, trial=None):
         model.compile(optimizer=optimizer, loss='mse')
 
         # Early stopping with longer patience
-        callbacks = [EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)]
+        callbacks = [EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)]
         if trial:
             callbacks.append(TFKerasPruningCallback(trial, 'val_loss'))
 
@@ -658,31 +659,28 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
     - Dictionary containing training results:
         - best_mse_scores: List of MSE scores for each fold
         - best_rmse_scores: List of RMSE scores for each fold
+        - best_r2_scores: List of R² scores for each fold
         - best_params: List of best parameters for each fold
         - best_model: Best trained LSTM model
         - best_model_prediction: Predictions from the best model
         - Y_val_best: Validation targets for the best model
     """
 
-    # Create a list to store fold metrics
     fold_metrics = []
 
     def is_pca_transformed_data(X_data):
-        """
-        Check if the data appears to be PCA-transformed based on column names.
-        """
         if isinstance(X_data, pd.DataFrame):
             return all(col.startswith('PC') for col in X_data.columns)
         return False
 
     try:
-        # Check if input data is PCA-transformed
         data_is_pca = is_pca_transformed_data(X_train_val)
         if data_is_pca:
             print("Training LSTM on PCA-transformed data")
 
         best_mse_scores = []
         best_rmse_scores = []
+        best_r2_scores = []  # Added to store R² scores
         best_params = []
         best_model = None
         best_score = float('inf')
@@ -691,30 +689,29 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
 
         def objective(trial):
             params = {
-                'epochs': trial.suggest_int('epochs', 50, 100),  # Expanded range
-                'batch_size': trial.suggest_int('batch_size', 16, 64),  # Expanded range
-                'units': trial.suggest_int('units', 8, 32),  # Expanded range
-                'learning_rate': trial.suggest_float('learning_rate', 0.0005, 0.01, log=True),  # Log scale for learning rate
-                'dropout': trial.suggest_float('dropout', 0.1, 0.5),  # Expanded range
-                'time_steps': trial.suggest_int('time_steps', 3, 8),  # Expanded range
-                'layers': trial.suggest_int('layers', 1, 1),  # New parameter
-                'bidirectional': trial.suggest_categorical('bidirectional', [False]),  # New parameter
-                'use_batch_norm': trial.suggest_categorical('use_batch_norm', [False])  # New parameter
+                'epochs': trial.suggest_int('epochs', 50, 100),
+                'batch_size': trial.suggest_int('batch_size', 16, 64),
+                'units': trial.suggest_int('units', 8, 32),
+                'learning_rate': trial.suggest_float('learning_rate', 0.0005, 0.01, log=True),
+                'dropout': trial.suggest_float('dropout', 0.1, 0.5),
+                'time_steps': trial.suggest_int('time_steps', 3, 8),
+                'layers': trial.suggest_int('layers', 1, 1),
+                'bidirectional': trial.suggest_categorical('bidirectional', [False]),
+                'use_batch_norm': trial.suggest_categorical('use_batch_norm', [False])
             }
             mse_scores = []
 
             fold_idx = 0
             for train_idx, val_idx in tscv.split(X_train_val):
-                if fold_idx > 0:  # Only use the first fold
+                if fold_idx > 0:
                     break
                 X_train_fold = X_train_val.iloc[train_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[train_idx]
                 X_val_fold = X_train_val.iloc[val_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[val_idx]
                 Y_train_fold = Y_train_val.iloc[train_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[train_idx]
-                Y_val_fold = Y_train_val.iloc[val_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[val_idx]
+                Y_val_fold = Y_train_val.iloc[val_idx] if isinstance(Y_train_val, pd.Series) else Y_val_val[val_idx]
 
                 X_train_scaled = X_train_fold.values if isinstance(X_train_fold, pd.DataFrame) else X_train_fold
                 X_val_scaled = X_val_fold.values if isinstance(X_val_fold, pd.DataFrame) else X_val_fold
-
                 Y_train_fold_array = Y_train_fold.values if isinstance(Y_train_fold, pd.Series) else Y_train_fold
                 Y_val_fold_array = Y_val_fold.values if isinstance(Y_val_fold, pd.Series) else Y_val_fold
                 Y_train_scaled = target_scaler.transform(Y_train_fold_array.reshape(-1, 1)).flatten()
@@ -727,16 +724,15 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
                     return float('inf')
 
                 y_pred_original = target_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
-                adjusted_val_fold = Y_val_fold.iloc[:(len(y_pred_original))] if isinstance(Y_val_fold, pd.Series) else Y_val_fold[:(len(y_pred_original))]
+                adjusted_val_fold = Y_val_fold.iloc[:len(y_pred_original)] if isinstance(Y_val_fold, pd.Series) else Y_val_fold[:len(y_pred_original)]
                 mse_original = mean_squared_error(adjusted_val_fold, y_pred_original)
                 mse_scores.append(mse_original)
-                
                 fold_idx += 1
 
             return np.mean(mse_scores)
 
         study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=20)
+        study.optimize(objective, n_trials=10)
 
         best_params_fold = study.best_params
         best_mse = study.best_value
@@ -754,39 +750,43 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
 
             X_train_scaled = X_train_fold.values if isinstance(X_train_fold, pd.DataFrame) else X_train_fold
             X_val_scaled = X_val_fold.values if isinstance(X_val_fold, pd.DataFrame) else X_val_fold
-
             Y_train_fold_array = Y_train_fold.values if isinstance(Y_train_fold, pd.Series) else Y_train_fold
             Y_val_fold_array = Y_val_fold.values if isinstance(Y_val_fold, pd.Series) else Y_val_fold
             Y_train_scaled = target_scaler.transform(Y_train_fold_array.reshape(-1, 1)).flatten()
             Y_val_scaled = target_scaler.transform(Y_val_fold_array.reshape(-1, 1)).flatten()
-            
+
             model, mse, rmse, y_pred_scaled = train_lstm_model(
                 X_train_scaled, Y_train_scaled, X_val_scaled, Y_val_scaled, best_params_fold
             )
             if model is None:
                 continue
-            
+
             y_pred_original = target_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
-            adjusted_val_fold = Y_val_fold.iloc[:(len(y_pred_original))] if isinstance(Y_val_fold, pd.Series) else Y_val_fold[:(len(y_pred_original))]
+            adjusted_val_fold = Y_val_fold.iloc[:len(y_pred_original)] if isinstance(Y_val_fold, pd.Series) else Y_val_fold[:len(y_pred_original)]
             mse_original = mean_squared_error(adjusted_val_fold, y_pred_original)
             rmse_original = np.sqrt(mse_original)
+            r2_original = r2_score(adjusted_val_fold, y_pred_original)  # Added R² calculation
+            mae_original = mean_absolute_error(adjusted_val_fold, y_pred_original)  # Added MAE for consistency
+            min_ratio, max_ratio = verify_prediction_scale(None, adjusted_val_fold, y_pred_original, f"LSTM fold {fold+1}")  # Logger not passed, using None
 
             best_mse_scores.append(mse_original)
             best_rmse_scores.append(rmse_original)
+            best_r2_scores.append(r2_original)
             best_params.append(best_params_fold)
 
             print(f"Best parameters for fold {fold + 1}: {best_params_fold}")
-            print(f"End of Fold {fold + 1} - MSE: {mse_original:.4f}, RMSE: {rmse_original:.4f}")
+            print(f"End of Fold {fold + 1} - MSE: {mse_original:.4f}, RMSE: {rmse_original:.4f}, R²: {r2_original:.4f}")
 
-            # After metrics calculation, store fold metrics:
+            # Store fold metrics
             fold_metrics.append({
                 'Fold': fold + 1,
-                'MSE': mse,
-                'RMSE': rmse,
-                'MAE': mae,
+                'MSE': mse_original,
+                'RMSE': rmse_original,
+                'MAE': mae_original,
+                'R2': r2_original,  # Added R²
                 'Min_Ratio': min_ratio,
                 'Max_Ratio': max_ratio,
-                'Parameters': str(best_params)  # Assuming best_params is defined in your LSTM function
+                'Parameters': str(best_params_fold)
             })
 
             if mse_original < best_score:
@@ -818,10 +818,12 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
         return {
             'best_mse_scores': best_mse_scores,
             'best_rmse_scores': best_rmse_scores,
+            'best_r2_scores': best_r2_scores,  # Added R² scores
             'best_params': best_params,
             'best_model': best_model,
             'best_model_prediction': best_model_prediction,
-            'Y_val_best': Y_val_best
+            'Y_val_best': Y_val_best,
+            'fold_metrics': fold_metrics
         }
 
     except Exception as e:
@@ -829,6 +831,7 @@ def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, tar
         return {
             'best_mse_scores': [],
             'best_rmse_scores': [],
+            'best_r2_scores': [],  # Added R² scores
             'best_params': [],
             'best_model': None,
             'best_model_prediction': None,

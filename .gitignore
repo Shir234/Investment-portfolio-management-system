@@ -11,6 +11,8 @@ venv.bak/
 
 # Result folder - preserved locally, not tracked
 result/
+backend/results/
+
 
 # Python bytecode and CPython files
 __pycache__/
