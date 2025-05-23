@@ -464,18 +464,15 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
     
     def __init__(self, exclude_columns=[
         # Signal and binary columns
-        'Signal', 'Signal_Shift', 'Buy', 'Sell', 
-        
+        'Signal', 'Signal_Shift', 'Buy', 'Sell',    
         # Categorical time features
-        'Day_of_Week', 'Month', 'Quarter', 
-        
+        'Day_of_Week', 'Month', 'Quarter',         
         # Binary indicators
         'Is_Month_End', 'Is_Month_Start', 'Is_Quarter_End',
         'ADX_Trend',
     ]):
         self.exclude_columns = exclude_columns
         self.sharpe_median = None
-
     
     def fit(self, X, y=None):
         # Calculate median Sharpe ratio from non-null values
@@ -491,9 +488,8 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
         for col in X_.columns:
             # Skip Daily_Sharpe_Ratio as it's already handled
             if col == 'Daily_Sharpe_Ratio':
-                continue
-
-            if any(exclude in col for exclude in self.exclude_columns):
+                X_[col] = X_[col].fillna(self.sharpe_median).infer_objects(copy=False)
+            elif any(exclude in col for exclude in self.exclude_columns):
                 # For categorical/binary columns, fill with -1 as a sentinel value
                 X_[col] = X_[col].fillna(-1).infer_objects(copy=False)
             elif X_[col].dtype in ['float64', 'int64']:

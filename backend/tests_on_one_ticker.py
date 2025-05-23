@@ -43,7 +43,7 @@ date_folder = f'results/{current_date}'
 os.makedirs(date_folder, exist_ok=True)
 
 base_directory = "results" 
-clean_data_date_folder = "20250522"
+clean_data_date_folder = "20250523"
 date_path = os.path.join(base_directory, clean_data_date_folder)
 
 if not os.path.exists(date_path):

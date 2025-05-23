@@ -162,6 +162,8 @@ def create_requirements_file():
         "scikeras",
         "xgboost",
         "lightgbm",
+        "optuna",  # Added for hyperparameter optimization
+        "optuna-integration[tfkeras]",  # Added for TensorFlow/Keras integration with Optuna
         "ipykernel",  # For Jupyter notebook support in VS Code
         "pandas-datareader",  # Added for FRED data access
     ]
