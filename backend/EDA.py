@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.base import BaseEstimator, TransformerMixin
 
-# Define the RollingSharpeCalculator for verification
+# Define the RollingSharpeCalculator
 class RollingSharpeCalculator(BaseEstimator, TransformerMixin):
     def __init__(self, window=30, risk_free_rate=0.02, min_std=1e-6):
         self.window = window
@@ -32,61 +32,25 @@ class RollingSharpeCalculator(BaseEstimator, TransformerMixin):
         return X
 
 # Define correlation analysis function
-def analyze_correlations(df, ticker, folder_path):
-    """
-    Analyze correlations between features and Daily_Sharpe_Ratio, and between features.
-    
-    Parameters:
-    -----------
-    df : pandas.DataFrame
-        DataFrame containing the data with Daily_Sharpe_Ratio and other features
-    ticker : str
-        Ticker symbol for the stock
-    folder_path : str
-        Path to save the correlation results and heatmap
-    
-    Returns:
-    --------
-    None
-        Saves correlation matrix to CSV and heatmap to PNG
-    """
-    # Select numeric columns
+def analyze_correlations(df, ticker, folder_path, all_features, feature_corr_dict):
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     df_numeric = df[numeric_cols]
-    
-    # Calculate correlation matrix
     corr_matrix = df_numeric.corr()
     
-    # Save correlation matrix to CSV
-    corr_file_path = os.path.join(folder_path, f"{ticker}_correlation_matrix.csv")
-    corr_matrix.to_csv(corr_file_path)
-    print(f"Correlation matrix saved to: {corr_file_path}")
-    
-    # Create heatmap
-    plt.figure(figsize=(12, 8))
-    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0, fmt='.2f')
-    plt.title(f'Correlation Heatmap for {ticker}')
-    plt.tight_layout()
-    
-    # Save heatmap
-    heatmap_file_path = os.path.join(folder_path, f"{ticker}_correlation_heatmap.png")
-    plt.savefig(heatmap_file_path)
-    plt.close()
-    print(f"Correlation heatmap saved to: {heatmap_file_path}")
-    
-    # Extract correlations with Daily_Sharpe_Ratio
     if 'Daily_Sharpe_Ratio' in corr_matrix:
-        sharpe_corrs = corr_matrix['Daily_Sharpe_Ratio'].sort_values(ascending=False)
-        sharpe_corr_file_path = os.path.join(folder_path, f"{ticker}_sharpe_correlations.csv")
-        sharpe_corrs.to_csv(sharpe_corr_file_path)
-        print(f"Daily_Sharpe_Ratio correlations saved to: {sharpe_corr_file_path}")
-
-
+        sharpe_corrs = corr_matrix['Daily_Sharpe_Ratio'].drop('Daily_Sharpe_Ratio', errors='ignore')
+        sharpe_corr_file = os.path.join(folder_path, f"{ticker}_sharpe_correlations.csv")
+        sharpe_corrs.to_csv(sharpe_corr_file)
+        
+        for feature in sharpe_corrs.index:
+            if feature not in all_features:
+                all_features.add(feature)
+            feature_corr_dict.setdefault(feature, []).append(sharpe_corrs[feature])
 
 # Define folder path
 folder_path = r"C:\Users\Shir.Falach\Desktop\SharpSight\Investment-portfolio-management-system\backend\results\20250522"
 
-# Initialize lists to store data
+# Initialize lists and sets
 tickers = []
 daily_min_values = []
 daily_max_values = []
@@ -97,6 +61,8 @@ global_daily_max = float('-inf')
 global_trans_min = float('inf')
 global_trans_max = float('-inf')
 daily_stats = []
+all_features = set()
+feature_corr_dict = {}
 
 # Initialize the calculator
 sharpe_calculator = RollingSharpeCalculator(window=30, risk_free_rate=0.02)
@@ -108,35 +74,27 @@ for file_name in os.listdir(folder_path):
         clean_file_path = os.path.join(folder_path, file_name)
         raw_file_path = os.path.join(folder_path, f"{ticker}_raw_data.csv")
         
-        # Read clean data
         df_clean = pd.read_csv(clean_file_path)
-
-        # Perform correlation analysis
-        analyze_correlations(df_clean, ticker, folder_path)
         
-        # Read raw data if available
+        analyze_correlations(df_clean, ticker, folder_path, all_features, feature_corr_dict)
+        
         if os.path.exists(raw_file_path):
             df_raw = pd.read_csv(raw_file_path)
-            # Recalculate Daily_Sharpe_Ratio on raw data
             df_raw = sharpe_calculator.transform(df_raw)
         else:
             print(f"Raw data for {ticker} not found. Skipping raw data analysis.")
             df_raw = None
         
-        # Get min and max for Daily_Sharpe_Ratio (clean data)
         daily_min = df_clean['Daily_Sharpe_Ratio'].min()
         daily_max = df_clean['Daily_Sharpe_Ratio'].max()
         
-        # Get min and max for Transaction_Sharpe (clean data), excluding -1
         trans_sharpe = df_clean[df_clean['Transaction_Sharpe'] != -1]['Transaction_Sharpe']
         trans_min = trans_sharpe.min() if not trans_sharpe.empty else float('inf')
         trans_max = trans_sharpe.max() if not trans_sharpe.empty else float('-inf')
         
-        # Check for NaN and infinite values in clean data
         daily_nan_count = df_clean['Daily_Sharpe_Ratio'].isna().sum()
         daily_inf_count = np.isinf(df_clean['Daily_Sharpe_Ratio']).sum()
         
-        # Stats for raw data if available
         if df_raw is not None:
             raw_daily_min = df_raw['Daily_Sharpe_Ratio'].min()
             raw_daily_max = df_raw['Daily_Sharpe_Ratio'].max()
@@ -147,7 +105,6 @@ for file_name in os.listdir(folder_path):
         else:
             raw_daily_min = raw_daily_max = raw_daily_mean = raw_daily_std = raw_daily_nan_count = raw_daily_inf_count = np.nan
         
-        # Store stats
         daily_stats.append({
             'Ticker': ticker,
             'Clean_Daily_Min': daily_min,
@@ -166,14 +123,12 @@ for file_name in os.listdir(folder_path):
             'Trans_Max': trans_max
         })
         
-        # Store values for plotting
         tickers.append(ticker)
         daily_min_values.append(daily_min)
         daily_max_values.append(daily_max)
         trans_min_values.append(trans_min)
         trans_max_values.append(trans_max)
         
-        # Update global min and max
         global_daily_min = min(global_daily_min, daily_min)
         global_daily_max = max(global_daily_max, daily_max)
         if trans_min != float('inf'):
@@ -181,13 +136,66 @@ for file_name in os.listdir(folder_path):
         if trans_max != float('-inf'):
             global_trans_max = max(global_trans_max, trans_max)
 
-# Create DataFrame for stats
-stats_df = pd.DataFrame(daily_stats)
+# Aggregate correlation statistics
+corr_stats = []
+for feature in all_features:
+    corrs = feature_corr_dict[feature]
+    corr_stats.append({
+        'Feature': feature,
+        'Mean_Corr': np.mean(corrs),
+        'Max_Corr': np.max(corrs),
+        'Min_Corr': np.min(corrs),
+        'Std_Corr': np.std(corrs),
+        'Count': len(corrs)
+    })
+corr_stats_df = pd.DataFrame(corr_stats)
 
-# Save stats to CSV for sharing
+# Save correlation stats
+corr_stats_file = os.path.join(folder_path, 'feature_sharpe_correlation_stats.csv')
+corr_stats_df.to_csv(corr_stats_file, index=False)
+print(f"Feature correlation stats saved to: {corr_stats_file}")
+
+# Create two heatmaps: top 20 positive and top 20 negative correlations
+# Positive correlations
+corr_stats_df_pos = corr_stats_df[corr_stats_df['Mean_Corr'] > 0].sort_values(by='Mean_Corr', ascending=False)
+top_pos_features = corr_stats_df_pos.head(20)['Feature'].tolist()
+mean_corrs_pos = corr_stats_df_pos[corr_stats_df_pos['Feature'].isin(top_pos_features)][['Feature', 'Mean_Corr']]
+mean_corrs_pos = mean_corrs_pos.set_index('Feature')['Mean_Corr']
+print("\nTop 20 Positive Mean Correlations with Daily_Sharpe_Ratio:")
+print(mean_corrs_pos.to_string())
+plt.figure(figsize=(8, 10))
+sns.heatmap(mean_corrs_pos.to_frame(), annot=True, cmap='coolwarm', center=0, fmt='.2f', cbar_kws={'label': 'Mean Correlation with Daily_Sharpe_Ratio'})
+plt.title('Top 20 Positive Mean Feature Correlations with Daily_Sharpe_Ratio')
+plt.tight_layout()
+heatmap_file_pos = os.path.join(folder_path, 'positive_mean_sharpe_correlation_heatmap.png')
+plt.savefig(heatmap_file_pos)
+plt.close()
+print(f"Positive mean correlation heatmap saved to: {heatmap_file_pos}")
+
+# Negative correlations
+corr_stats_df_neg = corr_stats_df[corr_stats_df['Mean_Corr'] < 0].sort_values(by='Mean_Corr', ascending=True)
+top_neg_features = corr_stats_df_neg.head(20)['Feature'].tolist()
+mean_corrs_neg = corr_stats_df_neg[corr_stats_df_neg['Feature'].isin(top_neg_features)][['Feature', 'Mean_Corr']]
+mean_corrs_neg = mean_corrs_neg.set_index('Feature')['Mean_Corr']
+print("\nTop 20 Negative Mean Correlations with Daily_Sharpe_Ratio:")
+if not mean_corrs_neg.empty:
+    print(mean_corrs_neg.to_string())
+else:
+    print("No features with negative mean correlations found.")
+plt.figure(figsize=(8, 10))
+sns.heatmap(mean_corrs_neg.to_frame(), annot=True, cmap='coolwarm', center=0, fmt='.2f', cbar_kws={'label': 'Mean Correlation with Daily_Sharpe_Ratio'})
+plt.title('Top 20 Negative Mean Feature Correlations with Daily_Sharpe_Ratio')
+plt.tight_layout()
+heatmap_file_neg = os.path.join(folder_path, 'negative_mean_sharpe_correlation_heatmap.png')
+plt.savefig(heatmap_file_neg)
+plt.close()
+print(f"Negative mean correlation heatmap saved to: {heatmap_file_neg}")
+
+# Save detailed stats
+stats_df = pd.DataFrame(daily_stats)
 stats_df.to_csv(os.path.join(folder_path, 'sharpe_ratio_detailed_stats.csv'), index=False)
 
-# Limit to top 10 tickers by max Daily_Sharpe_Ratio for clarity
+# Limit to top 10 tickers by max Daily_Sharpe_Ratio for bar chart
 if len(tickers) > 10:
     sorted_indices = sorted(range(len(daily_max_values)), key=lambda i: daily_max_values[i], reverse=True)[:10]
     tickers = [tickers[i] for i in sorted_indices]
@@ -225,39 +233,11 @@ ax.set_xticks(x)
 ax.set_xticklabels(tickers, rotation=45, ha='right')
 ax.legend()
 plt.tight_layout()
-
-# Plot histogram for iff Daily_Sharpe_Ratio (clean and raw)
-iff_clean_file = os.path.join(folder_path, 'IFF_clean_data.csv')
-iff_raw_file = os.path.join(folder_path, 'IFF_raw_data.csv')
-if os.path.exists(iff_clean_file) and os.path.exists(iff_raw_file):
-    df_iff_clean = pd.read_csv(iff_clean_file)
-    df_iff_raw = pd.read_csv(iff_raw_file)
-    df_IFF_raw = sharpe_calculator.transform(df_iff_raw)
-    
-    plt.figure(figsize=(12, 6))
-    
-    # Histogram for clean data
-    plt.subplot(1, 2, 1)
-    plt.hist(df_iff_clean['Daily_Sharpe_Ratio'].dropna(), bins=50, color='#1E90FF', alpha=0.7)
-    plt.title('iff Daily_Sharpe_Ratio (Clean)')
-    plt.xlabel('Daily Sharpe Ratio')
-    plt.ylabel('Frequency')
-    
-    # Histogram for raw data
-    plt.subplot(1, 2, 2)
-    plt.hist(df_iff_raw['Daily_Sharpe_Ratio'].dropna(), bins=50, color='#FF4500', alpha=0.7)
-    plt.title('iff Daily_Sharpe_Ratio (Raw)')
-    plt.xlabel('Daily Sharpe Ratio')
-    plt.ylabel('Frequency')
-    
-    plt.tight_layout()
-    plt.show()
+plt.show()
 
 # Print global min and max
 print(f"Global Daily_Sharpe_Ratio Min: {global_daily_min}")
 print(f"Global Daily_Sharpe_Ratio Max: {global_daily_max}")
 print(f"Global Transaction_Sharpe Min: {global_trans_min if global_trans_min != float('inf') else 'N/A'}")
 print(f"Global Transaction_Sharpe Max: {global_trans_max if global_trans_max != float('-inf') else 'N/A'}")
-
-# Notify user about saved file
 print(f"Detailed Sharpe Ratio statistics saved to: {os.path.join(folder_path, 'sharpe_ratio_detailed_stats.csv')}")
