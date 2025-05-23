@@ -89,9 +89,7 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
 
         # Step 2: Pre-Filter Features Based on Cumulative Importance
         cumulative_importance = feature_importance_df['Importance'].cumsum()
-        selected_features = feature_importance_df[
-            cumulative_importance <= importance_threshold
-        ]['Feature'].tolist()
+        selected_features = feature_importance_df[cumulative_importance <= importance_threshold]['Feature'].tolist()
 
         if not selected_features:
             selected_features = feature_importance_df['Feature'].tolist()[:int(len(feature_importance_df) * 0.5)]
@@ -106,17 +104,20 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
 
         # Step 3: Feature Selection with PCA on Filtered Features
         logger.info(f"\n{'-'*30}\nPerforming feature selection for {ticker_symbol} with filtered features\n{'-'*30}")
-        feature_results = evaluate_feature_sets(X_train_val, Y_train_val)
+        feature_results = evaluate_feature_sets(X_train_val_filtered, Y_train_val)  # Pass filtered data
         logger.info("\nFeature Selection Method Comparison:")
         logger.info(f"{feature_results['average_results'][['Feature_Method', 'Num_Features', 'RMSE', 'R2']]}")
-
-        # Select best feature set based on results
+        
+        # Select best feature set
         best_method = feature_results['best_method']
         best_features = feature_results['best_features']
         logger.info(f"\nBest feature set: {best_method} with {best_features['components_selected']} components")
-       
+            
         pca = best_features['pca']
         scaler = best_features['scaler']
+
+        # Ensure scaler is fitted on filtered features
+        scaler.fit(X_train_val_filtered)  # Re-fit scaler on selected features
         # Transform training data
         X_train_val_scaled = scaler.transform(X_train_val_filtered)
         X_train_val_selected = pca.transform(X_train_val_scaled)
