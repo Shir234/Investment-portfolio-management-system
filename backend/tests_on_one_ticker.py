@@ -62,5 +62,5 @@ if not isinstance(ticker_clean_data.index, pd.DatetimeIndex):
     logger.warning(f"Index for {ticker} is not a DatetimeIndex. Converting to datetime.")
     ticker_clean_data.index = pd.to_datetime(ticker_clean_data.index)
 
-
+#full_pipeline_for_single_stock(ticker_clean_data, logger, date_folder, current_date, 'PTC', "2013-01-01", "2024-01-01")
 full_pipeline_for_single_stock(ticker_clean_data, logger, date_folder, current_date, 'IFF', "2013-01-01", "2024-01-01")

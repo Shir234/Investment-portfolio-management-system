@@ -155,6 +155,9 @@ def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scal
         meta_features_test = []
         min_len = len(X_test)
         logger.info(f"GBDT: Target length for predictions: {min_len}")
+        
+        # Track valid models to handle redundancy
+        valid_models = []
         for model_name, result in results.items():
             if 'best_model' not in result or result['best_model'] is None:
                 logger.warning(f"No valid model for {model_name}")
@@ -162,17 +165,19 @@ def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scal
             model = result['best_model']
             logger.info(f"Processing {model_name} predictions")
             if model_name == 'LSTM':
-                time_steps = 2  # Reduced to ensure sample sufficiency
+                time_steps = 3  # Align with training
                 if X_train.shape[0] < time_steps + 1 or X_test.shape[0] < time_steps + 1:
                     logger.warning(f"Insufficient samples for LSTM time_steps={time_steps} (Train: {X_train.shape[0]}, Test: {X_test.shape[0]})")
                     continue
-                X_train_rolled, _ = create_rolling_window_data(X_train.values, Y_train.values, time_steps)
+                # Ensure correct rolling window for LSTM
+                X_train_rolled, y_train_rolled = create_rolling_window_data(X_train.values, Y_train.values, time_steps)
                 X_test_rolled, _ = create_rolling_window_data(X_test.values, np.zeros(len(X_test)), time_steps)
                 logger.info(f"LSTM: X_train_rolled shape: {X_train_rolled.shape}, X_test_rolled shape: {X_test_rolled.shape}")
                 train_pred = model.predict(X_train_rolled, verbose=0).flatten()
                 test_pred = model.predict(X_test_rolled, verbose=0).flatten()
                 logger.info(f"LSTM: Raw train_pred length: {len(train_pred)}, test_pred length: {len(test_pred)}")
-                train_pred = np.pad(train_pred, (0, max(0, min_len - len(train_pred))), mode='constant', constant_values=np.mean(train_pred) if len(train_pred) > 0 else 0)
+                # Truncate to match min_len
+                train_pred = train_pred[:min_len]
                 test_pred = np.pad(test_pred, (0, max(0, min_len - len(test_pred))), mode='constant', constant_values=np.mean(test_pred) if len(test_pred) > 0 else 0)
             else:
                 train_pred = model.predict(X_train).flatten()
@@ -180,28 +185,87 @@ def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scal
                 train_pred = train_pred[:min_len]
                 test_pred = test_pred[:min_len]
                 logger.info(f"{model_name}: Raw train_pred length: {len(train_pred)}, test_pred length: {len(test_pred)}")
+            
+            # Inverse transform and normalize
             train_pred = target_scaler.inverse_transform(train_pred.reshape(-1, 1)).flatten()
             test_pred = target_scaler.inverse_transform(test_pred.reshape(-1, 1)).flatten()
-            train_pred = np.clip(train_pred, -3.6815, 4.6223)
-            test_pred = np.clip(test_pred, -3.6815, 4.6223)
-            meta_features_train.append(train_pred[:min_len])  # Ensure consistent length
-            meta_features_test.append(test_pred[:min_len])
+            scaler = StandardScaler()
+            train_pred = scaler.fit_transform(train_pred.reshape(-1, 1)).flatten()
+            test_pred = scaler.transform(test_pred.reshape(-1, 1)).flatten()
+            train_pred = np.clip(train_pred, -4.0, 5.0)
+            test_pred = np.clip(test_pred, -4.0, 5.0)
+            
+            meta_features_train.append(train_pred)
+            meta_features_test.append(test_pred)
+            valid_models.append(model_name)
             logger.info(f"{model_name}: Final train_pred length: {len(train_pred)}, test_pred length: {len(test_pred)}")
+        
         if not meta_features_train or not meta_features_test:
             logger.error("No valid meta-features generated")
             return np.zeros(min_len)
+        
+        # Check meta-feature shapes
         logger.info(f"Meta features train shapes: {[len(f) for f in meta_features_train]}")
         logger.info(f"Meta features test shapes: {[len(f) for f in meta_features_test]}")
-        meta_features_train = np.array(meta_features_train).T
+        
+        # Remove redundant meta-features based on correlation
+        meta_features_train = np.array(meta_features_train).T  # Shape: (min_len, n_models)
         meta_features_test = np.array(meta_features_test).T
-        logger.info(f"Meta features train shape after transpose: {meta_features_train.shape}")
-        logger.info(f"Meta features test shape after transpose: {meta_features_test.shape}")
-        Y_train = Y_train[:min_len]
+        corr_matrix = np.corrcoef(meta_features_train.T)
+        logger.info(f"Meta-feature correlations:\n{corr_matrix}")
+        
+        # Remove highly correlated features (threshold > 0.95)
+        to_keep = []
+        for i in range(corr_matrix.shape[0]):
+            if i == 0 or all(abs(corr_matrix[i, j]) < 0.95 for j in to_keep):
+                to_keep.append(i)
+        
+        meta_features_train = meta_features_train[:, to_keep]
+        meta_features_test = meta_features_test[:, to_keep]
+        valid_models = [valid_models[i] for i in to_keep]
+        logger.info(f"Kept models after correlation filter: {valid_models}")
+        logger.info(f"Meta features train shape after correlation filter: {meta_features_train.shape}")
+        logger.info(f"Meta features test shape after correlation filter: {meta_features_test.shape}")
+        
+        # Align Y_train
+        if len(Y_train) < min_len:
+            logger.error(f"Y_train too short: {len(Y_train)} vs required {min_len}")
+            return np.zeros(min_len)
+        Y_train = Y_train[:min_len]  # Truncate to match meta_features_train
+        
+        # Scale meta-features
         scaler = StandardScaler()
         meta_features_train = scaler.fit_transform(meta_features_train)
         meta_features_test = scaler.transform(meta_features_test)
-        meta_model = GradientBoostingRegressor(n_estimators=100, max_depth=3, random_state=42)
+        
+        # Split for validation (use 10% to preserve training data)
+        meta_train, meta_val, y_train_meta, y_val_meta = train_test_split(
+            meta_features_train, Y_train, test_size=0.1, random_state=42
+        )
+        logger.info(f"Meta-features split: train {meta_train.shape}, val {meta_val.shape}")
+        
+        # Optuna optimization
+        def optimize_meta_model(trial):
+            params = {
+                'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                'max_depth': trial.suggest_int('max_depth', 2, 7),
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1)
+            }
+            meta_model = GradientBoostingRegressor(**params, random_state=42)
+            meta_model.fit(meta_train, y_train_meta)
+            pred = meta_model.predict(meta_val)
+            return np.sqrt(mean_squared_error(y_val_meta, pred))
+        
+        study = optuna.create_study(direction='minimize')
+        study.optimize(optimize_meta_model, n_trials=50)
+        best_params = study.best_params
+        logger.info(f"Optimized meta-model parameters: {best_params}")
+        
+        # Train final meta-model
+        meta_model = GradientBoostingRegressor(**best_params, random_state=42)
         meta_model.fit(meta_features_train, Y_train)
+        
+        # Final predictions
         final_prediction = meta_model.predict(meta_features_test)
         final_prediction = target_scaler.inverse_transform(final_prediction.reshape(-1, 1)).flatten()
         final_prediction = np.clip(final_prediction, -3.6815, 4.6223)
