@@ -32,7 +32,7 @@ build/
 # Setup logs and temporary files
 *.log
 *.tmp
-
+*.json
 # Local configuration
 .DS_Store
 
