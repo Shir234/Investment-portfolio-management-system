@@ -263,10 +263,10 @@ def evaluate_feature_sets(X_train, Y_train):
     # Define feature selection methods
     methods = {
         #'All Features': X_train.columns.tolist(),
-        'PCA 85%': select_best_features(X_train, Y_train, threshold=0.85, method='pca'),
-        'PCA 90%': select_best_features(X_train, Y_train, threshold=0.90, method='pca'),
-        'PCA 95%': select_best_features(X_train, Y_train, threshold=0.95, method='pca'),
-        'PCA 97%': select_best_features(X_train, Y_train, threshold=0.97, method='pca')
+        'PCA 85%': select_best_features(X_train, Y_train, threshold=0.90, method='pca'),
+        'PCA 90%': select_best_features(X_train, Y_train, threshold=0.95, method='pca'),
+        'PCA 95%': select_best_features(X_train, Y_train, threshold=0.97, method='pca'),
+        'PCA 97%': select_best_features(X_train, Y_train, threshold=0.99, method='pca')
     }
 
     # Define different model types to evaluate feature sets

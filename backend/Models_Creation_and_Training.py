@@ -324,7 +324,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                 base_model = create_models()[model_name][0]
                 for param, value in best_params.items():
                     setattr(base_model, param, value)
-            
+                
                 # Fit on all training data
                 base_model.fit(X_train_val_scaled, Y_train_val_scaled)
 
@@ -337,10 +337,10 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
 
                 logger.info(f"  Retrained {model_name} - MSE: {retrain_mse:.4f}, RMSE: {retrain_rmse:.4f}")
                 min_ratio, max_ratio = verify_prediction_scale(logger, Y_train_val, Y_retrain_pred, f"{model_name} retrained")
-            
-                # Replace the best model
-                results[model_name]['best_model'] = base_model
-                 # Add retrained metrics
+                
+                # Store retrained model and metrics
+                results[model_name]['retrained_model'] = base_model
+                results[model_name]['retrained_rmse'] = retrain_rmse
                 results[model_name]['retrained_metrics'] = {
                     'MSE': retrain_mse,
                     'RMSE': retrain_rmse,
@@ -348,12 +348,11 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                     'Min_Ratio': min_ratio,
                     'Max_Ratio': max_ratio
                 }
-                logger.info(f"  Successfully retrained {model_name}")
-                
+                logger.info(f"  Successfully retrained {model_name}, keys: {list(results[model_name].keys())}")
+                    
             except Exception as e:
                 logger.error(f"  Error retraining {model_name}: {e}")
                 logger.error("  Keeping the best fold model instead")
-                # Keep the fold model if retraining fails
                 pass
     
     try:

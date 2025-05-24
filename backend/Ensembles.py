@@ -39,53 +39,62 @@ def linearly_weighted_ensemble(models_results, X_test, target_scaler, feature_sc
     if len(X_test_array) < 3 and any('LSTM' in model_name for model_name in models_results):
         raise ValueError("X_test too small for LSTM (needs >= 3 samples)")
 
+    # Debug models_results
+    logger.info(f"Models results keys: {list(models_results.keys())}")
+    for name, res in models_results.items():
+        logger.info(f"{name} keys: {list(res.keys())}")
+
     weights = []
     model_predictions = []
     pred_lengths = []
     target_len = len(X_test)
 
+    # Select top 3 models by retrained RMSE
+    top_models = sorted(models_results.items(), key=lambda x: x[1].get('retrained_rmse', float('inf')))[:3]
+    models_results = dict(top_models)
+    logger.info(f"Selected top models: {list(models_results.keys())}")
+
     for model_name, result in models_results.items():
-        if 'best_model' not in result or result['best_model'] is None:
-            continue
+        if 'retrained_model' not in result or result['retrained_model'] is None:
+            logger.warning(f"No retrained model for {model_name}, using best_model")
+            if 'best_model' not in result or result['best_model'] is None:
+                logger.warning(f"No best_model for {model_name}, skipping")
+                continue
+            result['retrained_model'] = result['best_model']
+            result['retrained_rmse'] = result['best_rmse_scores'][best_fold_idx]
         best_pred = result.get('best_model_prediction')
         y_val = result.get('Y_val_best')
         if best_pred is None or y_val is None:
-            if logger:
-                logger.warning(f"Model {model_name} missing predictions or validation data")
+            logger.warning(f"Model {model_name} missing predictions or validation data")
             continue
         min_length = min(len(best_pred), len(y_val))
         if min_length == 0:
-            if logger:
-                logger.warning(f"Empty predictions for {model_name}")
+            logger.warning(f"Empty predictions for {model_name}")
             continue
         best_fold_idx = np.argmin(result['best_rmse_scores'])
         r2_value = result['best_r2_scores'][best_fold_idx]
-        if r2_value <= 0:
-            if logger:
-                logger.warning(f"Invalid R² ({r2_value}) for {model_name}, using default weight")
-            r2_value = 0.01
+        if r2_value <= -0.5:  # Relaxed from -0.1
+            logger.warning(f"Skipping {model_name} due to low R²: {r2_value}")
+            continue
         try:
             if model_name.strip() == 'LSTM':
                 X_test_lstm = prepare_lstm_data(X_test_array, time_steps=3)
                 if len(X_test_lstm) == 0:
-                    if logger:
-                        logger.warning(f"Not enough data for LSTM predictions")
+                    logger.warning(f"Not enough data for LSTM predictions")
                     continue
-                model_pred = result['best_model'].predict(X_test_lstm, verbose=0).flatten()
+                model_pred = result['retrained_model'].predict(X_test_lstm, verbose=0).flatten()
                 model_pred = np.pad(model_pred, (0, max(0, target_len - len(model_pred))), mode='constant', constant_values=np.mean(model_pred) if len(model_pred) > 0 else 0)
             else:
-                model_pred = result['best_model'].predict(X_test_array).flatten()
+                model_pred = result['retrained_model'].predict(X_test_array).flatten()
                 model_pred = model_pred[:target_len]
             model_pred = target_scaler.inverse_transform(model_pred.reshape(-1, 1)).flatten()
             model_pred = np.clip(model_pred, -3.6815, 4.6223)
             model_predictions.append(model_pred)
-            weights.append(1.0 / r2_value)
+            weights.append(np.exp(-result.get('retrained_rmse', result['best_rmse_scores'][best_fold_idx])))
             pred_lengths.append(len(model_pred))
-            if logger:
-                logger.info(f"Model {model_name} - R²: {r2_value:.4f}, Prediction shape: {model_pred.shape}")
+            logger.info(f"Model {model_name} - R²: {r2_value:.4f}, RMSE: {result['best_rmse_scores'][best_fold_idx]:.4f}, Retrained RMSE: {result.get('retrained_rmse', 'N/A')}, Prediction shape: {model_pred.shape}")
         except Exception as e:
-            if logger:
-                logger.error(f"Error generating predictions for {model_name}: {e}")
+            logger.error(f"Error generating predictions for {model_name}: {e}")
             continue
     if not model_predictions:
         raise ValueError("No valid model predictions available")
@@ -96,9 +105,8 @@ def linearly_weighted_ensemble(models_results, X_test, target_scaler, feature_sc
         weights = np.ones_like(weights) / len(weights)
     else:
         weights = weights / np.sum(weights)
-    if logger:
-        logger.info(f"Model weights: {dict(zip(models_results.keys(), weights))}")
-        logger.info(f"Prediction lengths: {pred_lengths}")
+    logger.info(f"Model weights: {dict(zip(models_results.keys(), weights))}")
+    logger.info(f"Prediction lengths: {pred_lengths}")
     final_prediction = np.zeros(target_len, dtype=np.float64)
     for pred, weight in zip(model_predictions, weights):
         final_prediction += weight * pred
@@ -156,44 +164,45 @@ def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scal
         min_len = len(X_test)
         logger.info(f"GBDT: Target length for predictions: {min_len}")
         
-        # Track valid models to handle redundancy
         valid_models = []
+        # Ensure results is a dictionary
+        if not isinstance(results, dict):
+            logger.error(f"Results is {type(results)}, expected a dictionary")
+            return np.zeros(min_len)
+        
         for model_name, result in results.items():
             if 'best_model' not in result or result['best_model'] is None:
                 logger.warning(f"No valid model for {model_name}")
                 continue
-            model = result['best_model']
+            if 'retrained_model' not in result or result['retrained_model'] is None:
+                logger.warning(f"No retrained model for {model_name}, skipping")
+                continue
+            model = result['retrained_model']
             logger.info(f"Processing {model_name} predictions")
-            if model_name == 'LSTM':
-                time_steps = 3  # Align with training
-                if X_train.shape[0] < time_steps + 1 or X_test.shape[0] < time_steps + 1:
-                    logger.warning(f"Insufficient samples for LSTM time_steps={time_steps} (Train: {X_train.shape[0]}, Test: {X_test.shape[0]})")
+            
+            if model_name.strip() == 'LSTM':
+                time_steps = result.get('best_params', {}).get('time_steps', 3)
+                if X_train.shape[0] < time_steps or X_test.shape[0] < time_steps:
+                    logger.warning(f"Insufficient samples for LSTM time_steps={time_steps}")
                     continue
-                # Ensure correct rolling window for LSTM
                 X_train_rolled, y_train_rolled = create_rolling_window_data(X_train.values, Y_train.values, time_steps)
                 X_test_rolled, _ = create_rolling_window_data(X_test.values, np.zeros(len(X_test)), time_steps)
                 logger.info(f"LSTM: X_train_rolled shape: {X_train_rolled.shape}, X_test_rolled shape: {X_test_rolled.shape}")
                 train_pred = model.predict(X_train_rolled, verbose=0).flatten()
                 test_pred = model.predict(X_test_rolled, verbose=0).flatten()
-                logger.info(f"LSTM: Raw train_pred length: {len(train_pred)}, test_pred length: {len(test_pred)}")
-                # Truncate to match min_len
                 train_pred = train_pred[:min_len]
                 test_pred = np.pad(test_pred, (0, max(0, min_len - len(test_pred))), mode='constant', constant_values=np.mean(test_pred) if len(test_pred) > 0 else 0)
             else:
-                train_pred = model.predict(X_train).flatten()
-                test_pred = model.predict(X_test).flatten()
-                train_pred = train_pred[:min_len]
-                test_pred = test_pred[:min_len]
-                logger.info(f"{model_name}: Raw train_pred length: {len(train_pred)}, test_pred length: {len(test_pred)}")
+                train_pred = model.predict(X_train).flatten()[:min_len]
+                test_pred = model.predict(X_test).flatten()[:min_len]
             
-            # Inverse transform and normalize
             train_pred = target_scaler.inverse_transform(train_pred.reshape(-1, 1)).flatten()
             test_pred = target_scaler.inverse_transform(test_pred.reshape(-1, 1)).flatten()
             scaler = StandardScaler()
             train_pred = scaler.fit_transform(train_pred.reshape(-1, 1)).flatten()
             test_pred = scaler.transform(test_pred.reshape(-1, 1)).flatten()
-            train_pred = np.clip(train_pred, -4.0, 5.0)
-            test_pred = np.clip(test_pred, -4.0, 5.0)
+            train_pred = np.clip(train_pred, -3.6815, 4.6223)
+            test_pred = np.clip(test_pred, -3.6815, 4.6223)
             
             meta_features_train.append(train_pred)
             meta_features_test.append(test_pred)
@@ -204,17 +213,11 @@ def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scal
             logger.error("No valid meta-features generated")
             return np.zeros(min_len)
         
-        # Check meta-feature shapes
-        logger.info(f"Meta features train shapes: {[len(f) for f in meta_features_train]}")
-        logger.info(f"Meta features test shapes: {[len(f) for f in meta_features_test]}")
-        
-        # Remove redundant meta-features based on correlation
-        meta_features_train = np.array(meta_features_train).T  # Shape: (min_len, n_models)
+        meta_features_train = np.array(meta_features_train).T
         meta_features_test = np.array(meta_features_test).T
         corr_matrix = np.corrcoef(meta_features_train.T)
         logger.info(f"Meta-feature correlations:\n{corr_matrix}")
         
-        # Remove highly correlated features (threshold > 0.95)
         to_keep = []
         for i in range(corr_matrix.shape[0]):
             if i == 0 or all(abs(corr_matrix[i, j]) < 0.95 for j in to_keep):
@@ -224,31 +227,19 @@ def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scal
         meta_features_test = meta_features_test[:, to_keep]
         valid_models = [valid_models[i] for i in to_keep]
         logger.info(f"Kept models after correlation filter: {valid_models}")
-        logger.info(f"Meta features train shape after correlation filter: {meta_features_train.shape}")
-        logger.info(f"Meta features test shape after correlation filter: {meta_features_test.shape}")
         
-        # Align Y_train
-        if len(Y_train) < min_len:
-            logger.error(f"Y_train too short: {len(Y_train)} vs required {min_len}")
-            return np.zeros(min_len)
-        Y_train = Y_train[:min_len]  # Truncate to match meta_features_train
-        
-        # Scale meta-features
         scaler = StandardScaler()
         meta_features_train = scaler.fit_transform(meta_features_train)
         meta_features_test = scaler.transform(meta_features_test)
         
-        # Split for validation (use 10% to preserve training data)
         meta_train, meta_val, y_train_meta, y_val_meta = train_test_split(
-            meta_features_train, Y_train, test_size=0.1, random_state=42
+            meta_features_train, Y_train[:min_len], test_size=0.1, random_state=42
         )
-        logger.info(f"Meta-features split: train {meta_train.shape}, val {meta_val.shape}")
         
-        # Optuna optimization
         def optimize_meta_model(trial):
             params = {
-                'n_estimators': trial.suggest_int('n_estimators', 50, 500),
-                'max_depth': trial.suggest_int('max_depth', 2, 7),
+                'n_estimators': trial.suggest_int('n_estimators', 50, 300),
+                'max_depth': trial.suggest_int('max_depth', 2, 5),
                 'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1)
             }
             meta_model = GradientBoostingRegressor(**params, random_state=42)
@@ -257,15 +248,13 @@ def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scal
             return np.sqrt(mean_squared_error(y_val_meta, pred))
         
         study = optuna.create_study(direction='minimize')
-        study.optimize(optimize_meta_model, n_trials=50)
+        study.optimize(optimize_meta_model, n_trials=30)
         best_params = study.best_params
         logger.info(f"Optimized meta-model parameters: {best_params}")
         
-        # Train final meta-model
         meta_model = GradientBoostingRegressor(**best_params, random_state=42)
-        meta_model.fit(meta_features_train, Y_train)
+        meta_model.fit(meta_features_train, Y_train[:min_len])
         
-        # Final predictions
         final_prediction = meta_model.predict(meta_features_test)
         final_prediction = target_scaler.inverse_transform(final_prediction.reshape(-1, 1)).flatten()
         final_prediction = np.clip(final_prediction, -3.6815, 4.6223)
