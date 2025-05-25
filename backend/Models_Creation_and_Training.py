@@ -499,7 +499,7 @@ def create_rolling_window_data(X, y, time_steps=3):
 
 
 
-def train_lstm_model(X_train, y_train, X_val, y_val, params, trial=None):
+def train_lstm_model(logger, X_train, y_train, X_val, y_val, params, trial=None):
     """
     Train an enhanced LSTM model with various architecture configurations.
     
@@ -519,14 +519,16 @@ def train_lstm_model(X_train, y_train, X_val, y_val, params, trial=None):
     rmse : float, Root mean squared error on validation set
     y_pred : array, Predicted values on validation set
     """
-
     try:
-        epochs = params.get('epochs', 97)
-        batch_size = params.get('batch_size', 58)
-        units = params.get('units', 17)
-        learning_rate = params.get('learning_rate', 0.0098)
-        dropout_rate = params.get('dropout', 0.4685)
-        time_steps = params.get('time_steps', 2)  # Use optimized time_steps
+        epochs = params.get('epochs', 100)
+        batch_size = params.get('batch_size', 32)
+        units = params.get('units', 64)
+        learning_rate = params.get('learning_rate', 0.001)
+        dropout_rate = params.get('dropout', 0.3)
+        time_steps = params.get('time_steps', 3)
+        layers = params.get('layers', 1)
+        bidirectional = params.get('bidirectional', False)
+        use_batch_norm = params.get('use_batch_norm', False)
 
         if X_train.shape[0] < time_steps + 1:
             raise ValueError(f"Insufficient samples: {X_train.shape[0]} for time_steps={time_steps}")
@@ -537,18 +539,29 @@ def train_lstm_model(X_train, y_train, X_val, y_val, params, trial=None):
         X_val_rolled, y_val_rolled = create_rolling_window_data(X_val, y_val, time_steps)
 
         inputs = Input(shape=(time_steps, X_train.shape[1]))
-        x = LSTM(units, activation='tanh')(inputs)
-        x = Dropout(dropout_rate)(x)
-        outputs = Dense(1)(x)
-        model = Model(inputs=inputs, outputs=outputs)
+        x = inputs
+        for i in range(layers):
+            if bidirectional:
+                x = Bidirectional(LSTM(units, return_sequences=(i < layers-1)))(x)
+            else:
+                x = LSTM(units, return_sequences=(i < layers-1))(x)
+            if use_batch_norm:
+                x = BatchNormalization()(x)
+            x = Dropout(dropout_rate)(x)
+        x = Dense(1)(x)
+        model = Model(inputs=inputs, outputs=x)
 
         model.compile(optimizer=Adam(learning_rate), loss='mse')
+        callbacks = [EarlyStopping(patience=5, restore_best_weights=True)]
+        if trial:
+            callbacks.append(TFKerasPruningCallback(trial, 'val_loss'))
+
         model.fit(
             X_train_rolled, y_train_rolled,
             epochs=epochs,
             batch_size=batch_size,
             validation_data=(X_val_rolled, y_val_rolled),
-            callbacks=[EarlyStopping(patience=5, restore_best_weights=True)],
+            callbacks=callbacks,
             verbose=0
         )
 
@@ -558,11 +571,12 @@ def train_lstm_model(X_train, y_train, X_val, y_val, params, trial=None):
         return model, mse, np.sqrt(mse), y_pred
 
     except Exception as e:
-        print(f"LSTM error: {e}")
+        if logger:
+            logger.error(f"LSTM error: {e}")
         return None, float('inf'), float('inf'), np.zeros_like(y_val)
        
 
-def train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, feature_scaler, target_scaler):
+def train_lstm_model_with_cv(logger, X_train_val, Y_train_val, tscv, feature_scaler, target_scaler):
     """
     Train LSTM model using time series cross-validation with Optuna hyperparameter optimization.
     Handles both regular features and PCA-transformed data.
@@ -583,8 +597,11 @@ def train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, feature_scal
         - best_model: Best trained LSTM model
         - best_model_prediction: Predictions from the best model
         - Y_val_best: Validation targets for the best model
+        - fold_metrics: List of fold metrics including model
+        - retrained_model: Model retrained on full dataset
+        - retrained_rmse: RMSE of retrained model
+        - retrained_r2: R² of retrained model
     """
-
     fold_metrics = []
     data_is_pca = is_pca_transformed_data(X_train_val)
     if data_is_pca and logger:
@@ -595,15 +612,15 @@ def train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, feature_scal
 
     def objective(trial):
         params = {
-            'epochs': trial.suggest_int('epochs', 50, 100),
+            'epochs': trial.suggest_int('epochs', 50, 150),
             'batch_size': trial.suggest_int('batch_size', 16, 64),
-            'units': trial.suggest_int('units', 8, 32),
-            'learning_rate': trial.suggest_float('learning_rate', 0.0005, 0.01, log=True),
-            'dropout': trial.suggest_float('dropout', 0.1, 0.5),
+            'units': trial.suggest_int('units', 32, 128),
+            'learning_rate': trial.suggest_float('learning_rate', 0.0001, 0.01, log=True),
+            'dropout': trial.suggest_float('dropout', 0.2, 0.5),
             'time_steps': trial.suggest_int('time_steps', 3, 5),
-            'layers': trial.suggest_int('layers', 1, 1),
-            'bidirectional': trial.suggest_categorical('bidirectional', [False]),
-            'use_batch_norm': trial.suggest_categorical('use_batch_norm', [False])
+            'layers': trial.suggest_int('layers', 1, 2),
+            'bidirectional': trial.suggest_categorical('bidirectional', [True, False]),
+            'use_batch_norm': trial.suggest_categorical('use_batch_norm', [True, False])
         }
         mse_scores = []
 
@@ -626,7 +643,7 @@ def train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, feature_scal
             Y_val_scaled = target_scaler.transform(Y_val_fold.values.reshape(-1, 1)).flatten() if isinstance(Y_val_fold, pd.Series) else target_scaler.transform(Y_val_fold.reshape(-1, 1)).flatten()
 
             try:
-                model, mse, _, y_pred_scaled = train_lstm_model(
+                model, mse, _, y_pred_scaled = train_lstm_model(logger,
                     X_train_scaled, Y_train_scaled, X_val_scaled, Y_val_scaled, params, trial
                 )
                 if model is None:
@@ -649,7 +666,7 @@ def train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, feature_scal
 
     try:
         study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=20)
+        study.optimize(objective, n_trials=50)  # Increased trials for better optimization
 
         best_params_fold = study.best_params
         best_mse = study.best_value
@@ -667,7 +684,7 @@ def train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, feature_scal
             X_train_fold = X_train_val.iloc[train_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[train_idx]
             X_val_fold = X_train_val.iloc[val_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[val_idx]
             Y_train_fold = Y_train_val.iloc[train_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[train_idx]
-            Y_val_fold = Y_train_val.iloc[val_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[val_idx]
+            Y_val_fold = Y_val_val.iloc[val_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[val_idx]
 
             if logger:
                 logger.info(f"Training fold shapes - X: {X_train_fold.shape}, Y: {len(Y_train_fold)}")
@@ -678,7 +695,7 @@ def train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, feature_scal
             Y_train_scaled = target_scaler.transform(Y_train_fold.values.reshape(-1, 1)).flatten() if isinstance(Y_train_fold, pd.Series) else target_scaler.transform(Y_train_fold.reshape(-1, 1)).flatten()
             Y_val_scaled = target_scaler.transform(Y_val_fold.values.reshape(-1, 1)).flatten() if isinstance(Y_val_fold, pd.Series) else target_scaler.transform(Y_val_fold.reshape(-1, 1)).flatten()
 
-            model, mse, rmse, y_pred_scaled = train_lstm_model(
+            model, mse, rmse, y_pred_scaled = train_lstm_model(logger,
                 X_train_scaled, Y_train_scaled, X_val_scaled, Y_val_scaled, best_params_fold
             )
             if model is None:
@@ -711,7 +728,10 @@ def train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, feature_scal
                 'R2': r2_original,
                 'Min_Ratio': min_ratio,
                 'Max_Ratio': max_ratio,
-                'Parameters': str(best_params_fold)
+                'Parameters': best_params_fold,  # Store as dict, not string
+                'model': model,  # Save the trained model
+                'y_val': adjusted_val_fold,
+                'predictions': y_pred_original
             })
 
             if rmse_original < best_score:
@@ -720,6 +740,7 @@ def train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, feature_scal
                 best_model_prediction = y_pred_original
                 Y_val_best = adjusted_val_fold
 
+        # Retrain on full dataset
         if best_params and best_model:
             try:
                 if logger:
@@ -732,21 +753,47 @@ def train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, feature_scal
                 X_train_val_scaled = X_train_val_array
                 Y_train_val_scaled = target_scaler.transform(Y_train_val_array.reshape(-1, 1)).flatten()
 
-                model, mse, rmse, y_pred_scaled = train_lstm_model(
-                    X_train_val_scaled, Y_train_val_scaled, X_train_val_scaled, Y_train_val_scaled, final_best_params
+                X_full_rolled, y_full_rolled = create_rolling_window_data(X_train_val_scaled, Y_train_val_scaled, final_best_params['time_steps'])
+                
+                inputs = Input(shape=(final_best_params['time_steps'], X_train_val_scaled.shape[1]))
+                x = inputs
+                for i in range(final_best_params['layers']):
+                    if final_best_params['bidirectional']:
+                        x = Bidirectional(LSTM(final_best_params['units'], return_sequences=(i < final_best_params['layers']-1)))(x)
+                    else:
+                        x = LSTM(final_best_params['units'], return_sequences=(i < final_best_params['layers']-1))(x)
+                    if final_best_params['use_batch_norm']:
+                        x = BatchNormalization()(x)
+                    x = Dropout(final_best_params['dropout'])(x)
+                x = Dense(1)(x)
+                retrained_model = Model(inputs=inputs, outputs=x)
+
+                retrained_model.compile(optimizer=Adam(learning_rate=final_best_params['learning_rate']), loss='mse')
+                retrained_model.fit(
+                    X_full_rolled, y_full_rolled,
+                    epochs=final_best_params['epochs'],
+                    batch_size=final_best_params['batch_size'],
+                    callbacks=[EarlyStopping(patience=5, restore_best_weights=True)],
+                    verbose=0
                 )
-                if model:
-                    best_model = model
-                    if logger:
-                        logger.info("Successfully retrained LSTM on full dataset")
-                else:
-                    if logger:
-                        logger.error("Failed to retrain LSTM on full dataset")
+
+                y_pred_full = retrained_model.predict(X_full_rolled, verbose=0).flatten()
+                y_pred_full_original = target_scaler.inverse_transform(y_pred_full.reshape(-1, 1)).flatten()
+                y_full_original = target_scaler.inverse_transform(y_full_rolled.reshape(-1, 1)).flatten()
+                retrain_mse = mean_squared_error(y_full_original, y_pred_full_original)
+                retrain_rmse = np.sqrt(retrain_mse)
+                retrain_r2 = r2_score(y_full_original, y_pred_full_original)
+
+                if logger:
+                    logger.info(f"Retrained LSTM - MSE: {retrain_mse:.4f}, RMSE: {retrain_rmse:.4f}, R²: {retrain_r2:.4f}")
             except Exception as e:
                 if logger:
                     logger.error(f"Error retraining LSTM on full dataset: {e}")
+                retrained_model = None
+                retrain_rmse = best_score
+                retrain_r2 = max(best_r2_scores) if best_r2_scores else 0.0
 
-        return {
+        result = {
             'best_mse_scores': best_mse_scores,
             'best_rmse_scores': best_rmse_scores,
             'best_r2_scores': best_r2_scores,
@@ -754,8 +801,18 @@ def train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, feature_scal
             'best_model': best_model,
             'best_model_prediction': best_model_prediction,
             'Y_val_best': Y_val_best,
-            'fold_metrics': fold_metrics
+            'fold_metrics': fold_metrics,
+            'retrained_model': retrained_model,
+            'retrained_rmse': retrain_rmse,
+            'retrained_r2': retrain_r2
         }
+        
+        if logger:
+            logger.info(f"LSTM result keys: {list(result.keys())}")
+            logger.info(f"LSTM fold_metrics structure: {[list(f.keys()) for f in fold_metrics]}")
+            logger.info(f"LSTM retrained_model exists: {retrained_model is not None}")
+
+        return result
 
     except Exception as e:
         if logger:
@@ -768,5 +825,8 @@ def train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, feature_scal
             'best_model': None,
             'best_model_prediction': None,
             'Y_val_best': None,
-            'fold_metrics': fold_metrics
+            'fold_metrics': fold_metrics,
+            'retrained_model': None,
+            'retrained_rmse': float('inf'),
+            'retrained_r2': -float('inf')
         }

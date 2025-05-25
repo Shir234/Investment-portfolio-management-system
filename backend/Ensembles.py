@@ -1,4 +1,3 @@
-# Ensembles.py
 import time
 import pandas as pd
 import numpy as np
@@ -12,15 +11,12 @@ import optuna
 from scipy.stats import pearsonr
 import Models_Creation_and_Training as Models_Creation_and_Training
 from Logging_and_Validation import log_data_stats, verify_prediction_scale
-from sklearn.metrics import mean_squared_error
-import numpy as np
 
-# ===============================================================================
-# Ensembles
-# ===============================================================================
 def prepare_lstm_data(X, time_steps=3, features=None):
     if hasattr(X, 'values'):
         X = X.values
+    if features is not None:
+        X = X[:, features]
     if len(X) < time_steps + 1:
         raise ValueError(f"Not enough samples ({len(X)}) for time_steps ({time_steps})")
     X_rolled = []
@@ -29,134 +25,207 @@ def prepare_lstm_data(X, time_steps=3, features=None):
     return np.array(X_rolled)
 
 # Linearly Weighted Ensemble
-
-
-# Linearly Weighted Ensemble
 def linearly_weighted_ensemble(models_results, X_test, target_scaler, feature_scaler, logger=None):
     if not models_results:
         raise ValueError("Empty models_results dictionary")
+    
     X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
     if len(X_test_array) < 3 and any('LSTM' in model_name for model_name in models_results):
         raise ValueError("X_test too small for LSTM (needs >= 3 samples)")
 
-    # Debug models_results
-    logger.info(f"Models results keys: {list(models_results.keys())}")
-    for name, res in models_results.items():
-        logger.info(f"{name} keys: {list(res.keys())}")
+    if logger:
+        logger.info(f"Models results keys: {list(models_results.keys())}")
+        for name, res in models_results.items():
+            logger.info(f"{name} keys: {list(res.keys()) if isinstance(res, dict) else 'List of length ' + str(len(res))}")
 
     weights = []
     model_predictions = []
-    pred_lengths = []
     target_len = len(X_test)
 
-    # Select top 3 models by retrained RMSE
-    top_models = sorted(models_results.items(), key=lambda x: x[1].get('retrained_rmse', float('inf')))[:3]
-    models_results = dict(top_models)
-    logger.info(f"Selected top models: {list(models_results.keys())}")
+    # Compute dynamic clipping range
+    y_min, y_max = float('inf'), float('-inf')
+    for model_name, result in models_results.items():
+        if 'Y_val_best' in result and result['Y_val_best'] is not None:
+            y_min = min(y_min, np.min(result['Y_val_best']))
+            y_max = max(y_max, np.max(result['Y_val_best']))
+    clip_min, clip_max = y_min, y_max
+    if logger:
+        logger.info(f"Dynamic clipping range: [{clip_min:.4f}, {clip_max:.4f}]")
 
     for model_name, result in models_results.items():
-        if 'retrained_model' not in result or result['retrained_model'] is None:
-            logger.warning(f"No retrained model for {model_name}, using best_model")
-            if 'best_model' not in result or result['best_model'] is None:
-                logger.warning(f"No best_model for {model_name}, skipping")
-                continue
-            result['retrained_model'] = result['best_model']
-            result['retrained_rmse'] = result['best_rmse_scores'][best_fold_idx]
-        best_pred = result.get('best_model_prediction')
-        y_val = result.get('Y_val_best')
-        if best_pred is None or y_val is None:
-            logger.warning(f"Model {model_name} missing predictions or validation data")
-            continue
-        min_length = min(len(best_pred), len(y_val))
-        if min_length == 0:
-            logger.warning(f"Empty predictions for {model_name}")
-            continue
-        best_fold_idx = np.argmin(result['best_rmse_scores'])
-        r2_value = result['best_r2_scores'][best_fold_idx]
-        if r2_value <= -0.5:  # Relaxed from -0.1
-            logger.warning(f"Skipping {model_name} due to low R²: {r2_value}")
-            continue
         try:
-            if model_name.strip() == 'LSTM':
-                X_test_lstm = prepare_lstm_data(X_test_array, time_steps=3)
-                if len(X_test_lstm) == 0:
-                    logger.warning(f"Not enough data for LSTM predictions")
+            if logger:
+                logger.info(f"Processing {model_name} for linearly_weighted_ensemble")
+            
+            # Handle LSTM results
+            if model_name.strip() == 'LSTM' and isinstance(result, dict) and 'fold_metrics' in result:
+                fold_metrics = result['fold_metrics']
+                if logger:
+                    logger.info(f"LSTM fold_metrics keys: {[list(f.keys()) for f in fold_metrics]}")
+                if not isinstance(fold_metrics, list):
+                    if logger:
+                        logger.warning(f"LSTM fold_metrics is not a list, skipping")
                     continue
-                model_pred = result['retrained_model'].predict(X_test_lstm, verbose=0).flatten()
-                model_pred = np.pad(model_pred, (0, max(0, target_len - len(model_pred))), mode='constant', constant_values=np.mean(model_pred) if len(model_pred) > 0 else 0)
+                best_fold_idx = np.argmin([r.get('MSE', float('inf')) for r in fold_metrics])
+                fold_result = fold_metrics[best_fold_idx]
+                model = fold_result.get('model')
+                best_params = fold_result.get('Parameters', {})
+                r2_value = fold_result.get('R2', 0.0)
+                rmse = fold_result.get('RMSE', fold_result.get('MSE', float('inf')) ** 0.5)
+                if model is None:
+                    if logger:
+                        logger.warning(f"LSTM fold {best_fold_idx} missing model")
+                    continue
             else:
-                model_pred = result['retrained_model'].predict(X_test_array).flatten()
+                # Handle non-LSTM models
+                if 'retrained_model' not in result or result['retrained_model'] is None:
+                    if logger:
+                        logger.warning(f"No retrained model for {model_name}, using best_model")
+                    if 'best_model' not in result or result['best_model'] is None:
+                        if logger:
+                            logger.warning(f"No best_model for {model_name}, skipping")
+                        continue
+                    model = result['best_model']
+                    best_fold_idx = np.argmin(result['best_rmse_scores'])
+                    r2_value = result['best_r2_scores'][best_fold_idx]
+                    rmse = result['best_rmse_scores'][best_fold_idx]
+                else:
+                    model = result['retrained_model']
+                    r2_value = result.get('retrained_r2', max(result['best_r2_scores']))
+                    rmse = result.get('retrained_rmse', min(result['best_rmse_scores']))
+                best_params = result.get('best_params', {})
+
+            if r2_value <= 0.5:
+                if logger:
+                    logger.warning(f"Skipping {model_name} due to low R²: {r2_value}")
+                continue
+
+            # Generate predictions
+            if model_name.strip() == 'LSTM':
+                time_steps = best_params.get('time_steps', 3)
+                X_test_lstm = prepare_lstm_data(X_test_array, time_steps=time_steps)
+                if len(X_test_lstm) == 0:
+                    if logger:
+                        logger.warning(f"Not enough data for LSTM predictions")
+                    continue
+                model_pred = model.predict(X_test_lstm, verbose=0).flatten()
+                model_pred = np.pad(model_pred, (0, max(0, target_len - len(model_pred))), 
+                                    mode='constant', constant_values=np.mean(model_pred) if len(model_pred) > 0 else 0)
+            else:
+                model_pred = model.predict(X_test_array).flatten()
                 model_pred = model_pred[:target_len]
+
             model_pred = target_scaler.inverse_transform(model_pred.reshape(-1, 1)).flatten()
-            model_pred = np.clip(model_pred, -3.6815, 4.6223)
+            model_pred = np.clip(model_pred, clip_min, clip_max)
             model_predictions.append(model_pred)
-            weights.append(np.exp(-result.get('retrained_rmse', result['best_rmse_scores'][best_fold_idx])))
-            pred_lengths.append(len(model_pred))
-            logger.info(f"Model {model_name} - R²: {r2_value:.4f}, RMSE: {result['best_rmse_scores'][best_fold_idx]:.4f}, Retrained RMSE: {result.get('retrained_rmse', 'N/A')}, Prediction shape: {model_pred.shape}")
+            
+            # Weighting: emphasize low RMSE
+            weight = (r2_value + 1) / (rmse ** 2) if rmse > 0 else 0.0
+            weights.append(weight)
+            
+            if logger:
+                logger.info(f"Model {model_name} - R²: {r2_value:.4f}, RMSE: {rmse:.4f}, "
+                           f"Weight: {weight:.4f}, Prediction shape: {model_pred.shape}")
         except Exception as e:
-            logger.error(f"Error generating predictions for {model_name}: {e}")
+            if logger:
+                logger.error(f"Error generating predictions for {model_name}: {e}")
             continue
+
     if not model_predictions:
         raise ValueError("No valid model predictions available")
+
     weights = np.array(weights)
     min_weight = 0.05 * np.max(weights)
-    weights = np.where(weights < min_weight, 0, weights)
-    if np.sum(weights) == 0:
-        weights = np.ones_like(weights) / len(weights)
-    else:
-        weights = weights / np.sum(weights)
-    logger.info(f"Model weights: {dict(zip(models_results.keys(), weights))}")
-    logger.info(f"Prediction lengths: {pred_lengths}")
+    weights = np.where(weights < min_weight, min_weight, weights)
+    weights = weights / np.sum(weights)
+    if logger:
+        logger.info(f"Model weights: {dict(zip(models_results.keys(), weights))}")
+
     final_prediction = np.zeros(target_len, dtype=np.float64)
     for pred, weight in zip(model_predictions, weights):
         final_prediction += weight * pred
-    final_prediction = np.clip(final_prediction, -3.6815, 4.6223)
-    return final_prediction
 
+    final_prediction = np.clip(final_prediction, clip_min, clip_max)
+    return final_prediction
 
 # Equal Weights Ensemble
 def equal_weighted_ensemble(models_results, X_test, target_scaler, feature_scaler, logger=None):
     X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
     model_predictions = []
-    pred_lengths = []
     target_len = len(X_test)
     for model_name, result in models_results.items():
-        if 'best_model' not in result or result['best_model'] is None:
-            continue
         try:
+            if logger:
+                logger.info(f"Processing {model_name} for equal_weighted_ensemble")
+                logger.info(f"{model_name} result keys: {list(result.keys())}")
+            
+            # Handle LSTM results
+            if model_name.strip() == 'LSTM' and isinstance(result, dict) and 'fold_metrics' in result:
+                fold_metrics = result['fold_metrics']
+                if logger:
+                    logger.info(f"LSTM fold_metrics keys: {[list(f.keys()) for f in fold_metrics]}")
+                if not isinstance(fold_metrics, list):
+                    if logger:
+                        logger.warning(f"LSTM fold_metrics is not a list, skipping")
+                    continue
+                best_fold_idx = np.argmin([r.get('MSE', float('inf')) for r in fold_metrics])
+                fold_result = fold_metrics[best_fold_idx]
+                model = fold_result.get('model')
+                best_params = fold_result.get('Parameters', {})
+                if model is None:
+                    if logger:
+                        logger.warning(f"LSTM fold {best_fold_idx} missing model")
+                    continue
+            else:
+                # Handle non-LSTM models
+                if 'retrained_model' not in result or result['retrained_model'] is None:
+                    if logger:
+                        logger.warning(f"No retrained model for {model_name}, using best_model")
+                    if 'best_model' not in result or result['best_model'] is None:
+                        if logger:
+                            logger.warning(f"No best_model for {model_name}, skipping")
+                        continue
+                    model = result['best_model']
+                else:
+                    model = result['retrained_model']
+                best_params = result.get('best_params', {})
+            
             if model_name.strip() == 'LSTM':
-                X_test_lstm = prepare_lstm_data(X_test_array, time_steps=3)
+                time_steps = best_params.get('time_steps', 3)
+                X_test_lstm = prepare_lstm_data(X_test_array, time_steps=time_steps)
                 if len(X_test_lstm) == 0:
                     if logger:
                         logger.warning(f"Not enough data for LSTM predictions")
                     continue
-                model_pred = result['best_model'].predict(X_test_lstm, verbose=0).flatten()
-                model_pred = np.pad(model_pred, (0, max(0, target_len - len(model_pred))), mode='constant', constant_values=np.mean(model_pred) if len(model_pred) > 0 else 0)
+                model_pred = model.predict(X_test_lstm, verbose=0).flatten()
+                model_pred = np.pad(model_pred, (0, max(0, target_len - len(model_pred))), 
+                                    mode='constant', constant_values=np.mean(model_pred) if len(model_pred) > 0 else 0)
             else:
-                model_pred = result['best_model'].predict(X_test_array).flatten()
+                model_pred = model.predict(X_test_array).flatten()
                 model_pred = model_pred[:target_len]
+            
             model_pred = target_scaler.inverse_transform(model_pred.reshape(-1, 1)).flatten()
             model_pred = np.clip(model_pred, -3.6815, 4.6223)
             model_predictions.append(model_pred)
-            pred_lengths.append(len(model_pred))
             if logger:
                 logger.info(f"Model {model_name} - Prediction shape: {model_pred.shape}")
         except Exception as e:
             if logger:
                 logger.error(f"Error generating predictions for {model_name}: {e}")
             continue
+    
     if not model_predictions:
         raise ValueError("No predictions available for ensemble methods")
+    
     weight = 1.0 / len(model_predictions)
     final_prediction = np.zeros(target_len, dtype=np.float64)
     for pred in model_predictions:
         final_prediction += weight * pred
+    
     final_prediction = np.clip(final_prediction, -3.6815, 4.6223)
     return final_prediction
 
-
-# Gradient Boosting Decision Tree Ensemble
-
+# GBDT Ensemble
 def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scaler, logger):
     try:
         meta_features_train = []
@@ -165,49 +234,81 @@ def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scal
         logger.info(f"GBDT: Target length for predictions: {min_len}")
         
         valid_models = []
-        # Ensure results is a dictionary
         if not isinstance(results, dict):
             logger.error(f"Results is {type(results)}, expected a dictionary")
             return np.zeros(min_len)
         
         for model_name, result in results.items():
-            if 'best_model' not in result or result['best_model'] is None:
-                logger.warning(f"No valid model for {model_name}")
+            try:
+                if logger:
+                    logger.info(f"Processing {model_name} for gbdt_ensemble")
+                    logger.info(f"{model_name} result keys: {list(result.keys())}")
+                
+                # Handle LSTM results
+                if model_name.strip() == 'LSTM' and isinstance(result, dict) and 'fold_metrics' in result:
+                    fold_metrics = result['fold_metrics']
+                    if logger:
+                        logger.info(f"LSTM fold_metrics keys: {[list(f.keys()) for f in fold_metrics]}")
+                    if not isinstance(fold_metrics, list):
+                        if logger:
+                            logger.warning(f"LSTM fold_metrics is not a list, skipping")
+                        continue
+                    best_fold_idx = np.argmin([r.get('MSE', float('inf')) for r in fold_metrics])
+                    fold_result = fold_metrics[best_fold_idx]
+                    model = fold_result.get('model')
+                    best_params = fold_result.get('Parameters', {})
+                    if model is None:
+                        if logger:
+                            logger.warning(f"LSTM fold {best_fold_idx} missing model")
+                        continue
+                else:
+                    # Handle non-LSTM models
+                    if 'retrained_model' not in result or result['retrained_model'] is None:
+                        if logger:
+                            logger.warning(f"No retrained model for {model_name}, using best_model")
+                        if 'best_model' not in result or result['best_model'] is None:
+                            if logger:
+                                logger.warning(f"No best_model for {model_name}, skipping")
+                            continue
+                        model = result['best_model']
+                    else:
+                        model = result['retrained_model']
+                    best_params = result.get('best_params', {})
+                
+                logger.info(f"Processing {model_name} predictions")
+                
+                if model_name.strip() == 'LSTM':
+                    time_steps = best_params.get('time_steps', 3)
+                    if X_train.shape[0] < time_steps or X_test.shape[0] < time_steps:
+                        logger.warning(f"Insufficient samples for LSTM time_steps={time_steps}")
+                        continue
+                    X_train_rolled, y_train_rolled = create_rolling_window_data(X_train.values, Y_train.values, time_steps)
+                    X_test_rolled, _ = create_rolling_window_data(X_test.values, np.zeros(len(X_test)), time_steps)
+                    logger.info(f"LSTM: X_train_rolled shape: {X_train_rolled.shape}, X_test_rolled shape: {X_test_rolled.shape}")
+                    train_pred = model.predict(X_train_rolled, verbose=0).flatten()
+                    test_pred = model.predict(X_test_rolled, verbose=0).flatten()
+                    train_pred = train_pred[:min_len]
+                    test_pred = np.pad(test_pred, (0, max(0, min_len - len(test_pred))), 
+                                       mode='constant', constant_values=np.mean(test_pred) if len(test_pred) > 0 else 0)
+                else:
+                    train_pred = model.predict(X_train).flatten()[:min_len]
+                    test_pred = model.predict(X_test).flatten()[:min_len]
+                
+                train_pred = target_scaler.inverse_transform(train_pred.reshape(-1, 1)).flatten()
+                test_pred = target_scaler.inverse_transform(test_pred.reshape(-1, 1)).flatten()
+                scaler = StandardScaler()
+                train_pred = scaler.fit_transform(train_pred.reshape(-1, 1)).flatten()
+                test_pred = scaler.transform(test_pred.reshape(-1, 1)).flatten()
+                train_pred = np.clip(train_pred, -3.6815, 4.6223)
+                test_pred = np.clip(test_pred, -3.6815, 4.6223)
+                
+                meta_features_train.append(train_pred)
+                meta_features_test.append(test_pred)
+                valid_models.append(model_name)
+                logger.info(f"{model_name}: Final train_pred length: {len(train_pred)}, test_pred length: {len(test_pred)}")
+            except Exception as e:
+                logger.error(f"Error processing {model_name} for GBDT: {e}")
                 continue
-            if 'retrained_model' not in result or result['retrained_model'] is None:
-                logger.warning(f"No retrained model for {model_name}, skipping")
-                continue
-            model = result['retrained_model']
-            logger.info(f"Processing {model_name} predictions")
-            
-            if model_name.strip() == 'LSTM':
-                time_steps = result.get('best_params', {}).get('time_steps', 3)
-                if X_train.shape[0] < time_steps or X_test.shape[0] < time_steps:
-                    logger.warning(f"Insufficient samples for LSTM time_steps={time_steps}")
-                    continue
-                X_train_rolled, y_train_rolled = create_rolling_window_data(X_train.values, Y_train.values, time_steps)
-                X_test_rolled, _ = create_rolling_window_data(X_test.values, np.zeros(len(X_test)), time_steps)
-                logger.info(f"LSTM: X_train_rolled shape: {X_train_rolled.shape}, X_test_rolled shape: {X_test_rolled.shape}")
-                train_pred = model.predict(X_train_rolled, verbose=0).flatten()
-                test_pred = model.predict(X_test_rolled, verbose=0).flatten()
-                train_pred = train_pred[:min_len]
-                test_pred = np.pad(test_pred, (0, max(0, min_len - len(test_pred))), mode='constant', constant_values=np.mean(test_pred) if len(test_pred) > 0 else 0)
-            else:
-                train_pred = model.predict(X_train).flatten()[:min_len]
-                test_pred = model.predict(X_test).flatten()[:min_len]
-            
-            train_pred = target_scaler.inverse_transform(train_pred.reshape(-1, 1)).flatten()
-            test_pred = target_scaler.inverse_transform(test_pred.reshape(-1, 1)).flatten()
-            scaler = StandardScaler()
-            train_pred = scaler.fit_transform(train_pred.reshape(-1, 1)).flatten()
-            test_pred = scaler.transform(test_pred.reshape(-1, 1)).flatten()
-            train_pred = np.clip(train_pred, -3.6815, 4.6223)
-            test_pred = np.clip(test_pred, -3.6815, 4.6223)
-            
-            meta_features_train.append(train_pred)
-            meta_features_test.append(test_pred)
-            valid_models.append(model_name)
-            logger.info(f"{model_name}: Final train_pred length: {len(train_pred)}, test_pred length: {len(test_pred)}")
         
         if not meta_features_train or not meta_features_test:
             logger.error("No valid meta-features generated")
@@ -220,7 +321,7 @@ def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scal
         
         to_keep = []
         for i in range(corr_matrix.shape[0]):
-            if i == 0 or all(abs(corr_matrix[i, j]) < 0.95 for j in to_keep):
+            if i == 0 or all(abs(corr_matrix[i, j]) < 0.85 for j in to_keep):
                 to_keep.append(i)
         
         meta_features_train = meta_features_train[:, to_keep]
@@ -238,9 +339,9 @@ def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scal
         
         def optimize_meta_model(trial):
             params = {
-                'n_estimators': trial.suggest_int('n_estimators', 50, 300),
-                'max_depth': trial.suggest_int('max_depth', 2, 5),
-                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1)
+                'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                'max_depth': trial.suggest_int('max_depth', 2, 7),
+                'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.2)
             }
             meta_model = GradientBoostingRegressor(**params, random_state=42)
             meta_model.fit(meta_train, y_train_meta)
@@ -248,7 +349,7 @@ def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scal
             return np.sqrt(mean_squared_error(y_val_meta, pred))
         
         study = optuna.create_study(direction='minimize')
-        study.optimize(optimize_meta_model, n_trials=30)
+        study.optimize(optimize_meta_model, n_trials=100)
         best_params = study.best_params
         logger.info(f"Optimized meta-model parameters: {best_params}")
         
@@ -263,10 +364,7 @@ def gbdt_ensemble(results, X_train, X_test, Y_train, target_scaler, feature_scal
         logger.error(f"GBDT error: {e}")
         return np.zeros(len(X_test))
 
-
-# ===============================================================================
-# Three Ensembles Pipeline
-# ===============================================================================
+# Ensemble Pipeline (Unchanged)
 def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, target_scaler, feature_scaler):
     logger.info(f"\n{'-'*30}\nInitializing ensemble pipeline\n{'-'*30}")
     logger.info("\nVerifying model results for ensemble:")
@@ -367,8 +465,7 @@ def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, 
         logger.info(f"  RMSE: {valid_results[best_method]['rmse']:.6f}")
         logger.info(f"  R2: {valid_results[best_method]['r2']:.6f}")
         verify_prediction_scale(logger, Y_test, valid_results[best_method]['prediction'], 
-                              f"Best ensemble method ({best_method})", tolerance=0.2)
+                               f"Best ensemble method ({best_method})", tolerance=0.2)
     else:
         logger.warning("All ensemble methods failed")
     return results
-
