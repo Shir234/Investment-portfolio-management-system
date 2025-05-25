@@ -22,6 +22,7 @@ from tensorflow.keras.optimizers import Adam
 from joblib import parallel_backend
 
 from Logging_and_Validation import log_data_stats, verify_prediction_scale
+from Helper_Functions import save_csv_to_drive
 
 import json
 import os
@@ -160,11 +161,10 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
 
     # We assume X_train_val is already PCA-transformed data
     logger.info("Using PCA-transformed input data without additional scaling")
+    X_train_val_scaled = X_train_val  # Use PCA data directly
 
     # Create global scaler for final output
     target_scaler = RobustScaler()
-    # The features are already scaled by RobustScaler and transformed by PCA
-    X_train_val_scaled = X_train_val  # Use PCA data directly
     # Scale the target variable (same for both PCA and non-PCA)
     target_scaler.fit(Y_train_val.values.reshape(-1, 1))
     Y_train_val_scaled = target_scaler.transform(Y_train_val.values.reshape(-1, 1)).flatten()
@@ -196,7 +196,7 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
         # Reshape the data for LSTM model
         if model_name == 'LSTM':
             logger.info(f"Handling LSTM model separately with special reshaping")
-            lstm_results = train_lstm_model_with_cv(logger,X_train_val, Y_train_val, tscv, None, target_scaler)
+            lstm_results = train_lstm_model_with_cv(logger,X_train_val_scaled, Y_train_val, tscv, None, target_scaler)
             results[model_name] = lstm_results
             #results[model_name] = train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, None, target_scaler)
 
@@ -399,38 +399,53 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
         metrics_df = metrics_df.sort_values('Average_MSE')
         metrics_df['Rank'] = range(1, len(metrics_df) + 1)
         
-        # Save to CSV
-        drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results/"
-        # Create date folder inside Google Drive path
-        drive_date_folder = os.path.join(drive_path, current_date)
-        # Create directory if it doesn't exist
-        os.makedirs(drive_date_folder,exist_ok=True)
-        try:
-            metrics_df.to_csv(f'{date_folder}/{ticker_symbol}_training_validation_results.csv')
-            metrics_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_training_validation_results.csv"))
+        # Save main training results
+        save_csv_to_drive(logger, metrics_df, ticker_symbol, 'training_validation_results', date_folder, current_date, index=False)
+        
+        # Save detailed fold metrics for each model
+        for model_name, fold_metrics in all_fold_metrics.items():
+            if fold_metrics:
+                fold_df = pd.DataFrame(fold_metrics)
+                save_csv_to_drive(logger, fold_df, ticker_symbol, f'{model_name}_fold_metrics', date_folder, current_date, index=False)
+
+        # Print ranking to log
+        logger.info("\nModel Ranking (by Average MSE):")
+        for i, row in metrics_df.iterrows():
+            logger.info(f"{row['Rank']}. {row['Model']} - MSE: {row['Average_MSE']:.4f}, RMSE: {row['Average_RMSE']:.4f}")
+
+        # # Save to CSV
+        # drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results/"
+        # # Create date folder inside Google Drive path
+        # drive_date_folder = os.path.join(drive_path, current_date)
+        # # Create directory if it doesn't exist
+        # os.makedirs(drive_date_folder,exist_ok=True)
+
+        # try:
+        #     metrics_df.to_csv(f'{date_folder}/{ticker_symbol}_training_validation_results.csv')
+        #     metrics_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_training_validation_results.csv"))
             
-            # Save detailed fold metrics for each model separately
-            for model_name, fold_metrics in all_fold_metrics.items():
-                if fold_metrics:
-                    # Create DataFrame for the fold metrics
-                    fold_df = pd.DataFrame(fold_metrics)               
-                    # Save to local folder
-                    fold_df.to_csv(f'{date_folder}/{ticker_symbol}_{model_name}_fold_metrics.csv', index=False)                 
-                    # Save to Google Drive folder
-                    fold_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_{model_name}_fold_metrics.csv"), index=False)
+        #     # Save detailed fold metrics for each model separately
+        #     for model_name, fold_metrics in all_fold_metrics.items():
+        #         if fold_metrics:
+        #             # Create DataFrame for the fold metrics
+        #             fold_df = pd.DataFrame(fold_metrics)               
+        #             # Save to local folder
+        #             fold_df.to_csv(f'{date_folder}/{ticker_symbol}_{model_name}_fold_metrics.csv', index=False)                 
+        #             # Save to Google Drive folder
+        #             fold_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_{model_name}_fold_metrics.csv"), index=False)
 
-            logger.info(f"Saved clean data for {ticker_symbol} to folders")
+        #     logger.info(f"Saved clean data for {ticker_symbol} to folders")
 
-        except Exception as e:
-            logger.error(f"Error saving to Google Drive: {e}")
-            os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
-            metrics_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_training_validation_results.csv"))
+        # except Exception as e:
+        #     logger.error(f"Error saving to Google Drive: {e}")
+        #     os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
+        #     metrics_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_training_validation_results.csv"))
 
-            # Save fold metrics locally
-            for model_name, fold_metrics in all_fold_metrics.items():
-                if fold_metrics:
-                    fold_df = pd.DataFrame(fold_metrics)
-                    fold_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_{model_name}_fold_metrics.csv"), index=False)
+        #     # Save fold metrics locally
+        #     for model_name, fold_metrics in all_fold_metrics.items():
+        #         if fold_metrics:
+        #             fold_df = pd.DataFrame(fold_metrics)
+        #             fold_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_{model_name}_fold_metrics.csv"), index=False)
                 
 
         # Print ranking to log
@@ -554,7 +569,7 @@ def train_lstm_model(logger, X_train, y_train, X_val, y_val, params, trial=None)
         model.compile(optimizer=Adam(learning_rate), loss='mse')
         callbacks = [EarlyStopping(patience=5, restore_best_weights=True)]
         if trial:
-            callbacks.append(TFKerasPruningCallback(trial, 'val_loss'))
+            callbacks.append(TFKerasPruningCallback(trial, 'val_loss', interval=5))
 
         model.fit(
             X_train_rolled, y_train_rolled,
@@ -614,8 +629,11 @@ def train_lstm_model_with_cv(logger, X_train_val, Y_train_val, tscv, feature_sca
         params = {
             'epochs': trial.suggest_int('epochs', 50, 150),
             'batch_size': trial.suggest_int('batch_size', 16, 64),
+            #'batch_size': trial.suggest_int('batch_size', 16, 32),  # Smaller batches
             'units': trial.suggest_int('units', 32, 128),
+            #'units': trial.suggest_int('units', 32, 64),  # Smaller networks
             'learning_rate': trial.suggest_float('learning_rate', 0.0001, 0.01, log=True),
+            #'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.005, log=True),
             'dropout': trial.suggest_float('dropout', 0.2, 0.5),
             'time_steps': trial.suggest_int('time_steps', 3, 5),
             'layers': trial.suggest_int('layers', 1, 2),
@@ -666,7 +684,7 @@ def train_lstm_model_with_cv(logger, X_train_val, Y_train_val, tscv, feature_sca
 
     try:
         study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=50)  # Increased trials for better optimization
+        study.optimize(objective, n_trials=40)  # Increased trials for better optimization
 
         best_params_fold = study.best_params
         best_mse = study.best_value
@@ -684,7 +702,7 @@ def train_lstm_model_with_cv(logger, X_train_val, Y_train_val, tscv, feature_sca
             X_train_fold = X_train_val.iloc[train_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[train_idx]
             X_val_fold = X_train_val.iloc[val_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[val_idx]
             Y_train_fold = Y_train_val.iloc[train_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[train_idx]
-            Y_val_fold = Y_val_val.iloc[val_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[val_idx]
+            Y_val_fold = Y_train_val.iloc[val_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[val_idx]
 
             if logger:
                 logger.info(f"Training fold shapes - X: {X_train_fold.shape}, Y: {len(Y_train_fold)}")

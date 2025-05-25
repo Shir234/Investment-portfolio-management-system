@@ -78,13 +78,6 @@ def validate_and_save_tickers_alpha_vantage(tickers_list, api_key, output_file="
             
             # Add a minimal delay between requests
             time.sleep(0.05)
-        
-        # Checkpoint save after each batch
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        checkpoint_file = f"checkpoint_{timestamp}.csv"
-        df = pd.DataFrame({'Ticker': valid_tickers})
-        df.to_csv(checkpoint_file, index=False)
-        print(f"Checkpoint saved to {checkpoint_file}")
     
     # Save valid tickers to CSV
     df_valid = pd.DataFrame({'Ticker': valid_tickers})

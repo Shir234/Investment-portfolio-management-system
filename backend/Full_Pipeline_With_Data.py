@@ -10,28 +10,7 @@ from Feature_Selection_and_Optimization import analyze_feature_importance, evalu
 from Logging_and_Validation import log_data_stats, validate_data_quality, verify_prediction_scale
 from Models_Creation_and_Training import train_and_validate_models
 from Ensembles import ensemble_pipeline
-
-def load_valid_tickers(logger, file_path="valid_tickers.csv"):
-    """
-    Loads valid tickers from a CSV file
-    Parameters:
-    - file_path (str): Path to the CSV file containing valid tickers
-        
-    Returns:
-    - list: List of valid ticker symbols
-    """
-    if not os.path.exists(file_path):
-        logger.error(f"Error: File {file_path} not found.")
-        return []
-    
-    try:
-        df = pd.read_csv(file_path)
-        tickers = df['Ticker'].tolist()
-        logger.info(f"Loaded {len(tickers)} tickers from {file_path}")
-        return tickers
-    except Exception as e:
-        logger.error(f"Error loading tickers from {file_path}: {e}")
-        return []
+from Helper_Functions import load_valid_tickers, save_csv_to_drive
     
 # ===============================================================================
 # Full Pipeline For Single Stock
@@ -117,9 +96,13 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
         scaler = best_features['scaler']
 
         # Ensure scaler is fitted on filtered features
-        scaler.fit(X_train_val_filtered)  # Re-fit scaler on selected features
+        #scaler.fit(X_train_val_filtered)  # Re-fit scaler on selected features
         # Transform training data
+        print("Before scaling:", X_train_val_filtered.iloc[0, :3].values)
         X_train_val_scaled = scaler.transform(X_train_val_filtered)
+        print("After scaling:", X_train_val_scaled[0, :3])
+        print("Scaler mean:", scaler.center_[:3])
+        print("Scaler scale:", scaler.scale_[:3])
         X_train_val_selected = pca.transform(X_train_val_scaled)
         # Transform test data
         X_test_scaled = scaler.transform(X_test_filtered)
@@ -130,10 +113,10 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
         X_train_val_selected = pd.DataFrame(X_train_val_selected, index=X_train_val.index, columns=component_names)
         X_test_selected = pd.DataFrame(X_test_selected, index=X_test.index, columns=component_names)
 
-        # Validate feature consistency
-        logger.info(f"\n{'-'*30}\nValidating feature consistency\n{'-'*30}")
-        validate_feature_consistency(X_train_val_filtered, X_train_val_selected, best_features)
-        validate_feature_consistency(X_test_filtered, X_test_selected, best_features)
+        # # Validate feature consistency
+        # logger.info(f"\n{'-'*30}\nValidating feature consistency\n{'-'*30}")
+        # validate_feature_consistency(X_train_val_filtered, X_train_val_selected, best_features)
+        # validate_feature_consistency(X_test_filtered, X_test_selected, best_features)
 
         # Model training
         logger.info(f"\n{'-'*30}\nTraining models for {ticker_symbol}\n{'-'*30}")
@@ -144,57 +127,92 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
  
         # Ensemble prediction
         logger.info(f"\n{'-'*30}\nRunning ensemble methods for {ticker_symbol}\n{'-'*30}")
-        ensemble_results = ensemble_pipeline(logger, model_results, X_train_val_selected, X_test_selected, Y_train_val, Y_test, target_scaler, feature_scaler)
-        
+        ensemble_results = ensemble_pipeline(logger, model_results, X_train_val_selected, X_test_selected, Y_train_val, Y_test, target_scaler)
+
         # Save results
-        try:
-            logger.info(f"\n{'-'*30}\nSaving results for {ticker_symbol}\n{'-'*30}")
-            df = pd.DataFrame.from_dict(ensemble_results, orient='index')
-            df.index.name = 'Method Name'
-            df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
-            df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_results.csv"))
+        logger.info(f"\n{'-'*30}\nSaving results for {ticker_symbol}\n{'-'*30}")
+        # Save ensemble comparison results
+        df = pd.DataFrame.from_dict(ensemble_results, orient='index')
+        df.index.name = 'Method Name'
+        save_csv_to_drive(logger, df, ticker_symbol, 'results', date_folder, current_date)
 
-            # Find best prediction and get its length
-            best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
-            best_prediction = ensemble_results[best_method]['prediction']
-            prediction_length = len(best_prediction)  # Get actual prediction length
+        # Find best prediction and get its length
+        best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
+        best_prediction = ensemble_results[best_method]['prediction']
+        prediction_length = len(best_prediction)
 
-            # Use the same index as X_test but only up to the prediction length
-            results_index = X_test.index[:prediction_length]
-            # Create the DataFrame with all aligned data - trimming all data to match prediction length
-            # Get the original columns that we need for the results dataframe
-            results_df = pd.DataFrame({
-                'Ticker': ticker_symbol,
-                'Close': data_clean.loc[X_test.index[:prediction_length], 'Close'],
-                'Buy': data_clean.loc[X_test.index[:prediction_length], 'Buy'],
-                'Sell': data_clean.loc[X_test.index[:prediction_length], 'Sell'],
-                'Actual_Sharpe': Y_test.iloc[:prediction_length],
-                'Best_Prediction': best_prediction
-            }, index=results_index)
+        # Use the same index as X_test but only up to the prediction length
+        results_index = X_test.index[:prediction_length]
+        
+        # Create the DataFrame with all aligned data - trimming all data to match prediction length
+        results_df = pd.DataFrame({
+            'Ticker': ticker_symbol,
+            'Close': data_clean.loc[X_test.index[:prediction_length], 'Close'],
+            'Buy': data_clean.loc[X_test.index[:prediction_length], 'Buy'],
+            'Sell': data_clean.loc[X_test.index[:prediction_length], 'Sell'],
+            'Actual_Sharpe': Y_test.iloc[:prediction_length],
+            'Best_Prediction': best_prediction
+        }, index=results_index)
 
-            results_df.index = pd.to_datetime(results_index)
-            results_df.index.name = "Date"
-            # results_df.index.name = "Date"
-            results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensemble_prediction_results.csv')
-            results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensemble_prediction_results.csv"))
-            logger.info(f"Saved results for {ticker_symbol} to Google Drive dated folder")
+        results_df.index = pd.to_datetime(results_index)
+        results_df.index.name = "Date"
+        
+        # Save prediction results
+        save_csv_to_drive(logger, results_df, ticker_symbol, 'ensemble_prediction_results', date_folder, current_date)
+        
+        # Verify final prediction scale
+        verify_prediction_scale(logger, Y_test.iloc[:prediction_length], best_prediction, f"{ticker_symbol} best ensemble method")
+
+
+
+        # try:
+        #     logger.info(f"\n{'-'*30}\nSaving results for {ticker_symbol}\n{'-'*30}")
+        #     df = pd.DataFrame.from_dict(ensemble_results, orient='index')
+        #     df.index.name = 'Method Name'
+        #     df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
+        #     df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_results.csv"))
+
+        #     # Find best prediction and get its length
+        #     best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
+        #     best_prediction = ensemble_results[best_method]['prediction']
+        #     prediction_length = len(best_prediction)  # Get actual prediction length
+
+        #     # Use the same index as X_test but only up to the prediction length
+        #     results_index = X_test.index[:prediction_length]
+        #     # Create the DataFrame with all aligned data - trimming all data to match prediction length
+        #     # Get the original columns that we need for the results dataframe
+        #     results_df = pd.DataFrame({
+        #         'Ticker': ticker_symbol,
+        #         'Close': data_clean.loc[X_test.index[:prediction_length], 'Close'],
+        #         'Buy': data_clean.loc[X_test.index[:prediction_length], 'Buy'],
+        #         'Sell': data_clean.loc[X_test.index[:prediction_length], 'Sell'],
+        #         'Actual_Sharpe': Y_test.iloc[:prediction_length],
+        #         'Best_Prediction': best_prediction
+        #     }, index=results_index)
+
+        #     results_df.index = pd.to_datetime(results_index)
+        #     results_df.index.name = "Date"
+        #     # results_df.index.name = "Date"
+        #     results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensemble_prediction_results.csv')
+        #     results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensemble_prediction_results.csv"))
+        #     logger.info(f"Saved results for {ticker_symbol} to Google Drive dated folder")
             
-            # Verify final prediction scale
-            verify_prediction_scale(logger, Y_test.iloc[:prediction_length], best_prediction, f"{ticker_symbol} best ensemble method")
+        #     # Verify final prediction scale
+        #     verify_prediction_scale(logger, Y_test.iloc[:prediction_length], best_prediction, f"{ticker_symbol} best ensemble method")
 
 
-        except Exception as e:
-            logger.error(f"Error saving results to Google Drive: {e}")
-            # Added fallback saving option for emergencies
-            try:
-                # Try with a simpler approach if the dataframe creation failed
-                np.savetxt(os.path.join(current_date, f"{ticker_symbol}_best_prediction.csv"),
-                           best_prediction, delimiter=",", header="Prediction")
+        # except Exception as e:
+        #     logger.error(f"Error saving results to Google Drive: {e}")
+        #     # Added fallback saving option for emergencies
+        #     try:
+        #         # Try with a simpler approach if the dataframe creation failed
+        #         np.savetxt(os.path.join(current_date, f"{ticker_symbol}_best_prediction.csv"),
+        #                    best_prediction, delimiter=",", header="Prediction")
                 
-                results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensemble_prediction_results.csv"))
-                logger.info(f"Saved simplified prediction to local folder")
-            except Exception as e2:
-                logger.error(f"Even simple saving failed: {e2}")
+        #         results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensemble_prediction_results.csv"))
+        #         logger.info(f"Saved simplified prediction to local folder")
+        #     except Exception as e2:
+        #         logger.error(f"Even simple saving failed: {e2}")
                 
         end_time = time.time()
         logger.info(f"\n{'='*50}")
@@ -209,10 +227,11 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
         traceback.print_exc()
         return False
     
+
 # ===============================================================================
 # Running the -> Full Pipeline For Single Stock
 # ===============================================================================
-def run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers.csv", start_date="2013-01-01", end_date="2024-01-01"):
+def run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers_av.csv", start_date="2013-01-01", end_date="2024-01-01"):
     """
     Main function to run the complete pipeline
     
