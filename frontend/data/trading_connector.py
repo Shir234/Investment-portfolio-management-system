@@ -23,7 +23,7 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
         logger.debug(f"Merged data shape: {merged_data.shape}")
         
         # Validate signal quality
-        correlation, buy_hit_rate, sell_hit_rate = validate_prediction_quality(merged_data)
+        correlation, buy_hit_rate, sell_hit_rate, sharpe_min, sharpe_max = validate_prediction_quality(merged_data)
         warning_message = ""
         if correlation < 0.1:
             warning_message = f"Low signal-return correlation ({correlation:.3f}). Strategy may be unreliable."
