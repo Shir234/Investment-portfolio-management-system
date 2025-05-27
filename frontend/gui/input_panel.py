@@ -1,15 +1,15 @@
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
-                             QDateEdit, QPushButton, QComboBox, QMessageBox)
+from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QLabel, QLineEdit, 
+                             QDateEdit, QPushButton, QComboBox, QMessageBox,QVBoxLayout)
 from datetime import datetime
 import logging
 from data.trading_connector import execute_trading_strategy
-from backend.trading_logic import run_trading_strategy
 import pandas as pd
 import os
 
-# Suppress matplotlib logs
+# Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
 
 class InputPanel(QWidget):
     def __init__(self, data_manager, parent=None):
@@ -22,7 +22,6 @@ class InputPanel(QWidget):
     def setup_ui(self):
         layout = QVBoxLayout(self)
         
-        # Investment amount
         investment_layout = QHBoxLayout()
         investment_label = QLabel("Investment Amount ($):")
         investment_label.setStyleSheet("color: #ffffff;")
@@ -32,7 +31,6 @@ class InputPanel(QWidget):
         investment_layout.addWidget(self.investment_input)
         layout.addLayout(investment_layout)
         
-        # Risk level
         risk_layout = QHBoxLayout()
         risk_label = QLabel("Risk Level (0-10):")
         risk_label.setStyleSheet("color: #ffffff;")
@@ -42,7 +40,6 @@ class InputPanel(QWidget):
         risk_layout.addWidget(self.risk_input)
         layout.addLayout(risk_layout)
         
-        # Date range
         date_layout = QHBoxLayout()
         start_label = QLabel("Start Date:")
         start_label.setStyleSheet("color: #ffffff;")
@@ -60,7 +57,6 @@ class InputPanel(QWidget):
         date_layout.addWidget(self.end_date)
         layout.addLayout(date_layout)
         
-        # Mode selector
         mode_layout = QHBoxLayout()
         mode_label = QLabel("Trading Mode:")
         mode_label.setStyleSheet("color: #ffffff;")
@@ -71,7 +67,6 @@ class InputPanel(QWidget):
         mode_layout.addWidget(self.mode_combo)
         layout.addLayout(mode_layout)
         
-        # Buttons
         button_layout = QHBoxLayout()
         execute_button = QPushButton("Execute Trading Strategy")
         execute_button.clicked.connect(self.update_portfolio)
@@ -83,7 +78,6 @@ class InputPanel(QWidget):
         button_layout.addWidget(reset_button)
         layout.addLayout(button_layout)
         
-        # Portfolio value display
         self.portfolio_value_label = QLabel("Current Portfolio Value: N/A")
         self.portfolio_value_label.setStyleSheet("color: #ffffff; font-weight: bold;")
         layout.addWidget(self.portfolio_value_label)
@@ -93,43 +87,31 @@ class InputPanel(QWidget):
         try:
             if os.path.exists(self.portfolio_state_file):
                 os.remove(self.portfolio_state_file)
-                logging.debug(f"Deleted {self.portfolio_state_file}")
+                logger.debug(f"Deleted {self.portfolio_state_file}")
                 QMessageBox.information(self, "Success", "Portfolio state reset successfully.", QMessageBox.Ok)
             else:
                 QMessageBox.information(self, "Info", "No portfolio state file to reset.", QMessageBox.Ok)
             self.portfolio_value_label.setText("Current Portfolio Value: N/A")
             self.main_window.update_dashboard()
         except Exception as e:
-            logging.error(f"Error resetting portfolio: {e}")
+            logger.error(f"Error resetting portfolio: {e}")
             QMessageBox.critical(self, "Error", f"Failed to reset portfolio: {e}", QMessageBox.Ok)
         
     def update_portfolio(self):
         try:
             investment_amount = float(self.investment_input.text())
-            risk_level = float(self.risk_input.text()) * 10  # Scale 0-10 to 0-100
-            # Convert dates to pd.Timestamp with UTC timezone
+            risk_level = float(self.risk_input.text()) * 10
             start_date = pd.Timestamp(self.start_date.date().toPyDate(), tz='UTC')
             end_date = pd.Timestamp(self.end_date.date().toPyDate(), tz='UTC')
 
-            # Set date range in data_manager
             success, message = self.data_manager.set_date_range(start_date, end_date)
             if not success:
-                QMessageBox.critical(
-                    self,
-                    "Invalid Date Range",
-                    message,
-                    QMessageBox.Ok
-                )
+                QMessageBox.critical(self, "Invalid Date Range", message, QMessageBox.Ok)
                 return
-            if message:  # Display adjustment message if date range was modified
-                QMessageBox.information(
-                    self,
-                    "Date Range Adjusted",
-                    message,
-                    QMessageBox.Ok
-                )
+            if message:
+                QMessageBox.information(self, "Date Range Adjusted", message, QMessageBox.Ok)
 
-            logging.debug(f"Executing with risk_level={risk_level}, mode={self.mode_combo.currentText().lower()}")
+            logger.debug(f"Executing with risk_level={risk_level}, mode={self.mode_combo.currentText().lower()}")
             success, result = execute_trading_strategy(
                 investment_amount,
                 risk_level,
@@ -144,16 +126,28 @@ class InputPanel(QWidget):
                 portfolio_value = result.get('portfolio_value', investment_amount)
                 orders = result.get('orders', [])
                 warning_message = result.get('warning_message', '')
+                correlation = result.get('signal_correlation', 0.0)
+                buy_hit_rate = result.get('buy_hit_rate', 0.0)
+                sell_hit_rate = result.get('sell_hit_rate', 0.0)
+                
+                signal_quality_message = (f"Signal Quality Metrics:\n"
+                                        f"Correlation: {correlation:.3f}\n"
+                                        f"Buy Hit Rate: {buy_hit_rate:.1%}\n"
+                                        f"Sell Hit Rate: {sell_hit_rate:.1%}")
+                QMessageBox.information(self, "Signal Quality", signal_quality_message, QMessageBox.Ok)
+                
+                if correlation < 0.1:
+                    QMessageBox.warning(self, "Low Signal Quality", 
+                                      "Signal-return correlation is low. Strategy may be unreliable.", 
+                                      QMessageBox.Ok)
                 
                 if self.mode_combo.currentText().lower() == "semi-automatic" and orders:
-                    # Show confirmation dialog
                     msg = QMessageBox()
                     msg.setWindowTitle("Confirm Trades")
                     msg.setText(f"{len(orders)} trade(s) suggested. Execute them?\n" +
-                                "\n".join([f"{order['action'].capitalize()} {order['shares_amount']} shares of {order['ticker']} at ${order['price']:.2f}" for order in orders]))
+                                "\n".join([f"{order['action'].capitalize()} {order['shares_amount']} shares of {order['ticker']} at ${order['price']:.2f} (Weight: {order['ticker_weight']:.3f})" for order in orders]))
                     msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
                     if msg.exec_() == QMessageBox.Yes:
-                        # Re-run in automatic mode to execute trades
                         success, result = execute_trading_strategy(
                             investment_amount,
                             risk_level,
@@ -164,7 +158,7 @@ class InputPanel(QWidget):
                             reset_state=False
                         )
                         if not success:
-                            QMessageBox.critical(self, "Error", f"Failed to execute trades: {result.get('error', 'Unknown error')}")
+                            QMessageBox.critical(self, "Error", f"Failed to execute trades: {result.get('warning_message', 'Unknown error')}")
                             return
                         portfolio_history = result.get('portfolio_history', [])
                         portfolio_value = result.get('portfolio_value', investment_amount)
@@ -172,31 +166,16 @@ class InputPanel(QWidget):
                         warning_message = result.get('warning_message', '')
                 
                 if not orders and warning_message:
-                    QMessageBox.warning(
-                        self,
-                        "No Signals Detected",
-                        warning_message,
-                        QMessageBox.Ok
-                    )
+                    QMessageBox.warning(self, "No Signals Detected", warning_message, QMessageBox.Ok)
                 
-                logging.debug(f"Portfolio history: {portfolio_history[-10:]}, Portfolio value: {portfolio_value}")
+                logger.debug(f"Portfolio history: {portfolio_history[-10:]}, Portfolio value: {portfolio_value}")
                 self.portfolio_value_label.setText(f"Current Portfolio Value: ${portfolio_value:,.2f}")
                 self.main_window.update_dashboard()
             else:
-                error_message = result.get('error', 'Unknown error')
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Failed to execute strategy: {error_message}",
-                    QMessageBox.Ok
-                )
+                error_message = result.get('warning_message', 'Unknown error')
+                QMessageBox.critical(self, "Error", f"Failed to execute strategy: {error_message}", QMessageBox.Ok)
                 self.portfolio_value_label.setText("Current Portfolio Value: N/A")
         except Exception as e:
-            logging.error(f"Error in update_portfolio: {e}", exc_info=True)
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to run strategy: {e}",
-                QMessageBox.Ok
-            )
+            logger.error(f"Error in update_portfolio: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to run strategy: {e}", QMessageBox.Ok)
             self.portfolio_value_label.setText("Current Portfolio Value: N/A")

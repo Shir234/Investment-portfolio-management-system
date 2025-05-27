@@ -1,6 +1,6 @@
 import pandas as pd
-import logging 
-from backend.trading_logic import run_trading_strategy, get_orders, get_portfolio_history
+import logging
+from backend.trading_logic import run_trading_strategy, get_orders, get_portfolio_history, validate_prediction_quality
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
@@ -22,6 +22,13 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
         merged_data = data_manager.data
         logger.debug(f"Merged data shape: {merged_data.shape}")
         
+        # Validate signal quality
+        correlation, buy_hit_rate, sell_hit_rate = validate_prediction_quality(merged_data)
+        warning_message = ""
+        if correlation < 0.1:
+            warning_message = f"Low signal-return correlation ({correlation:.3f}). Strategy may be unreliable."
+            logger.warning(warning_message)
+
         logger.debug(f"Calling run_trading_strategy with mode={mode}, reset_state={reset_state}")
         result = run_trading_strategy(
             merged_data=merged_data,
@@ -36,7 +43,7 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
         
         if mode == "semi-automatic":
             orders, warning_message = result
-            portfolio_history = get_portfolio_history()  # Fetch history for UI
+            portfolio_history = get_portfolio_history()
             portfolio_value = portfolio_history[-1]['value'] if portfolio_history else investment_amount
         else:
             orders, portfolio_history, portfolio_value, warning_message = result
@@ -46,7 +53,10 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
             'orders': orders,
             'portfolio_history': portfolio_history,
             'portfolio_value': portfolio_value,
-            'warning_message': warning_message
+            'warning_message': warning_message,
+            'signal_correlation': correlation,
+            'buy_hit_rate': buy_hit_rate,
+            'sell_hit_rate': sell_hit_rate
         }
     except Exception as e:
         logger.error(f"Error in execute_trading_strategy: {e}", exc_info=True)
@@ -54,7 +64,10 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
             'orders': [],
             'portfolio_history': [],
             'portfolio_value': 0.0,
-            'warning_message': f"Error executing strategy: {e}"
+            'warning_message': f"Error executing strategy: {e}",
+            'signal_correlation': 0.0,
+            'buy_hit_rate': 0.0,
+            'sell_hit_rate': 0.0
         }
 
 def get_order_history_df():
@@ -64,7 +77,7 @@ def get_order_history_df():
         return pd.DataFrame()
     
     order_df = pd.DataFrame(orders)
-    expected_columns = ['date', 'ticker', 'action', 'shares_amount', 'price', 'investment_amount', 'previous_shares', 'new_total_shares', 'sharpe']
+    expected_columns = ['date', 'ticker', 'action', 'shares_amount', 'price', 'investment_amount', 'transaction_cost', 'previous_shares', 'new_total_shares', 'sharpe', 'ticker_weight', 'weighted_allocation']
     if not all(col in order_df.columns for col in expected_columns):
         missing_cols = set(expected_columns) - set(order_df.columns)
         logger.warning(f"Missing columns in order DataFrame: {missing_cols}")

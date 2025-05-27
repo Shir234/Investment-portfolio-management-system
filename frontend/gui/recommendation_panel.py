@@ -6,7 +6,6 @@ from backend.trading_logic import get_orders, get_portfolio_history
 import pandas as pd
 import logging
 
-# Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -20,12 +19,10 @@ class RecommendationPanel(QWidget):
     def setup_ui(self):
         layout = QVBoxLayout(self)
         
-        # Title
         title = QLabel("Trading Recommendations")
         title.setStyleSheet("font-size: 14px; font-weight: bold; color: #ffffff;")
         layout.addWidget(title)
         
-        # Filter selector
         filter_layout = QHBoxLayout()
         filter_label = QLabel("Filter Orders:")
         filter_label.setStyleSheet("color: #ffffff;")
@@ -37,40 +34,35 @@ class RecommendationPanel(QWidget):
         filter_layout.addWidget(self.filter_combo)
         layout.addLayout(filter_layout)
         
-        # Trade count label
         self.trade_count_label = QLabel("Number of Recommendations: 0")
         self.trade_count_label.setStyleSheet("font-size: 12px; color: #ffffff;")
         layout.addWidget(self.trade_count_label)
         
-        # Recommendations table
         self.table = QTableWidget()
-        self.table.setColumnCount(12)
+        self.table.setColumnCount(14)
         self.table.setHorizontalHeaderLabels([
             "Date", "Ticker", "Action", "Shares", "Price", 
-            "Investment Amount", "Previous Shares", "Total Shares", 
-            "Pred. Sharpe", "Actual Sharpe", "Cash After", "Portfolio Value"
+            "Investment Amount", "Transaction Cost", "Previous Shares", 
+            "Total Shares", "Pred. Sharpe", "Actual Sharpe", 
+            "Ticker Weight", "Cash After", "Portfolio Value"
         ])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setStyleSheet("QTableWidget { background-color: #2b2b2b; color: #ffffff; gridline-color: #555555; } QHeaderView::section { background-color: #3c3f41; color: #ffffff; }")
         layout.addWidget(self.table)
         
-        # Alert message
         self.alert_label = QLabel()
         self.alert_label.setStyleSheet("color: red;")
         self.alert_label.setVisible(False)
         layout.addWidget(self.alert_label)
         
-        # Refresh button
         refresh_button = QPushButton("Refresh Recommendations")
         refresh_button.clicked.connect(self.update_recommendations)
         layout.addWidget(refresh_button)
         
     def update_recommendations(self):
-        # Get filter selection
         filter_type = self.filter_combo.currentText()
         all_orders = get_orders()
         
-        # Apply filter based on selection
         if filter_type == "Buy Orders":
             order_history = [order for order in all_orders if order['action'] == 'buy']
         elif filter_type == "Sell Orders":
@@ -79,12 +71,10 @@ class RecommendationPanel(QWidget):
             order_history = [order for order in all_orders if order['action'] == 'cover']
         elif filter_type == "Short Orders":
             order_history = [order for order in all_orders if order['action'] == 'short']
-        else:  # All Orders
+        else:
             order_history = all_orders
         
         portfolio_history = get_portfolio_history()
-        
-        # Update trade count label
         self.trade_count_label.setText(f"Number of {filter_type}: {len(order_history)}")
         
         if not order_history:
@@ -92,17 +82,14 @@ class RecommendationPanel(QWidget):
             self.table.setRowCount(0)
             return
 
-        # Create portfolio DataFrame
         portfolio_df = pd.DataFrame(portfolio_history)
         if not portfolio_df.empty:
             portfolio_df['date'] = pd.to_datetime(portfolio_df['date']).dt.date
-            logger.debug(f"Portfolio DataFrame columns: {portfolio_df.columns}")
             portfolio_map = portfolio_df.set_index('date')['value'].to_dict()
         else:
             portfolio_map = {}
             logger.debug("Portfolio history is empty")
 
-        # Calculate cash balance incrementally
         try:
             initial_cash = float(self.main_window.input_panel.investment_input.text())
         except (ValueError, AttributeError) as e:
@@ -112,17 +99,10 @@ class RecommendationPanel(QWidget):
         cash_balances = []
         for order in order_history:
             if order['action'] in ['buy', 'short']:
-                cash -= order['investment_amount']
-            else:  # sell or cover
-                cash += order['investment_amount']
+                cash -= (order['investment_amount'] + order.get('transaction_cost', 0))
+            else:
+                cash += (order['investment_amount'] - order.get('transaction_cost', 0))
             cash_balances.append(cash)
-
-        # Verify alignment between orders and portfolio history
-        if order_history and portfolio_history:
-            order_dates = set(pd.to_datetime(order['date']).date() for order in order_history)
-            portfolio_dates = set(pd.to_datetime(entry['date']).date() for entry in portfolio_history)
-            if not order_dates.issubset(portfolio_dates):
-                logger.warning("Some order dates are not present in portfolio history")
 
         self.table.setRowCount(0)
         for i, order in enumerate(order_history):
@@ -136,12 +116,14 @@ class RecommendationPanel(QWidget):
             self.table.setItem(row_position, 3, QTableWidgetItem(str(order['shares_amount'])))
             self.table.setItem(row_position, 4, QTableWidgetItem(f"${order['price']:,.2f}"))
             self.table.setItem(row_position, 5, QTableWidgetItem(f"${order['investment_amount']:,.2f}"))
-            self.table.setItem(row_position, 6, QTableWidgetItem(str(order['previous_shares'])))
-            self.table.setItem(row_position, 7, QTableWidgetItem(str(order['new_total_shares'])))
-            self.table.setItem(row_position, 8, QTableWidgetItem(f"{order['sharpe']:.2f}"))
-            self.table.setItem(row_position, 9, QTableWidgetItem(f"{order.get('actual_sharpe', 0.0):.2f}"))
-            self.table.setItem(row_position, 10, QTableWidgetItem(f"${cash_balances[i]:,.2f}"))
-            self.table.setItem(row_position, 11, QTableWidgetItem(f"${portfolio_value:,.2f}"))
+            self.table.setItem(row_position, 6, QTableWidgetItem(f"${order.get('transaction_cost', 0):,.2f}"))
+            self.table.setItem(row_position, 7, QTableWidgetItem(str(order['previous_shares'])))
+            self.table.setItem(row_position, 8, QTableWidgetItem(str(order['new_total_shares'])))
+            self.table.setItem(row_position, 9, QTableWidgetItem(f"{order['sharpe']:.2f}"))
+            self.table.setItem(row_position, 10, QTableWidgetItem(f"{order.get('actual_sharpe', 0.0):.2f}"))
+            self.table.setItem(row_position, 11, QTableWidgetItem(f"{order.get('ticker_weight', 1.0):.3f}"))
+            self.table.setItem(row_position, 12, QTableWidgetItem(f"${cash_balances[i]:,.2f}"))
+            self.table.setItem(row_position, 13, QTableWidgetItem(f"${portfolio_value:,.2f}"))
 
         self.table.resizeColumnsToContents()
         logger.debug(f"Table updated with {len(order_history)} orders")
