@@ -1,38 +1,18 @@
 import pandas as pd
 import numpy as np
 import logging
-from datetime import datetime
+import datetime
 import json
 import os
 
-# LOGGING SETUP - ONLY DO THIS ONCE
-if not logging.getLogger().handlers:  # Only setup if no handlers exist
-    # Create logs directory
-    os.makedirs('trading_logs', exist_ok=True)
-    
-    # Generate timestamped filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = f'trading_logs/trading_strategy_{timestamp}.log'
-    
-    # Setup logging with file and console handlers
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_filename),
-            logging.StreamHandler()
-        ]
-    )
-    
-    # Print confirmation
-    print(f"Logging setup complete. Log file: {os.path.abspath(log_filename)}")
+# Create isolated trading logger - ONLY trading logic will appear in this log file
+logger = get_isolated_logger("trading_logic", "trading_only", logging.INFO)
 
-# Get logger
-logger = logging.getLogger(__name__)
+# Test the isolated logger
+logger.info("="*60)
+logger.info("TRADING LOGIC SYSTEM INITIALIZED")
+logger.info("="*60)
 
-# Test logging immediately
-logger.info("TRADING STRATEGY LOGGING INITIALIZED")
-logger.info(f"Log file: {os.path.abspath(log_filename) if 'log_filename' in locals() else 'Already configured'}")
 
 # Global variables for portfolio state
 orders = []
@@ -179,6 +159,7 @@ def validate_prediction_quality(merged_data, forward_days=5):
     
     return correlation, buy_hit_rate, sell_hit_rate, sharpe_min, sharpe_max
 
+
 """
 def validate_prediction_quality(merged_data, min_correlation=0.6):
 
@@ -202,6 +183,7 @@ def validate_prediction_quality(merged_data, min_correlation=0.6):
     
     return True
 """
+
 
 def save_portfolio_state():
     """
@@ -647,10 +629,10 @@ def process_sell_signals(daily_data, holdings, current_date, risk_level, mode="a
         should_sell = False
         sell_reason = ""
         
-        # 1. Minimum holding period reached
-        if days_held >= min_holding_days:
-            should_sell = True
-            sell_reason = f"Minimum holding period ({min_holding_days} days)"
+        # # 1. Minimum holding period reached
+        # if days_held >= min_holding_days:
+        #     should_sell = True
+        #     sell_reason = f"Minimum holding period ({min_holding_days} days)"
         
         # 2. Stop loss conditions
         if position_type == 'LONG':
@@ -761,6 +743,8 @@ def process_buy_signals(daily_data, buy_threshold, sell_threshold, holdings, cas
         tuple: (cash_used, buy_orders_count)
     """
 
+    risk_level = int(risk_level)
+
     cash_used = 0
     buy_orders_count = 0
     transaction_cost_bps = 5  # 0.05% transaction cost
@@ -773,11 +757,208 @@ def process_buy_signals(daily_data, buy_threshold, sell_threshold, holdings, cas
     max_daily_cash = cash * max_daily_deployment
     available_cash = min(cash * 0.8, max_daily_cash)
     
-    # LONG POSITIONS - Buy when Sharpe >= buy_threshold
-    long_candidates = daily_data[
-        (daily_data['Best_Prediction'] >= buy_threshold) 
-        #& (~daily_data['Ticker'].isin(holdings.keys()))
+    # STEP 1: Filter for buy signal candidates  --> LONG POSITIONS - Buy when Sharpe >= buy_threshold
+    buy_signal_candidates = daily_data[
+        daily_data['Best_Prediction'] >= buy_threshold
     ].copy()
+    
+    if buy_signal_candidates.empty:
+        return cash_used, buy_orders_count
+
+    # STEP 2: Add weight information and prioritize
+    buy_signal_candidates['ticker_weight'] = buy_signal_candidates['Ticker'].map(
+        lambda x: ticker_weights.get(x, default_weight)
+    )
+
+    # STEP 3: Sort by weight (highest first), then by signal strength
+    buy_signal_candidates['signal_strength'] = (
+        buy_signal_candidates['Best_Prediction'] - buy_threshold
+    )
+
+    # Sort by: Weight (desc) -> Signal Strength (desc) -> Ticker (for consistency)
+    buy_signal_candidates = buy_signal_candidates.sort_values([
+        'ticker_weight', 'signal_strength', 'Ticker'
+    ], ascending=[False, False, True])
+
+    # STEP 4: Take only top N candidates based on available positions
+    max_new_positions = int(max_positions - len(holdings))
+    top_candidates = buy_signal_candidates.head(max_new_positions * 2)  # 2x buffer for filtering
+    
+    logger.info(f"Buy candidates: {len(buy_signal_candidates)} total, "
+               f"considering top {len(top_candidates)} by weight")
+    
+    # STEP 5: Apply momentum filter if available
+    if 'MA10' in top_candidates.columns and 'MA50' in top_candidates.columns:
+        momentum_filtered = top_candidates[
+            (top_candidates['MA10'] > top_candidates['MA50']) |
+            (top_candidates['MA10'].isna())
+        ]
+        if not momentum_filtered.empty:
+            top_candidates = momentum_filtered
+            logger.info(f"After momentum filter: {len(top_candidates)} candidates")
+    
+    # STEP 6: Process candidates in weight order
+    candidates_processed = 0
+    max_candidates_to_process = min(len(top_candidates), max_new_positions + 3)
+    
+    for idx, row in top_candidates.head(max_candidates_to_process).iterrows():
+        if available_cash < 500 or len(holdings) >= max_positions:
+            break
+            
+        ticker = row['Ticker']
+        price = row['Close']
+        sharpe = row['Best_Prediction']
+        ticker_weight = row['ticker_weight']
+        signal_strength = row['signal_strength']
+        
+        # Validate price
+        if price <= 0 or price > 5000:
+            logger.warning(f"Skipping {ticker}: Invalid price ${price:.2f}")
+            continue
+        
+        # Check if we already own this (for position sizing)
+        current_position_value = 0
+        if ticker in holdings:
+            current_shares = holdings[ticker]['shares']
+            current_position_value = current_shares * price
+        
+        # Calculate current position as percentage of total portfolio
+        total_portfolio_value = cash + sum(
+            holding['shares'] * daily_data[daily_data['Ticker'] == t]['Close'].iloc[0] 
+            for t, holding in holdings.items() 
+            if t in daily_data['Ticker'].values
+        )
+        
+        current_position_pct = (current_position_value / total_portfolio_value) if total_portfolio_value > 0 else 0
+        
+        # Skip if we're already over-concentrated in this stock
+        if current_position_pct >= max_position_size_pct:
+            logger.info(f"Skipping {ticker}: Position size {current_position_pct:.1%} >= {max_position_size_pct:.1%}")
+            continue
+            
+        # Calculate position size based on weight and signal strength
+        base_position_size = calculate_position_size(sharpe, ticker_weight, available_cash, buy_threshold)
+        
+        # Adjust for existing positions
+        if ticker in holdings:
+            position_size = base_position_size * 0.5  # Reduce for additional purchases
+            logger.info(f"Additional purchase for {ticker}: reducing size by 50%")
+        else:
+            position_size = base_position_size
+        
+        # Adjust for volatility if available
+        if not pd.isna(row.get('Volatility', np.nan)):
+            volatility_adj = max(0.5, min(1.5, 1.0 / (row['Volatility'] + 0.1)))
+            position_size *= volatility_adj
+        
+        # Calculate shares and costs
+        shares = int(position_size / price)
+        if shares < 1:
+            logger.debug(f"Skipping {ticker}: Position too small ({shares} shares)")
+            continue
+            
+        actual_cost = shares * price
+        transaction_cost = actual_cost * (transaction_cost_bps / 10000)
+        total_cost = actual_cost + transaction_cost
+        
+        if total_cost > available_cash:
+            # Try smaller position that fits available cash
+            max_affordable_shares = int((available_cash - 50) / price)  # Leave buffer for transaction costs
+            if max_affordable_shares >= 1:
+                shares = max_affordable_shares
+                actual_cost = shares * price
+                transaction_cost = actual_cost * (transaction_cost_bps / 10000)
+                total_cost = actual_cost + transaction_cost
+            else:
+                logger.debug(f"Skipping {ticker}: Can't afford minimum position")
+                continue
+        
+        # Get current holding info
+        current_shares = holdings.get(ticker, {}).get('shares', 0)
+        new_total_shares = current_shares + shares
+        
+        # Create order
+        order = {
+            'date': current_date,
+            'ticker': ticker,
+            'action': 'buy',
+            'position_type': 'LONG',
+            'shares_amount': shares,
+            'price': price,
+            'investment_amount': actual_cost,
+            'transaction_cost': transaction_cost,
+            'total_cost': total_cost,
+            'sharpe': sharpe,
+            'ticker_weight': ticker_weight,
+            'signal_strength': signal_strength,
+            'position_size_pct': (total_cost / cash) * 100,
+            'previous_shares': current_shares,
+            'new_total_shares': new_total_shares,
+            'is_additional_purchase': ticker in holdings,
+            'weight_rank': candidates_processed + 1
+        }
+        
+        if mode == "automatic":
+            # Update holdings
+            if ticker in holdings:
+                # Update existing position with weighted average price
+                old_avg_price = holdings[ticker]['purchase_price']
+                old_shares = holdings[ticker]['shares']
+                
+                total_old_cost = old_shares * old_avg_price
+                total_new_cost = shares * price
+                new_avg_price = (total_old_cost + total_new_cost) / (old_shares + shares)
+                
+                holdings[ticker]['shares'] = new_total_shares
+                holdings[ticker]['purchase_price'] = new_avg_price
+                holdings[ticker]['last_purchase_date'] = pd.Timestamp(current_date)
+                
+                logger.info(f"ADDING to {ticker} (Weight: {ticker_weight:.3f}, Rank: {candidates_processed + 1}): "
+                           f"Old={old_shares}@${old_avg_price:.2f}, New={shares}@${price:.2f}, "
+                           f"Total={new_total_shares}@${new_avg_price:.2f}")
+            else:
+                # Create new position
+                holdings[ticker] = {
+                    'shares': shares,
+                    'purchase_date': pd.Timestamp(current_date),
+                    'purchase_price': price,
+                    'position_type': 'LONG',
+                    'last_purchase_date': pd.Timestamp(current_date)
+                }
+                
+                logger.info(f"NEW BUY {ticker} (Weight: {ticker_weight:.3f}, Rank: {candidates_processed + 1}): "
+                           f"Sharpe={sharpe:.3f}, Shares={shares}, Price=${price:.2f}, Cost=${total_cost:.2f}")
+            
+            cash_used += total_cost
+            available_cash -= total_cost
+            
+            if orders is not None:
+                orders.append(order)
+            buy_orders_count += 1
+            
+        else:  # semi-automatic mode
+            if suggested_orders is not None:
+                suggested_orders.append(order)
+        
+        candidates_processed += 1
+        
+        # Log top weighted candidates for transparency
+        if candidates_processed <= 5:
+            logger.info(f"Weight Rank {candidates_processed}: {ticker} "
+                       f"(Weight: {ticker_weight:.3f}, Sharpe: {sharpe:.3f})")
+    
+    if candidates_processed == 0:
+        logger.info("No suitable buy candidates after weight prioritization")
+    else:
+        logger.info(f"Processed {candidates_processed} weight-prioritized buy candidates")
+
+
+    """
+    # # LONG POSITIONS - Buy when Sharpe >= buy_threshold
+    # long_candidates = daily_data[
+    #     (daily_data['Best_Prediction'] >= buy_threshold) 
+    #     #& (~daily_data['Ticker'].isin(holdings.keys()))
+    # ].copy()
 
     # # SHORT POSITIONS - Sell when Sharpe <= sell_threshold  
     # short_candidates = daily_data[
@@ -785,12 +966,12 @@ def process_buy_signals(daily_data, buy_threshold, sell_threshold, holdings, cas
     #     (~daily_data['Ticker'].isin(holdings.keys()))
     # ].copy()
     
-    # Apply momentum filter for LONG positions (uptrend)
-    if 'MA10' in long_candidates.columns and 'MA50' in long_candidates.columns:
-        long_candidates = long_candidates[
-            (long_candidates['MA10'] > long_candidates['MA50']) |
-            (long_candidates['MA10'].isna())  # Allow if MA not available
-        ]
+    # # Apply momentum filter for LONG positions (uptrend)
+    # if 'MA10' in long_candidates.columns and 'MA50' in long_candidates.columns:
+    #     long_candidates = long_candidates[
+    #         (long_candidates['MA10'] > long_candidates['MA50']) |
+    #         (long_candidates['MA10'].isna())  # Allow if MA not available
+    #     ]
     
     # # Apply momentum filter for SHORT positions (downtrend)
     # if 'MA10' in short_candidates.columns and 'MA50' in short_candidates.columns:
@@ -997,6 +1178,8 @@ def process_buy_signals(daily_data, buy_threshold, sell_threshold, holdings, cas
         else:
             if suggested_orders is not None:
                 suggested_orders.append(order)
+
+        """
     
     return cash_used, buy_orders_count
 
@@ -1043,7 +1226,7 @@ def run_integrated_trading_strategy(merged_data, investment_amount, risk_level, 
         if correlation < 0.3:  # More reasonable threshold than my 0.7
             logger.warning(f"Low correlation {correlation:.3f} detected. Proceeding with caution.")
         
-        # Load ticker weights and calculate thresholds using YOUR functions
+        # Load ticker weights and calculate thresholds
         ticker_weights = load_ticker_weights()
         default_weight = 0.02  # 2% default weight
         
@@ -1059,8 +1242,8 @@ def run_integrated_trading_strategy(merged_data, investment_amount, risk_level, 
         warning_message = ""
         
         # Portfolio parameters based on risk level
-        max_positions = 12 + (risk_level // 3)  # 12-15 positions
-        max_daily_deployment = 0.15 + (risk_level * 0.01)  # 15-25% daily deployment
+        max_positions = 12 + (risk_level // 3)  # 12-15 positions - maximum number of different stocks (tickers) can be held simultaneously
+        max_daily_deployment = 0.15 + (risk_level * 0.01)  # 15-25% daily deployment - how much of available cash we allow to spend on new stock purchases in a single day
         
         # Date processing
         merged_data['date'] = pd.to_datetime(merged_data['date'], utc=True)
