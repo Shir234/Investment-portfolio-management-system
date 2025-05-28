@@ -56,7 +56,7 @@ class RecommendationPanel(QWidget):
         # Trade count label
         self.trade_count_label = QLabel("Number of Orders: 0")
         self.trade_count_label.setObjectName("trade_count_label")
-        self.trade_count_label.setStyleSheet("font-size: 12px; color: #ffffff;")
+        self.trade_count_label.setStyleSheet("color: #ffffff;")
         layout.addWidget(self.trade_count_label)
         
         # Table for trade history
@@ -90,21 +90,25 @@ class RecommendationPanel(QWidget):
         """Return QMessageBox stylesheet based on theme."""
         return f"""
             QMessageBox {{ 
-                background-color: {'#353535' if self.is_dark_mode else '#f0f0f0'}; 
-                color: {'#ffffff' if self.is_dark_mode else 'black'}; 
+                background-color: {'#353535' if self.is_dark_mode else '#e0e0e0'}; 
+                color: {'#ffffff' if self.is_dark_mode else 'black'};
+                border: 1px solid {'#555555' if self.is_dark_mode else '#cccccc'};
+                padding: 10px;
             }}
             QMessageBox QLabel {{ 
                 color: {'#ffffff' if self.is_dark_mode else 'black'}; 
+                background-color: transparent;
+                padding: 5px;
             }}
             QMessageBox QPushButton {{ 
-                background-color: {'#444444' if self.is_dark_mode else '#e0e0e0'}; 
+                background-color: {'#444444' if self.is_dark_mode else '#d0d0d0'}; 
                 color: {'#ffffff' if self.is_dark_mode else 'black'}; 
-                border: 1px solid {'#666666' if self.is_dark_mode else '#cccccc'}; 
+                border: 1px solid {'#666666' if self.is_dark_mode else '#bbbbbb'}; 
                 padding: 5px 15px; 
                 border-radius: 3px; 
             }}
             QMessageBox QPushButton:hover {{ 
-                background-color: {'#555555' if self.is_dark_mode else '#d0d0d0'}; 
+                background-color: {'#555555' if self.is_dark_mode else '#c0c0c0'}; 
             }}
         """
         
@@ -147,6 +151,7 @@ class RecommendationPanel(QWidget):
             if not orders:
                 self.table.setRowCount(0)
                 self.trade_count_label.setText("Number of Orders: 0")
+                logger.debug("No orders retrieved from get_orders()")
                 return
             
             orders_df = pd.DataFrame(orders)
@@ -160,6 +165,9 @@ class RecommendationPanel(QWidget):
             self.table.setRowCount(len(orders_df))
             self.trade_count_label.setText(f"Number of Orders: {len(orders_df)}")
             
+            # Log full orders for debugging
+            logger.debug(f"Retrieved {len(orders)} orders: {orders[:5]}")
+            
             for row, order in orders_df.iterrows():
                 self.table.setItem(row, 0, QTableWidgetItem(str(order.get('date', ''))))
                 self.table.setItem(row, 1, QTableWidgetItem(order.get('ticker', '')))
@@ -171,10 +179,27 @@ class RecommendationPanel(QWidget):
                 self.table.setItem(row, 7, QTableWidgetItem(f"${order.get('transaction_cost', 0):,.2f}"))
                 self.table.setItem(row, 8, QTableWidgetItem(str(order.get('previous_shares', 0))))
                 self.table.setItem(row, 9, QTableWidgetItem(str(order.get('total_shares', 0))))
-                pred_sharpe = order.get('predicted_sharpe', 0)
-                self.table.setItem(row, 10, QTableWidgetItem(f"{pred_sharpe:.2f}" if pred_sharpe != -1 else "N/A"))
-                actual_sharpe = order.get('actual_sharpe', 0)
-                self.table.setItem(row, 11, QTableWidgetItem(f"{actual_sharpe:.2f}" if actual_sharpe != -1 else "N/A"))
+                
+                # Handle predicted_sharpe
+                pred_sharpe = order.get('predicted_sharpe', order.get('sharpe', None))  # Fallback to 'sharpe'
+                logger.debug(f"Order {row} (Ticker: {order.get('ticker')}, Action: {order.get('action')}): predicted_sharpe={pred_sharpe}")
+                if pred_sharpe is None or pred_sharpe in [0, -1] or not isinstance(pred_sharpe, (int, float)):
+                    self.table.setItem(row, 10, QTableWidgetItem("N/A"))
+                    if pred_sharpe is not None:
+                        logger.warning(f"Invalid predicted_sharpe value for order {row}: {pred_sharpe}")
+                else:
+                    self.table.setItem(row, 10, QTableWidgetItem(f"{float(pred_sharpe):.2f}"))
+                
+                # Handle actual_sharpe
+                actual_sharpe = order.get('actual_sharpe', order.get('Actual_Sharpe', None))  # Fallback to 'Actual_Sharpe'
+                logger.debug(f"Order {row} (Ticker: {order.get('ticker')}, Action: {order.get('action')}): actual_sharpe={actual_sharpe}")
+                if actual_sharpe is None or actual_sharpe in [0, -1] or not isinstance(actual_sharpe, (int, float)):
+                    self.table.setItem(row, 11, QTableWidgetItem("N/A"))
+                    if actual_sharpe is not None:
+                        logger.warning(f"Invalid actual_sharpe value for order {row}: {actual_sharpe}")
+                else:
+                    self.table.setItem(row, 11, QTableWidgetItem(f"{float(actual_sharpe):.2f}"))
+                
                 self.table.setItem(row, 12, QTableWidgetItem(f"{order.get('ticker_weight', 0):.2%}"))
                 self.table.setItem(row, 13, QTableWidgetItem(f"{order.get('percentage', 0):.2%}"))
                 
@@ -184,7 +209,7 @@ class RecommendationPanel(QWidget):
             
             self.table.resizeColumnsToContents()
         except Exception as e:
-            logger.error(f"Error updating recommendations: {e}")
+            logger.error(f"Error updating recommendations: {e}", exc_info=True)
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Critical)
             msg.setWindowTitle("Error")
@@ -202,7 +227,7 @@ class RecommendationPanel(QWidget):
             msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
             msg.setStyleSheet(self.get_message_box_style())
             if msg.exec_() == QMessageBox.Yes:
-                # Logic to clear trade history (adjust as per your backend)
+                # Logic to clear trade history
                 with open('data/orders.json', 'w') as f:
                     f.write('[]')
                 self.update_recommendations()
