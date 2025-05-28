@@ -5,9 +5,22 @@ from PyQt5.QtCore import Qt
 from backend.trading_logic import get_orders, get_portfolio_history
 import pandas as pd
 import logging
+import os
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Ensure logs directory exists
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    handlers=[
+        logging.FileHandler('logs/app.log'),
+        logging.StreamHandler()
+    ]
+)
+logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 class RecommendationPanel(QWidget):
@@ -15,151 +28,197 @@ class RecommendationPanel(QWidget):
         super().__init__(parent)
         self.data_manager = data_manager
         self.main_window = parent
+        self.is_dark_mode = True  # Default to dark mode
         self.setup_ui()
         
     def setup_ui(self):
         layout = QVBoxLayout(self)
         
-        # Title
-        title = QLabel("Trading Recommendations")
-        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #ffffff;")
-        layout.addWidget(title)
+        # Title label
+        self.title_label = QLabel("Trading History")
+        self.title_label.setObjectName("title_label")
+        self.title_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #ffffff;")
+        layout.addWidget(self.title_label)
         
-        # Filter selector
+        # Filter layout
         filter_layout = QHBoxLayout()
-        filter_label = QLabel("Filter Orders:")
-        filter_label.setStyleSheet("color: #ffffff;")
+        self.filter_label = QLabel("Filter Orders:")
+        self.filter_label.setObjectName("filter_label")
+        self.filter_label.setStyleSheet("color: #ffffff;")
         self.filter_combo = QComboBox()
-        self.filter_combo.addItems(["All Orders", "Buy Orders", "Sell Orders", "Cover Orders", "Short Orders"])
+        self.filter_combo.addItems(["All Orders", "Buy Orders", "Sell Orders"])
         self.filter_combo.setStyleSheet("background-color: #3c3f41; color: #ffffff; selection-background-color: #2a82da;")
         self.filter_combo.currentIndexChanged.connect(self.update_recommendations)
-        filter_layout.addWidget(filter_label)
+        filter_layout.addWidget(self.filter_label)
         filter_layout.addWidget(self.filter_combo)
         layout.addLayout(filter_layout)
         
         # Trade count label
-        self.trade_count_label = QLabel("Number of Recommendations: 0")
+        self.trade_count_label = QLabel("Number of Orders: 0")
+        self.trade_count_label.setObjectName("trade_count_label")
         self.trade_count_label.setStyleSheet("font-size: 12px; color: #ffffff;")
         layout.addWidget(self.trade_count_label)
         
-        # Recommendations table
+        # Table for trade history
         self.table = QTableWidget()
-        self.table.setColumnCount(12)
+        self.table.setColumnCount(14)
         self.table.setHorizontalHeaderLabels([
-            "Date", "Ticker", "Action", "Shares", "Price", 
-            "Investment Amount", "Previous Shares", "Total Shares", 
-            "Pred. Sharpe", "Actual Sharpe", "Cash After", "Portfolio Value"
+            "Date", "Ticker", "Action", "Portfolio Value", "Shares", "Price", 
+            "Investment Amount", "Transaction Cost", "Previous Shares", 
+            "Total Shares", "Pred. Sharpe", "Actual Sharpe", 
+            "Ticker Weight", "%"
         ])
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.setStyleSheet("QTableWidget { background-color: #2b2b2b; color: #ffffff; gridline-color: #555555; } QHeaderView::section { background-color: #3c3f41; color: #ffffff; }")
+        self.table.setStyleSheet(
+            "QTableWidget { background-color: #3c3f41; color: #ffffff; }"
+            "QTableWidget::item { border: 1px solid #555555; }"
+            "QTableWidget::item:selected { background-color: #2a82da; }"
+            "QHeaderView::section { background-color: #353535; color: #ffffff; border: 1px solid #555555; }"
+        )
         layout.addWidget(self.table)
         
-        # Alert message
-        self.alert_label = QLabel()
-        self.alert_label.setStyleSheet("color: red;")
-        self.alert_label.setVisible(False)
-        layout.addWidget(self.alert_label)
+        # Clear history button
+        self.clear_button = QPushButton("Clear Trade History")
+        self.clear_button.setObjectName("clear_button")
+        self.clear_button.clicked.connect(self.clear_trade_history)
+        self.clear_button.setStyleSheet("background-color: #ff4444; color: #ffffff;")
+        layout.addWidget(self.clear_button)
         
-        # Refresh button
-        refresh_button = QPushButton("Refresh Recommendations")
-        refresh_button.clicked.connect(self.update_recommendations)
-        layout.addWidget(refresh_button)
+        self.update_recommendations()
+        
+    def get_message_box_style(self):
+        """Return QMessageBox stylesheet based on theme."""
+        return f"""
+            QMessageBox {{ 
+                background-color: {'#353535' if self.is_dark_mode else '#f0f0f0'}; 
+                color: {'#ffffff' if self.is_dark_mode else 'black'}; 
+            }}
+            QMessageBox QLabel {{ 
+                color: {'#ffffff' if self.is_dark_mode else 'black'}; 
+            }}
+            QMessageBox QPushButton {{ 
+                background-color: {'#444444' if self.is_dark_mode else '#e0e0e0'}; 
+                color: {'#ffffff' if self.is_dark_mode else 'black'}; 
+                border: 1px solid {'#666666' if self.is_dark_mode else '#cccccc'}; 
+                padding: 5px 15px; 
+                border-radius: 3px; 
+            }}
+            QMessageBox QPushButton:hover {{ 
+                background-color: {'#555555' if self.is_dark_mode else '#d0d0d0'}; 
+            }}
+        """
+        
+    def set_theme(self, is_dark_mode):
+        """Apply light or dark theme to the panel."""
+        self.is_dark_mode = is_dark_mode
+        if is_dark_mode:
+            label_style = "color: #ffffff;"
+            combo_style = "background-color: #3c3f41; color: #ffffff; selection-background-color: #2a82da;"
+            button_style = "background-color: #ff4444; color: #ffffff;"
+            table_style = (
+                "QTableWidget { background-color: #3c3f41; color: #ffffff; }"
+                "QTableWidget::item { border: 1px solid #555555; }"
+                "QTableWidget::item:selected { background-color: #2a82da; }"
+                "QHeaderView::section { background-color: #353535; color: #ffffff; border: 1px solid #555555; }"
+            )
+        else:
+            label_style = "color: black;"
+            combo_style = "background-color: #ffffff; color: black; selection-background-color: #2a82da;"
+            button_style = "background-color: #ff4444; color: black;"
+            table_style = (
+                "QTableWidget { background-color: #ffffff; color: black; }"
+                "QTableWidget::item { border: 1px solid #cccccc; }"
+                "QTableWidget::item:selected { background-color: #2a82da; }"
+                "QHeaderView::section { background-color: #e0e0e0; color: black; border: 1px solid #cccccc; }"
+            )
+        
+        self.title_label.setStyleSheet(f"font-size: 14px; font-weight: bold; {label_style}")
+        self.filter_label.setStyleSheet(label_style)
+        self.trade_count_label.setStyleSheet(f"font-size: 12px; {label_style}")
+        self.filter_combo.setStyleSheet(combo_style)
+        self.clear_button.setStyleSheet(button_style)
+        self.table.setStyleSheet(table_style)
+        self.update_recommendations()
         
     def update_recommendations(self):
-        # Get filter selection
-        filter_type = self.filter_combo.currentText()
-        all_orders = get_orders()
-        
-        # Apply filter based on selection
-        if filter_type == "Buy Orders":
-            order_history = [order for order in all_orders if order['action'] == 'buy']
-        elif filter_type == "Sell Orders":
-            order_history = [order for order in all_orders if order['action'] == 'sell']
-        elif filter_type == "Cover Orders":
-            order_history = [order for order in all_orders if order['action'] == 'cover']
-        elif filter_type == "Short Orders":
-            order_history = [order for order in all_orders if order['action'] == 'short']
-        else:  # All Orders
-            order_history = all_orders
-        
-        portfolio_history = get_portfolio_history()
-        
-        # Update trade count label
-        self.trade_count_label.setText(f"Number of {filter_type}: {len(order_history)}")
-        
-        if not order_history:
-            self.show_no_recommendations_alert()
-            self.table.setRowCount(0)
-            return
-
-        # Create portfolio DataFrame
-        portfolio_df = pd.DataFrame(portfolio_history)
-        if not portfolio_df.empty:
-            portfolio_df['date'] = pd.to_datetime(portfolio_df['date']).dt.date
-            logger.debug(f"Portfolio DataFrame columns: {portfolio_df.columns}")
-            portfolio_map = portfolio_df.set_index('date')['value'].to_dict()
-        else:
-            portfolio_map = {}
-            logger.debug("Portfolio history is empty")
-
-        # Calculate cash balance incrementally
+        """Update the table with trade history."""
         try:
-            initial_cash = float(self.main_window.input_panel.investment_input.text())
-        except (ValueError, AttributeError) as e:
-            logger.warning(f"Could not retrieve investment amount, defaulting to 10000: {e}")
-            initial_cash = 10000.0
-        cash = initial_cash
-        cash_balances = []
-        for order in order_history:
-            if order['action'] in ['buy', 'short']:
-                cash -= order['investment_amount']
-            else:  # sell or cover
-                cash += order['investment_amount']
-            cash_balances.append(cash)
-
-        # Verify alignment between orders and portfolio history
-        if order_history and portfolio_history:
-            order_dates = set(pd.to_datetime(order['date']).date() for order in order_history)
-            portfolio_dates = set(pd.to_datetime(entry['date']).date() for entry in portfolio_history)
-            if not order_dates.issubset(portfolio_dates):
-                logger.warning("Some order dates are not present in portfolio history")
-
-        self.table.setRowCount(0)
-        for i, order in enumerate(order_history):
-            row_position = self.table.rowCount()
-            self.table.insertRow(row_position)
-            order_date = pd.to_datetime(order['date']).date()
-            portfolio_value = portfolio_map.get(order_date, cash_balances[i])
-            self.table.setItem(row_position, 0, QTableWidgetItem(str(order['date'].date())))
-            self.table.setItem(row_position, 1, QTableWidgetItem(order['ticker']))
-            self.table.setItem(row_position, 2, QTableWidgetItem(order['action'].capitalize()))
-            self.table.setItem(row_position, 3, QTableWidgetItem(str(order['shares_amount'])))
-            self.table.setItem(row_position, 4, QTableWidgetItem(f"${order['price']:,.2f}"))
-            self.table.setItem(row_position, 5, QTableWidgetItem(f"${order['investment_amount']:,.2f}"))
-            self.table.setItem(row_position, 6, QTableWidgetItem(str(order['previous_shares'])))
-            self.table.setItem(row_position, 7, QTableWidgetItem(str(order['new_total_shares'])))
-            self.table.setItem(row_position, 8, QTableWidgetItem(f"{order['sharpe']:.2f}"))
-            self.table.setItem(row_position, 9, QTableWidgetItem(f"{order.get('actual_sharpe', 0.0):.2f}"))
-            self.table.setItem(row_position, 10, QTableWidgetItem(f"${cash_balances[i]:,.2f}"))
-            self.table.setItem(row_position, 11, QTableWidgetItem(f"${portfolio_value:,.2f}"))
-
-        self.table.resizeColumnsToContents()
-        logger.debug(f"Table updated with {len(order_history)} orders")
-        
-    def show_no_recommendations_alert(self):
-        filter_type = self.filter_combo.currentText()
-        self.alert_label.setText(f"No {filter_type.lower()} generated for the selected parameters.")
-        self.alert_label.setVisible(True)
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Information)
-        msg.setWindowTitle("No Recommendations Generated")
-        msg.setText(f"No {filter_type.lower()} were generated for the selected date range and parameters.\n"
-                    "Adjust the risk level, investment amount, or date range.")
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.setStyleSheet("""
-            QMessageBox { background-color: #353535; color: white; }
-            QLabel { color: white; }
-            QPushButton { background-color: #444; color: white; border: 1px solid #666; padding: 5px 15px; border-radius: 3px; }
-            QPushButton:hover { background-color: #555; }
-        """)
-        msg.exec_()
+            orders = get_orders()
+            if not orders:
+                self.table.setRowCount(0)
+                self.trade_count_label.setText("Number of Orders: 0")
+                return
+            
+            orders_df = pd.DataFrame(orders)
+            filter_type = self.filter_combo.currentText()
+            
+            if filter_type == "Buy Orders":
+                orders_df = orders_df[orders_df['action'] == 'buy']
+            elif filter_type == "Sell Orders":
+                orders_df = orders_df[orders_df['action'] == 'sell']
+            
+            self.table.setRowCount(len(orders_df))
+            self.trade_count_label.setText(f"Number of Orders: {len(orders_df)}")
+            
+            for row, order in orders_df.iterrows():
+                self.table.setItem(row, 0, QTableWidgetItem(str(order.get('date', ''))))
+                self.table.setItem(row, 1, QTableWidgetItem(order.get('ticker', '')))
+                self.table.setItem(row, 2, QTableWidgetItem(order.get('action', '')))
+                self.table.setItem(row, 3, QTableWidgetItem(f"${order.get('portfolio_value', 0):,.2f}"))
+                self.table.setItem(row, 4, QTableWidgetItem(str(order.get('shares_amount', 0))))
+                self.table.setItem(row, 5, QTableWidgetItem(f"${order.get('price', 0):,.2f}"))
+                self.table.setItem(row, 6, QTableWidgetItem(f"${order.get('investment_amount', 0):,.2f}"))
+                self.table.setItem(row, 7, QTableWidgetItem(f"${order.get('transaction_cost', 0):,.2f}"))
+                self.table.setItem(row, 8, QTableWidgetItem(str(order.get('previous_shares', 0))))
+                self.table.setItem(row, 9, QTableWidgetItem(str(order.get('total_shares', 0))))
+                pred_sharpe = order.get('predicted_sharpe', 0)
+                self.table.setItem(row, 10, QTableWidgetItem(f"{pred_sharpe:.2f}" if pred_sharpe != -1 else "N/A"))
+                actual_sharpe = order.get('actual_sharpe', 0)
+                self.table.setItem(row, 11, QTableWidgetItem(f"{actual_sharpe:.2f}" if actual_sharpe != -1 else "N/A"))
+                self.table.setItem(row, 12, QTableWidgetItem(f"{order.get('ticker_weight', 0):.2%}"))
+                self.table.setItem(row, 13, QTableWidgetItem(f"{order.get('percentage', 0):.2%}"))
+                
+                for col in range(14):
+                    if self.table.item(row, col):
+                        self.table.item(row, col).setTextAlignment(Qt.AlignCenter)
+            
+            self.table.resizeColumnsToContents()
+        except Exception as e:
+            logger.error(f"Error updating recommendations: {e}")
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Critical)
+            msg.setWindowTitle("Error")
+            msg.setText(f"Failed to update trade history: {e}")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setStyleSheet(self.get_message_box_style())
+            msg.exec_()
+            
+    def clear_trade_history(self):
+        """Clear the trade history."""
+        try:
+            msg = QMessageBox()
+            msg.setWindowTitle("Confirm Clear")
+            msg.setText("Are you sure you want to clear the trade history?")
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg.setStyleSheet(self.get_message_box_style())
+            if msg.exec_() == QMessageBox.Yes:
+                # Logic to clear trade history (adjust as per your backend)
+                with open('data/orders.json', 'w') as f:
+                    f.write('[]')
+                self.update_recommendations()
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Information)
+                msg.setWindowTitle("Success")
+                msg.setText("Trade history cleared successfully.")
+                msg.setStandardButtons(QMessageBox.Ok)
+                msg.setStyleSheet(self.get_message_box_style())
+                msg.exec_()
+        except Exception as e:
+            logger.error(f"Error clearing trade history: {e}")
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Critical)
+            msg.setWindowTitle("Error")
+            msg.setText(f"Failed to clear trade history: {e}")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setStyleSheet(self.get_message_box_style())
+            msg.exec_()

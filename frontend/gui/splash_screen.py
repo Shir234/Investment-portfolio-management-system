@@ -83,3 +83,39 @@ class SplashScreen(QWidget):  # Changed from QSplashScreen to QWidget
     def finish(self, window):
         """Initiate fade-out transition to the main window"""
         self.fade_out(window)
+
+    def set_theme(self, is_dark_mode):
+        """Apply light or dark theme to the splash screen."""
+        self.is_dark_mode = is_dark_mode
+        if is_dark_mode:
+            container_style = """
+                QFrame#splash_container {
+                    background-color: #353535;
+                    border-radius: 10px;
+                    border: 2px solid #555;
+                }
+            """
+            label_style = """
+                QLabel {
+                    color: white;
+                    font-size: 24px;
+                    font-weight: bold;
+                }
+            """
+        else:
+            container_style = """
+                QFrame#splash_container {
+                    background-color: #f0f0f0;
+                    border-radius: 10px;
+                    border: 2px solid #ccc;
+                }
+            """
+            label_style = """
+                QLabel {
+                    color: black;
+                    font-size: 24px;
+                    font-weight: bold;
+                }
+            """
+        self.findChild(QFrame, "splash_container").setStyleSheet(container_style)
+        self.label.setStyleSheet(label_style)
