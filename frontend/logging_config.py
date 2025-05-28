@@ -155,3 +155,54 @@ def get_logger(name):
     Get a logger with the specified name.
     """
     return logging.getLogger(name)
+
+def get_isolated_logger(name, log_file_prefix=None, level=logging.INFO):
+    """
+    Get an isolated logger that only writes to its own file.
+    
+    Args:
+        name: Logger name
+        log_file_prefix: Custom log file prefix (defaults to name)
+        level: Logging level
+    
+    Returns:
+        Logger that only writes to its dedicated file
+    """
+    if log_file_prefix is None:
+        log_file_prefix = name
+    
+    # Create logs directory
+    if not os.path.exists('logs'):
+        os.makedirs('logs')
+    
+    # Create logger
+    logger = logging.getLogger(name)
+    
+    # Clear any existing handlers
+    logger.handlers.clear()
+    
+    # Create dedicated file handler
+    log_file = f"logs/{log_file_prefix}_{datetime.now().strftime('%Y%m%d')}.log"
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file,
+        maxBytes=5*1024*1024,  # 5MB
+        backupCount=3,
+        encoding='utf-8'
+    )
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s'
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(level)
+    
+    # Add handler to logger
+    logger.addHandler(file_handler)
+    logger.setLevel(level)
+    logger.propagate = False  # CRITICAL: Isolate from root logger
+    
+    # Track for cleanup
+    _all_handlers.append(file_handler)
+    
+    return logger

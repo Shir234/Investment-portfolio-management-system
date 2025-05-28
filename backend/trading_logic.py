@@ -5,6 +5,8 @@ import datetime
 import json
 import os
 
+from logging_config import get_isolated_logger
+
 # Create isolated trading logger - ONLY trading logic will appear in this log file
 logger = get_isolated_logger("trading_logic", "trading_only", logging.INFO)
 
@@ -12,7 +14,6 @@ logger = get_isolated_logger("trading_logic", "trading_only", logging.INFO)
 logger.info("="*60)
 logger.info("TRADING LOGIC SYSTEM INITIALIZED")
 logger.info("="*60)
-
 
 # Global variables for portfolio state
 orders = []
