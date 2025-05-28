@@ -1,6 +1,6 @@
 import pandas as pd
 import logging 
-from backend.trading_logic import run_trading_strategy, get_orders, get_portfolio_history
+from backend.trading_logic import run_integrated_trading_strategy, get_orders, get_portfolio_history
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
@@ -23,13 +23,23 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
         logger.debug(f"Merged data shape: {merged_data.shape}")
         
         logger.debug(f"Calling run_trading_strategy with mode={mode}, reset_state={reset_state}")
-        result = run_trading_strategy(
+        
+        # result = run_trading_strategy(
+        #     merged_data=merged_data,
+        #     investment_amount=investment_amount,
+        #     risk_level=risk_level,
+        #     start_date=start_date,
+        #     end_date=end_date,
+        #     data_manager=data_manager,
+        #     mode=mode,
+        #     reset_state=reset_state
+        # )
+        result = run_integrated_trading_strategy(
             merged_data=merged_data,
             investment_amount=investment_amount,
             risk_level=risk_level,
             start_date=start_date,
             end_date=end_date,
-            data_manager=data_manager,
             mode=mode,
             reset_state=reset_state
         )
