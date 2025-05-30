@@ -38,7 +38,8 @@ class AnalysisDashboard(QWidget):
             "Daily vs Periodic Sharpe", 
             "Sharpe Distribution", 
             "Portfolio Composition",
-            "Scatter Plot with Regression Line",
+            "Profitable Transactions %",
+            "Profitable Holding Period %",
             "Time Series Comparison",
             "Prediction Error Distribution",
             "Performance by Stock",
@@ -151,8 +152,10 @@ class AnalysisDashboard(QWidget):
             self.plot_sharpe_distribution(selected_tickers)
         elif graph_type == "Portfolio Composition":
             self.plot_portfolio_composition()
-        elif graph_type == "Scatter Plot with Regression Line":
-            self.plot_scatter_with_regression(selected_tickers)
+        elif graph_type == "Profitable Transactions %":
+            self.plot_profitable_transactions(selected_tickers)
+        elif graph_type == "Profitable Holding Period %":
+            self.plot_profitable_holding_period(selected_tickers)
         elif graph_type == "Time Series Comparison":
             self.plot_time_series_comparison(selected_tickers)
         elif graph_type == "Prediction Error Distribution":
@@ -455,75 +458,6 @@ class AnalysisDashboard(QWidget):
         ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
         self.chart_fig.tight_layout()
         
-    def plot_scatter_with_regression(self, selected_tickers):
-        ax = self.chart_fig.add_subplot(111)
-        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy()
-        filtered_data['date'] = pd.to_datetime(filtered_data['date'], utc=True)
-        filtered_data = filtered_data[(filtered_data['date'] >= self.start_date) & (filtered_data['date'] <= self.end_date)]
-        
-        if not selected_tickers:
-            ax.text(0.5, 0.5, 'Please select at least one ticker.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            return
-
-        if len(selected_tickers) > 5:
-            ax.text(0.5, 0.5, 'Please select 5 or fewer tickers for clarity.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            return
-
-        filtered_data = filtered_data[filtered_data['Ticker'].isin(selected_tickers)]
-        if filtered_data.empty:
-            ax.text(0.5, 0.5, 'No data for the selected tickers.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            return
-
-        filtered_data = filtered_data.dropna(subset=['Best_Prediction', 'Actual_Sharpe'])
-
-        if filtered_data.empty:
-            ax.text(0.5, 0.5, 'No data with Actual Sharpe != -1.0', horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            return
-
-        colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
-
-        overall_data = []
-        for idx, ticker in enumerate(selected_tickers):
-            ticker_data = filtered_data[filtered_data['Ticker'] == ticker]
-            overall_data.append(ticker_data)
-            sns.scatterplot(x='Best_Prediction', y='Actual_Sharpe', data=ticker_data, ax=ax, 
-                            color=colors[idx], alpha=0.7, label=f'{ticker} Data')
-
-        combined_data = pd.concat(overall_data)
-        sns.regplot(x='Best_Prediction', y='Actual_Sharpe', data=combined_data, ax=ax, 
-                    scatter=False, color='#ffffff' if self.is_dark_mode else '#2a82da', label='Regression Line')
-
-        correlation = combined_data['Actual_Sharpe'].corr(combined_data['Best_Prediction'])
-
-        min_val = min(filtered_data['Best_Prediction'].min(), filtered_data['Actual_Sharpe'].min())
-        max_val = max(filtered_data['Best_Prediction'].max(), filtered_data['Actual_Sharpe'].max())
-        ax.plot([min_val, max_val], [min_val, max_val], 'k--', label='y=x Line')
-
-        ax.text(0.05, 0.95, f'Correlation: {correlation:.4f}', transform=ax.transAxes, 
-                color='#ffffff' if self.is_dark_mode else 'black', fontsize=10, verticalalignment='top', 
-                bbox=dict(boxstyle='round', facecolor='#353535' if self.is_dark_mode else '#f0f0f0', alpha=0.8))
-
-        ax.set_title('Actual Sharpe vs Predicted Sharpe', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_xlabel('Predicted Sharpe Ratio', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_ylabel('Actual Sharpe Ratio', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        ax.grid(True, color='#444444' if self.is_dark_mode else '#cccccc')
-        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-        self.chart_fig.tight_layout()
-        
     def plot_time_series_comparison(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
         data = self.data_manager.data.copy()
@@ -714,7 +648,7 @@ class AnalysisDashboard(QWidget):
             ax.set_title('Ensemble Method Performance', color='#ffffff' if self.is_dark_mode else 'black')
 
         ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+        self.chart_fig.patch.set_facecolor('#353535' if this.is_dark_mode else '#ffffff')
         ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
         self.chart_fig.tight_layout()
         
@@ -769,3 +703,283 @@ class AnalysisDashboard(QWidget):
         self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
         ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
         self.chart_fig.tight_layout()
+        
+    def plot_profitable_transactions(self, selected_tickers):
+        """Plot percentage of profitable transactions over time"""
+        ax = self.chart_fig.add_subplot(111)
+        orders = get_orders()
+        
+        if not orders:
+            ax.text(0.5, 0.5, 'No trade history available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            return
+
+        orders_df = pd.DataFrame(orders)
+        orders_df['date'] = pd.to_datetime(orders_df['date'], utc=True)
+        orders_df = orders_df[(orders_df['date'] >= self.start_date) & (orders_df['date'] <= self.end_date)]
+
+        if orders_df.empty:
+            ax.text(0.5, 0.5, 'No trades in the selected date range', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            return
+
+        # Filter by selected tickers if any
+        if selected_tickers:
+            orders_df = orders_df[orders_df['ticker'].isin(selected_tickers)]
+
+        # Group buy and sell orders to calculate profits
+        buy_orders = orders_df[orders_df['action'] == 'buy'].copy()
+        sell_orders = orders_df[orders_df['action'] == 'sell'].copy()
+
+        if buy_orders.empty or sell_orders.empty:
+            ax.text(0.5, 0.5, 'Need both buy and sell orders to calculate profitability', 
+                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            return
+
+        # Calculate rolling profitability percentage
+        profit_data = []
+        cumulative_transactions = 0
+        profitable_transactions = 0
+
+        # Combine and sort all orders by date
+        all_orders = orders_df.sort_values('date')
+        position_tracker = {}  # Track positions by ticker
+
+        for _, order in all_orders.iterrows():
+            ticker = order['ticker']
+            action = order['action']
+            price = order['price']
+            quantity = order.get('quantity', 1)  # Default to 1 if not specified
+            date = order['date']
+
+            if ticker not in position_tracker:
+                position_tracker[ticker] = {'shares': 0, 'avg_cost': 0, 'total_cost': 0}
+
+            if action == 'buy':
+                # Update position
+                old_total_cost = position_tracker[ticker]['total_cost']
+                new_shares = position_tracker[ticker]['shares'] + quantity
+                new_total_cost = old_total_cost + (price * quantity)
+                position_tracker[ticker]['shares'] = new_shares
+                position_tracker[ticker]['total_cost'] = new_total_cost
+                position_tracker[ticker]['avg_cost'] = new_total_cost / new_shares if new_shares > 0 else 0
+
+            elif action == 'sell' and position_tracker[ticker]['shares'] > 0:
+                # Calculate profit/loss for this transaction
+                avg_cost = position_tracker[ticker]['avg_cost']
+                profit_per_share = price - avg_cost
+                total_profit = profit_per_share * quantity
+
+                cumulative_transactions += 1
+                if total_profit > 0:
+                    profitable_transactions += 1
+
+                # Update position
+                position_tracker[ticker]['shares'] -= quantity
+                if position_tracker[ticker]['shares'] <= 0:
+                    position_tracker[ticker] = {'shares': 0, 'avg_cost': 0, 'total_cost': 0}
+                else:
+                    position_tracker[ticker]['total_cost'] -= avg_cost * quantity
+
+                # Calculate percentage
+                profit_percentage = (profitable_transactions / cumulative_transactions) * 100
+                profit_data.append({'date': date, 'profit_percentage': profit_percentage})
+
+        if not profit_data:
+            ax.text(0.5, 0.5, 'No completed transactions found', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            return
+
+        profit_df = pd.DataFrame(profit_data)
+        
+        # Plot the data
+        ax.plot(profit_df['date'], profit_df['profit_percentage'], 
+                color='#4CAF50', linewidth=2, label='Profitable Transactions %')
+        
+        # Add 70% threshold line
+        ax.axhline(y=70, color='#ff9900', linestyle='--', linewidth=2, label='70% Target')
+        
+        # Fill area above/below 70% line
+        ax.fill_between(profit_df['date'], profit_df['profit_percentage'], 70, 
+                        where=(profit_df['profit_percentage'] >= 70), 
+                        alpha=0.3, color='#4CAF50', label='Above Target')
+        ax.fill_between(profit_df['date'], profit_df['profit_percentage'], 70, 
+                        where=(profit_df['profit_percentage'] < 70), 
+                        alpha=0.3, color='#F44336', label='Below Target')
+
+        # Get current percentage for title
+        current_percentage = profit_df['profit_percentage'].iloc[-1]
+        
+        ax.set_title(f'Profitable Transactions Over Time (Current: {current_percentage:.1f}%)', 
+                     color='#ffffff' if self.is_dark_mode else 'black')
+        ax.set_xlabel('Date', color='#ffffff' if self.is_dark_mode else 'black')
+        ax.set_ylabel('Profitable Transactions (%)', color='#ffffff' if self.is_dark_mode else 'black')
+        ax.set_ylim(0, 100)
+        ax.legend()
+        ax.grid(True, color='#444444' if self.is_dark_mode else '#cccccc')
+        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
+        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+        self.chart_fig.tight_layout()
+
+    def plot_profitable_holding_period(self, selected_tickers):
+        """Plot percentage of profitable holding periods over time"""
+        ax = self.chart_fig.add_subplot(111)
+        orders = get_orders()
+        
+        if not orders:
+            ax.text(0.5, 0.5, 'No trade history available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            return
+
+        orders_df = pd.DataFrame(orders)
+        orders_df['date'] = pd.to_datetime(orders_df['date'], utc=True)
+        orders_df = orders_df[(orders_df['date'] >= self.start_date) & (orders_df['date'] <= self.end_date)]
+
+        if orders_df.empty:
+            ax.text(0.5, 0.5, 'No trades in the selected date range', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            return
+
+        # Filter by selected tickers if any
+        if selected_tickers:
+            orders_df = orders_df[orders_df['ticker'].isin(selected_tickers)]
+
+        # Group buy and sell orders to calculate holding periods
+        buy_orders = orders_df[orders_df['action'] == 'buy'].copy()
+        sell_orders = orders_df[orders_df['action'] == 'sell'].copy()
+
+        if buy_orders.empty or sell_orders.empty:
+            ax.text(0.5, 0.5, 'Need both buy and sell orders to calculate holding periods', 
+                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            return
+
+        # Calculate holding periods and profitability
+        holding_data = []
+        completed_periods = 0
+        profitable_periods = 0
+
+        # Sort orders by date
+        all_orders = orders_df.sort_values('date')
+        position_tracker = {}  # Track positions by ticker
+
+        for _, order in all_orders.iterrows():
+            ticker = order['ticker']
+            action = order['action']
+            price = order['price']
+            quantity = order.get('quantity', 1)
+            date = order['date']
+
+            if ticker not in position_tracker:
+                position_tracker[ticker] = []
+
+            if action == 'buy':
+                # Add to position stack (FIFO)
+                position_tracker[ticker].append({
+                    'buy_price': price,
+                    'buy_date': date,
+                    'quantity': quantity
+                })
+
+            elif action == 'sell' and position_tracker[ticker]:
+                # Process sell order against existing positions (FIFO)
+                remaining_to_sell = quantity
+                
+                while remaining_to_sell > 0 and position_tracker[ticker]:
+                    position = position_tracker[ticker][0]
+                    position_quantity = position['quantity']
+                    
+                    if position_quantity <= remaining_to_sell:
+                        # Sell entire position
+                        holding_days = (date - position['buy_date']).days
+                        profit = (price - position['buy_price']) * position_quantity
+                        
+                        completed_periods += 1
+                        if profit > 0:
+                            profitable_periods += 1
+                        
+                        # Calculate percentage
+                        profit_percentage = (profitable_periods / completed_periods) * 100
+                        holding_data.append({
+                            'date': date, 
+                            'profit_percentage': profit_percentage,
+                            'holding_days': holding_days
+                        })
+                        
+                        remaining_to_sell -= position_quantity
+                        position_tracker[ticker].pop(0)
+                    else:
+                        # Partial sell
+                        holding_days = (date - position['buy_date']).days
+                        profit = (price - position['buy_price']) * remaining_to_sell
+                        
+                        completed_periods += 1
+                        if profit > 0:
+                            profitable_periods += 1
+                        
+                        # Calculate percentage
+                        profit_percentage = (profitable_periods / completed_periods) * 100
+                        holding_data.append({
+                            'date': date, 
+                            'profit_percentage': profit_percentage,
+                            'holding_days': holding_days
+                        })
+                        
+                        # Update remaining position
+                        position['quantity'] -= remaining_to_sell
+                        remaining_to_sell = 0
+
+        if not holding_data:
+            ax.text(0.5, 0.5, 'No completed holding periods found', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            return
+
+        holding_df = pd.DataFrame(holding_data)
+        
+        # Plot the data
+        ax.plot(holding_df['date'], holding_df['profit_percentage'], 
+                color='#2196F3', linewidth=2, label='Profitable Holding Periods %')
+        
+        # Add 70% threshold line
+        ax.axhline(y=70, color='#ff9900', linestyle='--', linewidth=2, label='70% Target')
+        
+        # Fill area above/below 70% line
+        ax.fill_between(holding_df['date'], holding_df['profit_percentage'], 70, 
+                        where=(holding_df['profit_percentage'] >= 70), 
+                        alpha=0.3, color='#2196F3', label='Above Target')
+        ax.fill_between(holding_df['date'], holding_df['profit_percentage'], 70, 
+                        where=(holding_df['profit_percentage'] < 70), 
+                        alpha=0.3, color='#F44336', label='Below Target')
+
+        # Get current percentage and average holding days for title
+        current_percentage = holding_df['profit_percentage'].iloc[-1]
+        avg_holding_days = holding_df['holding_days'].mean()
+        
+        ax.set_title(f'Profitable Holding Periods Over Time (Current: {current_percentage:.1f}%, Avg: {avg_holding_days:.0f} days)', 
+                     color='#ffffff' if self.is_dark_mode else 'black')
+        ax.set_xlabel('Date', color='#ffffff' if self.is_dark_mode else 'black')
+        ax.set_ylabel('Profitable Holding Periods (%)', color='#ffffff' if self.is_dark_mode else 'black')
+        ax.set_ylim(0, 100)
+        ax.legend()
+        ax.grid(True, color='#444444' if self.is_dark_mode else '#cccccc')
+        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
+        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+        self.chart_fig.tight_layout()
+    
