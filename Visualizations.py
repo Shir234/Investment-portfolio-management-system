@@ -7,7 +7,7 @@ from datetime import datetime
 import seaborn as sns
 
 # Read the CSV file
-df = pd.read_csv('20250426_all_tickers_results.csv')
+df = pd.read_csv('20250527_all_tickers_results.csv')
 
 # Convert Date column to datetime, handling timezone issues
 df['Date'] = pd.to_datetime(df['Date'], utc=True)

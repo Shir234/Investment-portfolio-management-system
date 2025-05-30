@@ -12,6 +12,7 @@ def setup_logging(log_level=logging.INFO):
     """
     Centralized logging configuration for the entire application.
     """
+
     # Create logs directory
     if not os.path.exists('logs'):
         os.makedirs('logs')
@@ -108,6 +109,7 @@ def cleanup_logging():
     """
     Properly close and flush all logging handlers.
     """
+
     print("Cleaning up logging handlers...")
     
     # Flush and close all handlers
@@ -135,6 +137,7 @@ def force_log_flush():
     """
     Force flush all log handlers immediately.
     """
+    
     for handler in _all_handlers:
         try:
             handler.flush()
