@@ -119,11 +119,11 @@ def main():
     # Log file locations for user reference
     from datetime import datetime
     today = datetime.now().strftime('%Y%m%d')
-    print(f"\n📋 Log files being created:")
-    print(f"  📊 Main App Log: logs/app_{today}.log")
-    print(f"  💰 Trading Only Log: logs/trading_only_{today}.log") 
-    print(f"  🔧 Pipeline Log: logs/pipeline_{today}.log")
-    print(f"  ✅ All logs will be flushed when you close the app\n")
+    print(f"\n Log files being created:")
+    print(f"   Main App Log: logs/app_{today}.log")
+    print(f"   Trading Only Log: logs/trading_only_{today}.log") 
+    print(f"   Pipeline Log: logs/pipeline_{today}.log")
+    print(f"   All logs will be flushed when you close the app\n")
     
     # Initialize the application
     app = QApplication(sys.argv)
