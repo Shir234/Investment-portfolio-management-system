@@ -1,5 +1,7 @@
-from PyQt5.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QLabel
-from PyQt5.QtCore import Qt, QPoint
+from PyQt5.QtWidgets import QMainWindow, QTabWidget, QWidget, QPushButton, QToolBar, QAction, QStackedLayout, QLabel
+from PyQt5.QtGui import QIcon, QPalette, QColor, QFont
+from PyQt5.QtCore import Qt
+
 from gui.input_panel import InputPanel
 from gui.analysis_dashboard import AnalysisDashboard
 from gui.recommendation_panel import RecommendationPanel
@@ -8,137 +10,100 @@ class MainWindow(QMainWindow):
     def __init__(self, data_manager, parent=None):
         super().__init__(parent)
         self.data_manager = data_manager
-        self.is_dark_mode = True  # Default to dark mode
+        self.is_dark_mode = True
         self.setWindowTitle("Investment Portfolio Management System")
-        self.setGeometry(100, 100, 800, 600)
+        self.setMinimumSize(800, 600)
+        self.resize(1280, 800)
 
-        # Remove default title bar
-        self.setWindowFlags(Qt.FramelessWindowHint)
+        # Apply initial theme
+        self.apply_theme()
 
-        # Create central widget and main layout
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        # Setup UI components
+        self._create_toolbar()
+        self._create_tabs()
 
-        # Custom title bar
-        self.title_bar = QWidget()
-        self.title_bar.setFixedHeight(30)
-        self.title_bar.setStyleSheet("background-color: #3c3f41;" if self.is_dark_mode else "background-color: #e0e0e0;")
-        title_bar_layout = QHBoxLayout(self.title_bar)
-        title_bar_layout.setContentsMargins(10, 0, 10, 0)
+    def _create_toolbar(self):
+        toolbar = QToolBar("Main Toolbar")
+        toolbar.setMovable(False)
+        toolbar.setIconSize(Qt.QSize(24, 24))
+        self.addToolBar(Qt.TopToolBarArea, toolbar)
 
-        # Title label
-        self.title_label = QLabel("Investment Portfolio Management System")
-        self.title_label.setStyleSheet("color: #ffffff;" if self.is_dark_mode else "color: black;")
-        title_bar_layout.addWidget(self.title_label)
+        # Theme toggle action
+        self.theme_action = QAction(QIcon("icons/theme.png"), "Toggle Theme", self)
+        self.theme_action.setToolTip("Switch between Dark and Light mode")
+        self.theme_action.triggered.connect(self.toggle_theme)
+        toolbar.addAction(self.theme_action)
 
         # Spacer
-        title_bar_layout.addStretch()
+        spacer = QWidget()
+        spacer.setSizePolicy(spacer.Expanding, spacer.Preferred)
+        toolbar.addWidget(spacer)
 
-        # Theme toggle button
-        self.theme_button = QPushButton("🌙")
-        self.theme_button.setFixedSize(24, 24)
-        self.theme_button.clicked.connect(self.toggle_theme)
-        self.theme_button.setStyleSheet("background-color: #2a82da; color: #ffffff; border-radius: 12px;" if self.is_dark_mode else "background-color: #2a82da; color: black; border-radius: 12px;")
-        title_bar_layout.addWidget(self.theme_button)
+        # Logo or title label
+        logo = QLabel("<b>PortfolioPro</b>")
+        logo.setFont(QFont("Segoe UI", 14))
+        toolbar.addWidget(logo)
 
-        # Window control buttons
-        minimize_button = QPushButton("−")
-        minimize_button.setFixedSize(24, 24)
-        minimize_button.clicked.connect(self.showMinimized)
-        minimize_button.setStyleSheet("background-color: #3c3f41; color: #ffffff;" if self.is_dark_mode else "background-color: #e0e0e0; color: black;")
-        title_bar_layout.addWidget(minimize_button)
-
-        maximize_button = QPushButton("□")
-        maximize_button.setFixedSize(24, 24)
-        maximize_button.clicked.connect(self.toggle_maximize)
-        maximize_button.setStyleSheet("background-color: #3c3f41; color: #ffffff;" if self.is_dark_mode else "background-color: #e0e0e0; color: black;")
-        title_bar_layout.addWidget(maximize_button)
-
-        close_button = QPushButton("✕")
-        close_button.setFixedSize(24, 24)
-        close_button.clicked.connect(self.close)
-        close_button.setStyleSheet("background-color: #ff4444; color: #ffffff;")
-        title_bar_layout.addWidget(close_button)
-
-        main_layout.addWidget(self.title_bar)
-
-        # Create tab widget
+    def _create_tabs(self):
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet("QTabWidget::pane { background-color: #2b2b2b; } QTabBar::tab { background-color: #3c3f41; color: #ffffff; } QTabBar::tab:selected { background-color: #2a82da; }" if self.is_dark_mode else "QTabWidget::pane { background-color: #ffffff; } QTabBar::tab { background-color: #e0e0e0; color: black; } QTabBar::tab:selected { background-color: #2a82da; }")
-        main_layout.addWidget(self.tabs)
+        self.tabs.setTabPosition(QTabWidget.North)
+        self.tabs.setDocumentMode(True)
+        self.tabs.setElideMode(Qt.ElideRight)
+        self.tabs.setStyleSheet(self._tab_style())
 
-        # Initialize panels
-        self.input_panel = InputPanel(data_manager, self)
-        self.dashboard_panel = AnalysisDashboard(data_manager, self)
-        self.recommendation_panel = RecommendationPanel(data_manager, self)
+        self.input_panel = InputPanel(self.data_manager, self)
+        self.dashboard_panel = AnalysisDashboard(self.data_manager, self)
+        self.recommendation_panel = RecommendationPanel(self.data_manager, self)
 
-        # Add panels to tabs
-        self.tabs.addTab(self.input_panel, "Portfolio Setup")
-        self.tabs.addTab(self.dashboard_panel, "Dashboard")
-        self.tabs.addTab(self.recommendation_panel, "Trading History")
+        self.tabs.addTab(self.input_panel, QIcon("icons/portfolio.png"), "Portfolio Setup")
+        self.tabs.addTab(self.dashboard_panel, QIcon("icons/dashboard.png"), "Dashboard")
+        self.tabs.addTab(self.recommendation_panel, QIcon("icons/history.png"), "History")
 
-        # Variables for dragging
-        self.dragging = False
-        self.drag_position = QPoint()
-
-    def mousePressEvent(self, event):
-        """Handle mouse press to start dragging."""
-        if event.button() == Qt.LeftButton and self.title_bar.underMouse():
-            self.dragging = True
-            self.drag_position = event.globalPos() - self.pos()
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        """Handle mouse move to drag the window."""
-        if self.dragging and event.buttons() == Qt.LeftButton:
-            self.move(event.globalPos() - self.drag_position)
-            event.accept()
-
-    def mouseReleaseEvent(self, event):
-        """Handle mouse release to stop dragging."""
-        if event.button() == Qt.LeftButton:
-            self.dragging = False
-            event.accept()
-
-    def toggle_maximize(self):
-        if self.isMaximized():
-            self.showNormal()
-        else:
-            self.showMaximized()
+        central = QWidget()
+        layout = QStackedLayout(central)
+        layout.addWidget(self.tabs)
+        self.setCentralWidget(central)
 
     def toggle_theme(self):
-        """Toggle between light and dark mode."""
         self.is_dark_mode = not self.is_dark_mode
-        
-        # Update title bar and theme button
-        self.title_bar.setStyleSheet("background-color: #3c3f41;" if self.is_dark_mode else "background-color: #e0e0e0;")
-        self.title_label.setStyleSheet("color: #ffffff;" if self.is_dark_mode else "color: black;")
-        self.theme_button.setText("🌙" if self.is_dark_mode else "☀")
-        self.theme_button.setStyleSheet("background-color: #2a82da; color: #ffffff; border-radius: 12px;" if self.is_dark_mode else "background-color: #2a82da; color: black; border-radius: 12px;")
-        
-        # Update window control buttons
-        for button in self.findChildren(QPushButton):
-            if button.text() in ["−", "□"]:
-                button.setStyleSheet("background-color: #3c3f41; color: #ffffff;" if self.is_dark_mode else "background-color: #e0e0e0; color: black;")
-            elif button.text() == "✕":
-                button.setStyleSheet("background-color: #ff4444; color: #ffffff;")
-
-        # Update main window and tabs
-        self.setStyleSheet("background-color: #353535; color: #ffffff;" if self.is_dark_mode else "background-color: #f0f0f0; color: black;")
-        self.tabs.setStyleSheet("QTabWidget::pane { background-color: #2b2b2b; } QTabBar::tab { background-color: #3c3f41; color: #ffffff; } QTabBar::tab:selected { background-color: #2a82da; }" if self.is_dark_mode else "QTabWidget::pane { background-color: #ffffff; } QTabBar::tab { background-color: #e0e0e0; color: black; } QTabBar::tab:selected { background-color: #2a82da; }")
-        
-        # Propagate theme to panels
+        self.apply_theme()
+        self.tabs.setStyleSheet(self._tab_style())
         self.input_panel.set_theme(self.is_dark_mode)
         self.dashboard_panel.set_theme(self.is_dark_mode)
         self.recommendation_panel.set_theme(self.is_dark_mode)
 
-    def update_dashboard(self):
-        """Method to refresh the dashboard, called by InputPanel"""
-        self.dashboard_panel.update_dashboard()
-        self.recommendation_panel.update_recommendations()
+    def apply_theme(self):
+        palette = QPalette()
+        if self.is_dark_mode:
+            palette.setColor(QPalette.Window, QColor(45, 45, 45))
+            palette.setColor(QPalette.WindowText, Qt.white)
+            palette.setColor(QPalette.Base, QColor(30, 30, 30))
+            palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
+            palette.setColor(QPalette.ToolTipBase, Qt.white)
+            palette.setColor(QPalette.ToolTipText, Qt.white)
+            palette.setColor(QPalette.Text, Qt.white)
+            palette.setColor(QPalette.Button, QColor(53, 53, 53))
+            palette.setColor(QPalette.ButtonText, Qt.white)
+            palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
+            palette.setColor(QPalette.HighlightedText, Qt.black)
+            self.theme_action.setIcon(QIcon("icons/sun.png"))
+        else:
+            palette = QPalette()
+            self.theme_action.setIcon(QIcon("icons/moon.png"))
+        self.setPalette(palette)
 
-    def update_recommendations(self):
-        """Method to refresh the recommendations, called by InputPanel"""
-        self.recommendation_panel.update_recommendations()
+    def _tab_style(self):
+        if self.is_dark_mode:
+            return """
+                QTabWidget::pane { border: none; background: #353535; }
+                QTabBar::tab { background: #3c3f41; color: #cfd2d7; padding: 10px; border-top-left-radius: 8px; border-top-right-radius: 8px; }
+                QTabBar::tab:selected { background: #2a82da; color: white; }
+                QTabBar::tab:hover { background: #4c5053; }
+            """
+        else:
+            return """
+                QTabWidget::pane { border: none; background: #f0f0f0; }
+                QTabBar::tab { background: #e0e0e0; color: #333; padding: 10px; border-top-left-radius: 8px; border-top-right-radius: 8px; }
+                QTabBar::tab:selected { background: #2a82da; color: white; }
+                QTabBar::tab:hover { background: #d4d4d4; }
+            """
