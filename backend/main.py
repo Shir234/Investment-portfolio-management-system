@@ -27,7 +27,7 @@ if __name__ == "__main__":
     import yfinance as yf
     
     # Call the main pipeline function
-    pipeline_results = run_pipeline(logger, date_folder, current_date, tickers_file="20250426_tickers.csv", start_date="2013-01-01", end_date="2024-01-01")
+    pipeline_results = run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers_av.csv", start_date="2013-01-01", end_date="2024-01-01")
     
     # Exit with appropriate code
     if pipeline_results['successful'] > 0:

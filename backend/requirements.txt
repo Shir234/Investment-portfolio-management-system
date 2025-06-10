@@ -1,0 +1,13 @@
+yfinance
+pandas
+pandas-ta
+numpy
+scikit-learn
+matplotlib
+seaborn
+tensorflow
+scikeras
+xgboost
+lightgbm
+ipykernel
+pandas-datareader

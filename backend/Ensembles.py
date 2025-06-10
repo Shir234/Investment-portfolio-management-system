@@ -6,581 +6,540 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
-
+from sklearn.feature_selection import VarianceThreshold
+from Models_Creation_and_Training import create_rolling_window_data
+import optuna
+from scipy.stats import pearsonr
 import Models_Creation_and_Training as Models_Creation_and_Training
 from Logging_and_Validation import log_data_stats, verify_prediction_scale
+import traceback
 
-# ===============================================================================
-# Ensembles
-# ===============================================================================
-def prepare_lstm_data(X, time_steps=5, features=None):
+def prepare_lstm_data(X, time_steps=3, features=None):
     """
-    Prepare data for LSTM by creating sequences of time_steps.
-    For PCA-transformed data, this reshapes it into the proper 3D format.
-
-    Parameters:
-    - X: Input data, can be 1D, 2D, or already 3D.
-    - time_steps: Number of time steps in the sequence. Default is 1 for non-time series data.
-    - features: Number of features per time step. If None, it will be inferred from the data.
-
-    Returns:
-    - Reshaped data with shape (samples, time_steps, features)
+    Prepare data for LSTM prediction with rolling windows
     """
-
-    # Convert DataFrame to NumPy array if necessary
     if hasattr(X, 'values'):
         X = X.values
-    
-    # Check if we have enough samples for the time steps
-    if len(X) < time_steps:
-        raise ValueError(f"Not enough samples ({len(X)}) for the requested time steps ({time_steps})")
-    
-    # Create rolling window data
+    if features is not None:
+        X = X[:, features]
+    if len(X) < time_steps + 1:
+        raise ValueError(f"Not enough samples ({len(X)}) for time_steps ({time_steps})")
     X_rolled = []
-    for i in range(len(X) - time_steps + 1):
+    for i in range(len(X) - time_steps):
         X_rolled.append(X[i:i + time_steps])
-    
     return np.array(X_rolled)
 
-# Linearly Weighted Ensemble
-def linearly_weighted_ensemble(models_results, X_test, target_scaler, feature_scaler, logger=None):
+# Helper function to get dynamic clipping range
+def get_dynamic_clipping_range(models_results, logger=None):
     """
-    Create a linearly weighted ensemble prediction across different model types.
-    Parameters:
-    - models_results: Dictionary containing model results
-    - X_test: Test data to make predictions on (DataFrame or NumPy array)
-
-    Returns:
-    - Final ensemble prediction
+    Calculate dynamic clipping range based on validation data
     """
-
-    # Convert DataFrame to NumPy array if necessary - NO ADDITIONAL SCALING
-    X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
+    y_values = []
     
-    # Store model weights and predictions, along with their lengths
+    for model_name, result in models_results.items():
+        # Collect y values from regular models
+        if 'Y_val_best' in result and result['Y_val_best'] is not None:
+            y_values.extend(result['Y_val_best'])
+        
+        # Collect y values from LSTM fold metrics
+        if model_name.strip() == 'LSTM' and isinstance(result, dict) and 'fold_metrics' in result:
+            for fold in result['fold_metrics']:
+                if 'y_val' in fold and fold['y_val'] is not None:
+                    if hasattr(fold['y_val'], 'values'):
+                        y_values.extend(fold['y_val'].values)
+                    else:
+                        y_values.extend(fold['y_val'])
+    
+    # Calculate percentiles if we have data
+    if y_values:
+        y_min = np.percentile(y_values, 1)  # 1st percentile
+        y_max = np.percentile(y_values, 99)  # 99th percentile
+    else:
+        # Fallback to reasonable defaults
+        y_min, y_max = -5.0, 5.0
+        if logger:
+            logger.warning("No validation data found for clipping range, using defaults [-5.0, 5.0]")
+    
+    if logger:
+        logger.info(f"Dynamic clipping range: [{y_min:.4f}, {y_max:.4f}]")
+    
+    return y_min, y_max
+
+
+# Linearly Weighted Ensemble
+def linearly_weighted_ensemble(models_results, X_test, target_scaler, logger=None):
+
+    if not models_results:
+        raise ValueError("Empty models_results dictionary")
+    
+    X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
+
+    if len(X_test_array) < 3 and any('LSTM' in model_name for model_name in models_results):
+        raise ValueError("X_test too small for LSTM (needs >= 3 samples)")
+
+    if logger:
+        logger.info(f"Models results keys: {list(models_results.keys())}")
+        for name, res in models_results.items():
+            logger.info(f"{name} keys: {list(res.keys()) if isinstance(res, dict) else 'List of length ' + str(len(res))}")
+
     weights = []
     model_predictions = []
-    pred_lengths = []
+    target_len = len(X_test)
 
-    # Calculate Mean Absolute Error (MAE) for each model
-    # First pass: calculate weights based on MAE
+    # Get dynamic clipping range
+    clip_min, clip_max = get_dynamic_clipping_range(models_results, logger)
+
     for model_name, result in models_results.items():
-        if 'best_model' not in result or result['best_model'] is None:
-            continue
-
-        # This handles the shape mismatch by computing MAE safely
-        best_pred = result.get('best_model_prediction')
-        y_val = result.get('Y_val_best')
-
-        if best_pred is None or y_val is None:
-            if logger:
-                logger.warning(f"Model {model_name} missing predictions or validation data")
-            continue
-
-        # Make sure arrays have the same length for MAE calculation
-        min_length = min(len(best_pred), len(y_val))
-        if min_length == 0:
-            if logger:
-                logger.warning(f"Empty predictions for {model_name}")
-            continue
-
-        # Compute MAE on the overlap
-        mae_value = np.mean(np.abs(best_pred[:min_length] - y_val[:min_length]))
-        if mae_value <= 0:
-            if logger:
-                logger.warning(f"Invalid MAE ({mae_value}) for {model_name}")
-            continue
-
-        # Prepare predictions based on model type
         try:
+            if logger:
+                logger.info(f"Processing {model_name} for linearly_weighted_ensemble")
+            
+            # Handle LSTM results
+            if model_name.strip() == 'LSTM' and isinstance(result, dict) and 'fold_metrics' in result:
+                fold_metrics = result['fold_metrics']
+                if logger:
+                    logger.info(f"LSTM fold_metrics keys: {[list(f.keys()) for f in fold_metrics]}")
+                if not isinstance(fold_metrics, list):
+                    if logger:
+                        logger.warning(f"LSTM fold_metrics is not a list, skipping")
+                    continue
+               
+                best_fold_idx = np.argmin([r.get('MSE', float('inf')) for r in fold_metrics])
+                fold_result = fold_metrics[best_fold_idx]
+                model = fold_result.get('model')
+                best_params = fold_result.get('Parameters', {})
+                r2_value = fold_result.get('R2', 0.0)
+                rmse = fold_result.get('RMSE', fold_result.get('MSE', float('inf')) ** 0.5)
+
+                if model is None:
+                    if logger:
+                        logger.warning(f"LSTM fold {best_fold_idx} missing model")
+                    continue
+            else:
+                # Handle non-LSTM models
+                if 'retrained_model' not in result or result['retrained_model'] is None:
+                    if logger:
+                        logger.warning(f"No retrained model for {model_name}, using best_model")
+                    if 'best_model' not in result or result['best_model'] is None:
+                        if logger:
+                            logger.warning(f"No best_model for {model_name}, skipping")
+                        continue
+
+                    model = result['best_model']
+                    best_fold_idx = np.argmin(result['best_rmse_scores'])
+                    r2_value = result['best_r2_scores'][best_fold_idx]
+                    rmse = result['best_rmse_scores'][best_fold_idx]
+
+                else:
+                    model = result['retrained_model']
+                    r2_value = result.get('retrained_r2', max(result['best_r2_scores']))
+                    rmse = result.get('retrained_rmse', min(result['best_rmse_scores']))
+                best_params = result.get('best_params', {})
+
+            if r2_value <= 0.5:
+                if logger:
+                    logger.warning(f"Skipping {model_name} due to low R²: {r2_value}")
+                continue
+
+            # Generate predictions
             if model_name.strip() == 'LSTM':
-                # Reshape for LSTM
-                X_test_lstm = prepare_lstm_data(X_test_array, time_steps=5)
+                time_steps = best_params.get('time_steps', 3)
+                X_test_lstm = prepare_lstm_data(X_test_array, time_steps=time_steps)
                 if len(X_test_lstm) == 0:
                     if logger:
                         logger.warning(f"Not enough data for LSTM predictions")
                     continue
-                model_pred = result['best_model'].predict(X_test_lstm).flatten()
+
+                model_pred = model.predict(X_test_lstm, verbose=0).flatten()
+                # Pad predictions to match target length
+                model_pred = np.pad(model_pred, (0, max(0, target_len - len(model_pred))), 
+                                    mode='constant', constant_values=np.mean(model_pred) if len(model_pred) > 0 else 0)
             else:
-                # For other models
-                model_pred = result['best_model'].predict(X_test_array).flatten()
-                
-            # Store prediction and weight
+                model_pred = model.predict(X_test_array).flatten()
+                model_pred = model_pred[:target_len]
+
+            # Apply inverse transform and clipping
+            model_pred = target_scaler.inverse_transform(model_pred.reshape(-1, 1)).flatten()
+            model_pred = np.clip(model_pred, clip_min, clip_max)
             model_predictions.append(model_pred)
-            weights.append(1.0 / mae_value)  # Inverse MAE as weight
-            pred_lengths.append(len(model_pred))
+            
+            # Weighting: emphasize low RMSE and high R²
+            weight = (r2_value + 1) / (rmse ** 2) if rmse > 0 else 0.0
+            weights.append(weight)
             
             if logger:
-                logger.info(f"Model {model_name} - MAE: {mae_value:.4f}, Prediction shape: {model_pred.shape}")
-                
+                logger.info(f"Model {model_name} - R²: {r2_value:.4f}, RMSE: {rmse:.4f}, "
+                           f"Weight: {weight:.4f}, Prediction shape: {model_pred.shape}")
+        
         except Exception as e:
             if logger:
                 logger.error(f"Error generating predictions for {model_name}: {e}")
             continue
 
-        # Check if we have any valid predictions
     if not model_predictions:
         raise ValueError("No valid model predictions available")
 
-    # Normalize weights to sum to 1
     weights = np.array(weights)
+    # Ensure minimum weight to prevent zero weights
+    min_weight = 0.05 * np.max(weights)
+    weights = np.where(weights < min_weight, min_weight, weights)
     weights = weights / np.sum(weights)
-    
     if logger:
-        logger.info(f"Model weights: {weights}")
-        logger.info(f"Prediction lengths: {pred_lengths}")
-    
-    # Find the shortest prediction length to standardize sizes
-    min_pred_length = min(pred_lengths)
-    
-    # Compute the final ensemble prediction (using the shortest length to avoid shape issues)
-    final_prediction = np.zeros(min_pred_length, dtype=np.float64)
-    
-    # Apply weighted predictions
-    for i, (pred, weight) in enumerate(zip(model_predictions, weights)):
-        final_prediction += weight * pred[:min_pred_length]
-    
-    # Inverse transform to get back to original scale
-    final_prediction_original = target_scaler.inverse_transform(final_prediction.reshape(-1, 1)).flatten()
+        logger.info(f"Model weights: {dict(zip(models_results.keys(), weights))}")
 
-    return final_prediction_original
+    final_prediction = np.zeros(target_len, dtype=np.float64)
+    for pred, weight in zip(model_predictions, weights):
+        final_prediction += weight * pred
 
+    final_prediction = np.clip(final_prediction, clip_min, clip_max)
+
+    return final_prediction
 
 # Equal Weights Ensemble
-def equal_weighted_ensemble(models_results, X_test, target_scaler, feature_scaler, logger=None):
-    """
-    Calculate an equal weighted ensemble prediction.
-    Parameters:
-    - models_results: Dictionary containing model results
-    - X_test: Test data to make predictions on (DataFrame or NumPy array)
-
-    Returns:
-    - Final ensemble prediction
-    """
+def equal_weighted_ensemble(models_results, X_test, target_scaler, logger=None):
     
-    # Convert DataFrame to NumPy array if necessary - NO ADDITIONAL SCALING
     X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
-
     model_predictions = []
-    pred_lengths = []
-    
-    # Prepare predictions based on model type
-    # First pass: generate predictions
-    for model_name, result in models_results.items():
-        if 'best_model' not in result or result['best_model'] is None:
-            continue
+    target_len = len(X_test)
 
+    # Get dynamic clipping range
+    clip_min, clip_max = get_dynamic_clipping_range(models_results, logger)
+
+    for model_name, result in models_results.items():
         try:
+            if logger:
+                logger.info(f"Processing {model_name} for equal_weighted_ensemble")
+                logger.info(f"{model_name} result keys: {list(result.keys())}")
+            
+            # Handle LSTM results
+            if model_name.strip() == 'LSTM' and isinstance(result, dict) and 'fold_metrics' in result:
+                fold_metrics = result['fold_metrics']
+                if logger:
+                    logger.info(f"LSTM fold_metrics keys: {[list(f.keys()) for f in fold_metrics]}")
+                if not isinstance(fold_metrics, list):
+                    if logger:
+                        logger.warning(f"LSTM fold_metrics is not a list, skipping")
+                    continue
+
+                best_fold_idx = np.argmin([r.get('MSE', float('inf')) for r in fold_metrics])
+                fold_result = fold_metrics[best_fold_idx]
+                model = fold_result.get('model')
+                best_params = fold_result.get('Parameters', {})
+                
+                if model is None:
+                    if logger:
+                        logger.warning(f"LSTM fold {best_fold_idx} missing model")
+                    continue
+           
+            else:
+                # Handle non-LSTM models
+                if 'retrained_model' not in result or result['retrained_model'] is None:
+                    if logger:
+                        logger.warning(f"No retrained model for {model_name}, using best_model")
+                    if 'best_model' not in result or result['best_model'] is None:
+                        if logger:
+                            logger.warning(f"No best_model for {model_name}, skipping")
+                        continue
+                    model = result['best_model']
+                else:
+                    model = result['retrained_model']
+                best_params = result.get('best_params', {})
+
+            # Generate predictions
             if model_name.strip() == 'LSTM':
-                # Reshape for LSTM, using data directly
-                X_test_lstm = prepare_lstm_data(X_test_array, time_steps=5)
+                time_steps = best_params.get('time_steps', 3)
+                X_test_lstm = prepare_lstm_data(X_test_array, time_steps=time_steps)
                 if len(X_test_lstm) == 0:
                     if logger:
                         logger.warning(f"Not enough data for LSTM predictions")
                     continue
-                model_pred = result['best_model'].predict(X_test_lstm).flatten()
-            else:
-                # For other models, use data directly
-                model_pred = result['best_model'].predict(X_test_array).flatten()
 
-            # Store prediction
-            model_predictions.append(model_pred)
-            pred_lengths.append(len(model_pred))
+                model_pred = model.predict(X_test_lstm, verbose=0).flatten()
+                # Pad predictions to match target length
+                model_pred = np.pad(model_pred, (0, max(0, target_len - len(model_pred))), 
+                                    mode='constant', constant_values=np.mean(model_pred) if len(model_pred) > 0 else 0)
             
+            else:
+                model_pred = model.predict(X_test_array).flatten()
+                model_pred = model_pred[:target_len]
+            # Apply inverse transform and clipping
+            model_pred = target_scaler.inverse_transform(model_pred.reshape(-1, 1)).flatten()
+            model_pred = np.clip(model_pred, clip_min, clip_max)
+            model_predictions.append(model_pred)
+
             if logger:
                 logger.info(f"Model {model_name} - Prediction shape: {model_pred.shape}")
-                
         except Exception as e:
             if logger:
                 logger.error(f"Error generating predictions for {model_name}: {e}")
             continue
-
+    
     if not model_predictions:
         raise ValueError("No predictions available for ensemble methods")
-
-    # Find the shortest prediction length
-    min_pred_length = min(pred_lengths) if pred_lengths else 0
-    if min_pred_length == 0:
-        raise ValueError("No valid predictions with length > 0")
-        
-    if logger:
-        logger.info(f"Using minimum prediction length: {min_pred_length}")
-        
-    # Calculate weight (equal for all models)
+    
     weight = 1.0 / len(model_predictions)
+    final_prediction = np.zeros(target_len, dtype=np.float64)
 
-    # Compute the final ensemble prediction
-    final_prediction = np.zeros(min_pred_length, dtype=np.float64)
-
-    # Apply weighted predictions
     for pred in model_predictions:
-        final_prediction += weight * pred[:min_pred_length]
+        final_prediction += weight * pred
     
-    # Inverse transform to get back to original scale
-    final_prediction_original = target_scaler.inverse_transform(final_prediction.reshape(-1, 1)).flatten()
+    final_prediction = np.clip(final_prediction, clip_min, clip_max)
 
-    return final_prediction_original
+    return final_prediction
 
-# # Gradient Boosting Decision Tree Ensemble
-# def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, feature_scaler, logger=None):
-#     """
-#     Use GBDT to predict based on the predictions of base models.
-#     Implements a validation split approach to prevent data leakage.
-#     Parameters:
-#     - models_results: Dictionary containing model results, with 'best_model' key for each model.
-#     - X_train: Training data features to generate meta-features for training GBDT.
-#     - X_test: Test data features for final prediction.
-#     - Y_train_val: Training labels for fitting the GBDT model.
-    
-#     Returns: 
-#     - GBDT ensemble prediction for test data.
-#     """
 
-#     # Convert to arrays without scaling - data is already PCA-transformed
-#     X_train_array = X_train.values if hasattr(X_train, 'values') else X_train
-#     X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
-#     Y_train_array = Y_train.values if hasattr(Y_train, 'values') else Y_train
+# GBDT Ensemble
+def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, logger):
 
-#     # Split training data into training and validation sets to prevent leakage
-#     X_meta_train, X_meta_val, Y_meta_train, Y_meta_val = train_test_split(
-#         X_train_array, Y_train_array, test_size=0.2, random_state=42, shuffle=False
-#     )
-
-#     # Track metadata about models and predictions
-#     train_meta_features = {}
-#     val_meta_features = {}
-#     test_meta_features = {}
-#     prediction_lengths = {'train': [], 'val': [], 'test': []}
-
-#     for model_name, result in models_results.items():
-#         if 'best_model' not in result or result['best_model'] is None:
-#             continue
-
-#         model = result['best_model']
-
-#         try:
-#             # Generate predictions for all three sets
-#             if model_name.strip() == 'LSTM':
-#                 # Reshape for LSTM
-#                 X_meta_train_lstm = prepare_lstm_data(X_meta_train, time_steps=5)
-#                 X_meta_val_lstm = prepare_lstm_data(X_meta_val, time_steps=5)
-#                 X_test_lstm = prepare_lstm_data(X_test_array, time_steps=5)
-                
-#                 train_pred = model.predict(X_meta_train_lstm).flatten()
-#                 val_pred = model.predict(X_meta_val_lstm).flatten()
-#                 test_pred = model.predict(X_test_lstm).flatten()
-#             else:
-#                 train_pred = model.predict(X_meta_train).flatten()
-#                 val_pred = model.predict(X_meta_val).flatten()
-#                 test_pred = model.predict(X_test_array).flatten()
-            
-#             # Store predictions for each model separately to handle length differences
-#             train_meta_features[model_name] = train_pred
-#             val_meta_features[model_name] = val_pred
-#             test_meta_features[model_name] = test_pred
-            
-#             # Record prediction lengths
-#             prediction_lengths['train'].append(len(train_pred))
-#             prediction_lengths['val'].append(len(val_pred))
-#             prediction_lengths['test'].append(len(test_pred))
-            
-#             if logger:
-#                 logger.info(f"Model {model_name} prediction lengths - Train: {len(train_pred)}, "
-#                             f"Val: {len(val_pred)}, Test: {len(test_pred)}")
+    try:
+        meta_features_train = []
+        meta_features_test = []
+        min_len = len(X_test)
+        logger.info(f"GBDT: Target length for predictions: {min_len}")
         
-#         except Exception as e:
-#             if logger:
-#                 logger.error(f"Error generating predictions for {model_name}: {e}")
-#             continue
-
-#     # If no predictions were successful, exit early
-#     if not train_meta_features:
-#         raise ValueError("No valid model predictions available for GBDT ensemble")
-
-#     # Calculate minimum lengths for each set to handle size mismatches
-#     min_train_length = min(prediction_lengths['train'])
-#     min_val_length = min(prediction_lengths['val'])
-#     min_test_length = min(prediction_lengths['test'])
-    
-#     if logger:
-#         logger.info(f"Using minimum lengths - Train: {min_train_length}, "
-#                     f"Val: {min_val_length}, Test: {min_test_length}")
-
-#     # Prepare arrays with consistent lengths
-#     train_features_aligned = np.column_stack([pred[:min_train_length] for pred in train_meta_features.values()])
-#     val_features_aligned = np.column_stack([pred[:min_val_length] for pred in val_meta_features.values()])
-#     test_features_aligned = np.column_stack([pred[:min_test_length] for pred in test_meta_features.values()])
-    
-#     # Align target arrays with the meta-features
-#     Y_meta_train_aligned = Y_meta_train[:min_train_length]
-#     Y_meta_val_aligned = Y_meta_val[:min_val_length]
-    
-#     if len(Y_meta_train_aligned) == 0 or len(Y_meta_val_aligned) == 0:
-#         raise ValueError("Insufficient data for GBDT training after alignment")
-
-#     # Train GBDT on meta-features
-#     gb_model = GradientBoostingRegressor(
-#         n_estimators=100, 
-#         learning_rate=0.01, 
-#         max_depth=3, 
-#         random_state=42
-#     )
-
-#     # Fit on training meta-features
-#     gb_model.fit(train_features_aligned, Y_meta_train_aligned)
-    
-#     # Evaluate on validation set to check for overfitting
-#     val_pred = gb_model.predict(val_features_aligned)
-#     val_mse = mean_squared_error(Y_meta_val_aligned, val_pred)
-#     if logger:
-#         logger.info(f"GBDT Ensemble - Validation MSE: {val_mse:.6f}, RMSE: {np.sqrt(val_mse):.6f}")
-
-#     # Predict on test meta-features
-#     final_prediction = gb_model.predict(test_features_aligned)
-
-#     # Inverse transform to get back to original scale
-#     final_prediction_original = target_scaler.inverse_transform(final_prediction.reshape(-1, 1)).flatten()
-    
-#     return final_prediction_original
-
-# Gradient Boosting Decision Tree Ensemble
-def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, feature_scaler, logger=None):
-    """
-    Use GBDT to predict based on the predictions of base models.
-    Implements a validation split approach to prevent data leakage.
-    Parameters:
-    - models_results: Dictionary containing model results, with 'best_model' key for each model.
-    - X_train: Training data features to generate meta-features for training GBDT.
-    - X_test: Test data features for final prediction.
-    - Y_train: Training labels for fitting the GBDT model.
-    
-    Returns: 
-    - GBDT ensemble prediction for test data.
-    """
-
-    # Convert to arrays without scaling - data is already PCA-transformed
-    X_train_array = X_train.values if hasattr(X_train, 'values') else X_train
-    X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
-    Y_train_array = Y_train.values if hasattr(Y_train, 'values') else Y_train
-
-    # Split training data into training and validation sets to prevent leakage
-    X_meta_train, X_meta_val, Y_meta_train, Y_meta_val = train_test_split(
-        X_train_array, Y_train_array, test_size=0.2, random_state=42, shuffle=False
-    )
-
-    # Track metadata about models and predictions
-    train_meta_features = {}
-    val_meta_features = {}
-    test_meta_features = {}
-    prediction_lengths = {'train': [], 'val': [], 'test': []}
-
-    for model_name, result in models_results.items():
-        if 'best_model' not in result or result['best_model'] is None:
-            continue
-
-        model = result['best_model']
-
-        try:
-            # Generate predictions for all three sets
-            if model_name.strip() == 'LSTM':
-                # Reshape for LSTM
-                X_meta_train_lstm = prepare_lstm_data(X_meta_train, time_steps=5)
-                X_meta_val_lstm = prepare_lstm_data(X_meta_val, time_steps=5)
-                X_test_lstm = prepare_lstm_data(X_test_array, time_steps=5)
-                
-                train_pred = model.predict(X_meta_train_lstm).flatten()
-                val_pred = model.predict(X_meta_val_lstm).flatten()
-                test_pred = model.predict(X_test_lstm).flatten()
-            else:
-                train_pred = model.predict(X_meta_train).flatten()
-                val_pred = model.predict(X_meta_val).flatten()
-                test_pred = model.predict(X_test_array).flatten()
-            
-            # Store predictions for each model separately to handle length differences
-            train_meta_features[model_name] = train_pred
-            val_meta_features[model_name] = val_pred
-            test_meta_features[model_name] = test_pred
-            
-            # Record prediction lengths
-            prediction_lengths['train'].append(len(train_pred))
-            prediction_lengths['val'].append(len(val_pred))
-            prediction_lengths['test'].append(len(test_pred))
-            
-            if logger:
-                logger.info(f"Model {model_name} prediction lengths - Train: {len(train_pred)}, "
-                            f"Val: {len(val_pred)}, Test: {len(test_pred)}")
-                logger.info(f"Model {model_name} prediction stats - Train mean: {np.mean(train_pred):.4f}, "
-                            f"std: {np.std(train_pred):.4f}, Val mean: {np.mean(val_pred):.4f}, "
-                            f"std: {np.std(val_pred):.4f}")
+        valid_models = []
+        if not isinstance(models_results, dict):
+            logger.error(f"Results is {type(models_results)}, expected a dictionary")
+            return np.zeros(min_len)
         
-        except Exception as e:
-            if logger:
-                logger.error(f"Error generating predictions for {model_name}: {e}")
-            continue
+        # Get dynamic clipping range
+        clip_min, clip_max = get_dynamic_clipping_range(models_results, logger)
+        
+        for model_name, result in models_results.items():
+            try:
+                if logger:
+                    logger.info(f"Processing {model_name} for gbdt_ensemble")
+                    logger.info(f"{model_name} result keys: {list(result.keys())}")
+                
+                # Handle LSTM results
+                if model_name.strip() == 'LSTM' and isinstance(result, dict) and 'fold_metrics' in result:
+                    fold_metrics = result['fold_metrics']
+                    if logger:
+                        logger.info(f"LSTM fold_metrics keys: {[list(f.keys()) for f in fold_metrics]}")
+                    if not isinstance(fold_metrics, list):
+                        if logger:
+                            logger.warning(f"LSTM fold_metrics is not a list, skipping")
+                        continue
 
-    # If no predictions were successful, exit early
-    if not train_meta_features:
-        raise ValueError("No valid model predictions available for GBDT ensemble")
+                    best_fold_idx = np.argmin([r.get('MSE', float('inf')) for r in fold_metrics])
+                    fold_result = fold_metrics[best_fold_idx]
+                    model = fold_result.get('model')
+                    best_params = fold_result.get('Parameters', {})
 
-    # Calculate minimum lengths for each set to handle size mismatches
-    min_train_length = min(prediction_lengths['train'])
-    min_val_length = min(prediction_lengths['val'])
-    min_test_length = min(prediction_lengths['test'])
+                    if model is None:
+                        if logger:
+                            logger.warning(f"LSTM fold {best_fold_idx} missing model")
+                        continue
+
+                else:
+                    # Handle non-LSTM models
+                    if 'retrained_model' not in result or result['retrained_model'] is None:
+                        if logger:
+                            logger.warning(f"No retrained model for {model_name}, using best_model")
+                        if 'best_model' not in result or result['best_model'] is None:
+                            if logger:
+                                logger.warning(f"No best_model for {model_name}, skipping")
+                            continue
+                        model = result['best_model']
+                    else:
+                        model = result['retrained_model']
+                    best_params = result.get('best_params', {})
+                
+                logger.info(f"Processing {model_name} predictions")
+
+                # Convert inputs to arrays
+                X_train_array = X_train.values if hasattr(X_train, 'values') else X_train
+                X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
+                Y_train_array = Y_train.values if hasattr(Y_train, 'values') else Y_train
+                
+                if model_name.strip() == 'LSTM':
+                    time_steps = best_params.get('time_steps', 3)
+                    if X_train.shape[0] < time_steps or X_test.shape[0] < time_steps:
+                        logger.warning(f"Insufficient samples for LSTM time_steps={time_steps}")
+                        continue
+
+                    X_train_rolled, y_train_rolled = create_rolling_window_data(X_train.values, Y_train.values, time_steps)
+                    X_test_rolled, _ = create_rolling_window_data(X_test.values, np.zeros(len(X_test)), time_steps)
+                    logger.info(f"LSTM: X_train_rolled shape: {X_train_rolled.shape}, X_test_rolled shape: {X_test_rolled.shape}")
+                    
+                    train_pred = model.predict(X_train_rolled, verbose=0).flatten()
+                    test_pred = model.predict(X_test_rolled, verbose=0).flatten()
+
+                    # Adjust lengths for LSTM predictions
+                    train_pred = train_pred[:min_len]
+                    test_pred = np.pad(test_pred, (0, max(0, min_len - len(test_pred))), 
+                                       mode='constant', constant_values=np.mean(test_pred) if len(test_pred) > 0 else 0)
+                
+                else:
+                    train_pred = model.predict(X_train).flatten()[:min_len]
+                    test_pred = model.predict(X_test).flatten()[:min_len]
+                
+                # Apply inverse transform and clipping
+                train_pred = target_scaler.inverse_transform(train_pred.reshape(-1, 1)).flatten()
+                test_pred = target_scaler.inverse_transform(test_pred.reshape(-1, 1)).flatten()
+                
+                # Standardize for meta-model
+                scaler = StandardScaler()
+                train_pred = scaler.fit_transform(train_pred.reshape(-1, 1)).flatten()
+                test_pred = scaler.transform(test_pred.reshape(-1, 1)).flatten()
+                
+                train_pred = np.clip(train_pred, -3.6815, 4.6223)
+                test_pred = np.clip(test_pred, -3.6815, 4.6223)
+                
+                meta_features_train.append(train_pred)
+                meta_features_test.append(test_pred)
+                valid_models.append(model_name)
+                logger.info(f"{model_name}: Final train_pred length: {len(train_pred)}, test_pred length: {len(test_pred)}")
+            
+            except Exception as e:
+                logger.error(f"Error processing {model_name} for GBDT: {e}")
+                continue
+        
+        if not meta_features_train or not meta_features_test:
+            logger.error("No valid meta-features generated")
+            return np.zeros(min_len)
+        
+        meta_features_train = np.array(meta_features_train).T
+        meta_features_test = np.array(meta_features_test).T
+
+        # Check correlation and remove highly correlated features
+        corr_matrix = np.corrcoef(meta_features_train.T)
+        logger.info(f"Meta-feature correlations:\n{corr_matrix}")
+        
+        to_keep = []
+        for i in range(corr_matrix.shape[0]):
+            if i == 0 or all(abs(corr_matrix[i, j]) < 0.85 for j in to_keep):
+                to_keep.append(i)
+        
+        meta_features_train = meta_features_train[:, to_keep]
+        meta_features_test = meta_features_test[:, to_keep]
+        valid_models = [valid_models[i] for i in to_keep]
+        logger.info(f"Kept models after correlation filter: {valid_models}")
+        
+        # Scale meta-features
+        scaler = StandardScaler()
+        meta_features_train = scaler.fit_transform(meta_features_train)
+        meta_features_test = scaler.transform(meta_features_test)
+
+        # Prepare target for meta-model
+        Y_train_meta = Y_train_array[:len(meta_features_train)]
+        
+        meta_train, meta_val, y_train_meta, y_val_meta = train_test_split(
+            meta_features_train, Y_train[:min_len], test_size=0.1, random_state=42
+        )
+        
+        # Optimize meta-model
+        def optimize_meta_model(trial):
+            params = {
+                'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                'max_depth': trial.suggest_int('max_depth', 2, 7),
+                'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.2)
+            }
+            meta_model = GradientBoostingRegressor(**params, random_state=42)
+            meta_model.fit(meta_train, y_train_meta)
+            pred = meta_model.predict(meta_val)
+            return np.sqrt(mean_squared_error(y_val_meta, pred))
+        
+        study = optuna.create_study(direction='minimize')
+        study.optimize(optimize_meta_model, n_trials=100)
+        best_params = study.best_params
+        logger.info(f"Optimized meta-model parameters: {best_params}")
+        
+        # Train final meta-model
+        meta_model = GradientBoostingRegressor(**best_params, random_state=42)
+        meta_model.fit(meta_features_train, Y_train[:min_len])
+        
+        # Make final predictions
+        final_prediction = meta_model.predict(meta_features_test)
+        #final_prediction = target_scaler.inverse_transform(final_prediction.reshape(-1, 1)).flatten()
+        final_prediction = np.clip(final_prediction, clip_min, clip_max)
+
+        return final_prediction
     
-    if logger:
-        logger.info(f"Using minimum lengths - Train: {min_train_length}, "
-                    f"Val: {min_val_length}, Test: {min_test_length}")
+    except Exception as e:
+        logger.error(f"GBDT error: {e}")
+        return np.zeros(len(X_test))
 
-    # Prepare arrays with consistent lengths
-    train_features_aligned = np.column_stack([pred[:min_train_length] for pred in train_meta_features.values()])
-    val_features_aligned = np.column_stack([pred[:min_val_length] for pred in val_meta_features.values()])
-    test_features_aligned = np.column_stack([pred[:min_test_length] for pred in test_meta_features.values()])
+
+
+# Ensemble Pipeline (Unchanged)
+def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, target_scaler):
     
-    # Align target arrays with the meta-features
-    Y_meta_train_aligned = Y_meta_train[:min_train_length]
-    Y_meta_val_aligned = Y_meta_val[:min_val_length]
-    
-    if len(Y_meta_train_aligned) == 0 or len(Y_meta_val_aligned) == 0:
-        raise ValueError("Insufficient data for GBDT training after alignment")
-
-    # Scale meta-features
-    meta_scaler = StandardScaler()
-    train_features_scaled = meta_scaler.fit_transform(train_features_aligned)
-    val_features_scaled = meta_scaler.transform(val_features_aligned)
-    test_features_scaled = meta_scaler.transform(test_features_aligned)
-
-    if logger:
-        logger.info(f"Meta-features scaled - Train shape: {train_features_scaled.shape}, "
-                    f"Val shape: {val_features_scaled.shape}, Test shape: {test_features_scaled.shape}")
-        logger.info(f"Meta-features stats - Train mean: {np.mean(train_features_scaled, axis=0)}, "
-                    f"std: {np.std(train_features_scaled, axis=0)}")
-
-    # Train GBDT on scaled meta-features
-    gb_model = GradientBoostingRegressor(
-        n_estimators=50,  # Reduced to prevent overfitting
-        learning_rate=0.01,
-        max_depth=2,  # Shallower trees
-        random_state=42
-    )
-
-    # Fit on training meta-features
-    gb_model.fit(train_features_scaled, Y_meta_train_aligned)
-    
-    # Evaluate on validation set to check for overfitting
-    val_pred = gb_model.predict(val_features_scaled)
-    val_mse = mean_squared_error(Y_meta_val_aligned, val_pred)
-    val_r2 = r2_score(Y_meta_val_aligned, val_pred)
-    if logger:
-        logger.info(f"GBDT Ensemble - Validation MSE: {val_mse:.6f}, RMSE: {np.sqrt(val_mse):.6f}, R²: {val_r2:.6f}")
-
-    # Predict on test meta-features
-    final_prediction = gb_model.predict(test_features_scaled)
-
-    # Inverse transform to get back to original scale
-    final_prediction_original = target_scaler.inverse_transform(final_prediction.reshape(-1, 1)).flatten()
-    
-    return final_prediction_original
-
-# ===============================================================================
-# Three Ensembles Pipeline
-# ===============================================================================
-def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, target_scaler, feature_scaler):
-    """
-    Pipeline to apply and compare different ensemble methods.
-    Parameters:
-    - models_results: Dictionary containing model results
-    - X_train: Training features
-    - X_test: Testing features
-    - Y_train: Training labels
-    - Y_test: Testing labels
-
-    Returns:
-    - Dictionary with ensemble results
-    """
-
     logger.info(f"\n{'-'*30}\nInitializing ensemble pipeline\n{'-'*30}")
-    # log_data_stats(logger, X_train, "X_train for ensembles", include_stats=False)
-    # log_data_stats(logger, X_test, "X_test for ensembles", include_stats=False) 
-    # log_data_stats(logger, Y_train, "Y_train for ensembles", include_stats=True)
-    # log_data_stats(logger, Y_test, "Y_test for ensembles", include_stats=True)
-
-    # Verify input model results
     logger.info("\nVerifying model results for ensemble:")
+    
     for model_name, result in models_results.items():
         if 'best_model' in result and result['best_model'] is not None:
-            logger.info(f"  {model_name}: Model available, Best MSE: {np.min(result['best_mse_scores']):.6f}")
+            logger.info(f"  {model_name}: Model available, Best RMSE: {np.min(result['best_rmse_scores']):.6f}")
         else:
             logger.info(f"  {model_name}: Model NOT available")
-
-    # Test target scaler to confirm it works properly
+    
     logger.info("\nValidating target scaler:")
+    
     y_sample = Y_test.iloc[:3].values.reshape(-1, 1) if hasattr(Y_test, 'iloc') else Y_test[:3].reshape(-1, 1)
     y_scaled = target_scaler.transform(y_sample)
     y_restored = target_scaler.inverse_transform(y_scaled)
+    
     logger.info(f"  Original Y values: {y_sample.flatten()}")
     logger.info(f"  Scaled Y values: {y_scaled.flatten()}")
     logger.info(f"  Restored Y values: {y_restored.flatten()}")
-
+    
     def linearly_weighted_wrapper(results, x_test):
         logger.info("Running linearly weighted ensemble...")
-        return linearly_weighted_ensemble(results, x_test, target_scaler, None, logger)  # Pass logger
-
+        return linearly_weighted_ensemble(results, x_test, target_scaler, logger)
+    
     def equal_weighted_wrapper(results, x_test):
         logger.info("Running equal weighted ensemble...")
-        return equal_weighted_ensemble(results, x_test, target_scaler, None, logger)  # Pass logger
-
+        return equal_weighted_ensemble(results, x_test, target_scaler, logger)
+    
     def gbdt_wrapper(results, x_test):
         logger.info("Running GBDT ensemble...")
-        return gbdt_ensemble(results, X_train, x_test, Y_train, target_scaler, None, logger)  # Pass logger
-        
+        return gbdt_ensemble(results, X_train, x_test, Y_train, target_scaler, logger)
     
-    # Define the ensemble methods with consistent wrapper functions
     ensemble_methods = {
         'linearly_weighted': linearly_weighted_wrapper,
         'equal_weighted': equal_weighted_wrapper,
         'gbdt': gbdt_wrapper
     }
-
+    
     results = {}
-
+    
     for method_name, method_func in ensemble_methods.items():
         try:
             logger.info(f"\n{'-'*20} Running {method_name} ensemble {'-'*20}")
-            # Time the prediction
+            
             start_time = time.time()
-            # Get predictions from the ensemble method
+            
             final_prediction = method_func(models_results, X_test)
             end_time = time.time()
 
-            # Detailed scale checking
-            # Verify predictions are in original scale by checking range against Y_test
+            # Scale comparison
             y_min, y_max = np.min(Y_test), np.max(Y_test)
             pred_min, pred_max = np.min(final_prediction), np.max(final_prediction)
             y_mean, y_std = np.mean(Y_test), np.std(Y_test)
             pred_mean, pred_std = np.mean(final_prediction), np.std(final_prediction)
-
+            
             logger.info(f"\nScale Comparison for {method_name}:")
             logger.info(f"  Y_test range: [{y_min:.4f}, {y_max:.4f}], mean: {y_mean:.4f}, std: {y_std:.4f}")
             logger.info(f"  Prediction range: [{pred_min:.4f}, {pred_max:.4f}], mean: {pred_mean:.4f}, std: {pred_std:.4f}")
             logger.info(f"  Time taken: {end_time - start_time:.2f} seconds")
             
-            # If the prediction length is shorter than Y_test, we need to truncate Y_test for metrics
+            # Align Y_test with predictions
             Y_test_aligned = Y_test
             if isinstance(Y_test, pd.Series) or isinstance(Y_test, pd.DataFrame):
                 Y_test_aligned = Y_test.iloc[:len(final_prediction)]
             else:
                 Y_test_aligned = Y_test[:len(final_prediction)]
-                
+            
             logger.info(f"  Length of Y_test: {len(Y_test)}, Length of predictions: {len(final_prediction)}")
             logger.info(f"  Using aligned Y_test with length: {len(Y_test_aligned)}")
-
-            # Calculate performance metrics using aligned data
+            
+            # Calculate metrics
             mse = mean_squared_error(Y_test_aligned, final_prediction)
             rmse = np.sqrt(mse)
             r2 = r2_score(Y_test_aligned, final_prediction)
             mae = np.mean(np.abs(Y_test_aligned - final_prediction))
 
-            # Store results
             results[method_name] = {
                 'prediction': final_prediction,
                 'mse': mse,
@@ -589,7 +548,6 @@ def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, 
                 'mae': mae
             }
 
-            # Show detailed stats for this method
             logger.info(f"\nDetailed results for {method_name}:")
             logger.info(f"  MSE: {mse:.6f}")
             logger.info(f"  RMSE: {rmse:.6f}")
@@ -598,10 +556,7 @@ def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, 
 
         except Exception as e:
             logger.error(f"Error in {method_name} ensemble: {e}")
-            import traceback
             traceback.print_exc()
-
-            # Provide empty results if method fails
             results[method_name] = {
                 'prediction': np.zeros_like(Y_test),
                 'mse': float('inf'),
@@ -609,9 +564,10 @@ def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, 
                 'r2': -float('inf'),
                 'mae': float('inf')
             }
-    # Output results
+    
+    # Filter valid results
     valid_results = {k: v for k, v in results.items() if v['mse'] < float('inf')}
-
+    
     if valid_results:
         logger.info("\nEnsemble Methods Comparison:")
         comparison_df = pd.DataFrame([
@@ -624,22 +580,18 @@ def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, 
             }
             for method_name, metrics in valid_results.items()
         ])
+       
+        comparison_df = comparison_df.sort_values('RMSE')
         logger.info(f"\n{comparison_df}")
-            
-        # Find the best performing method based on RMSE
+
         best_method = min(valid_results.items(), key=lambda x: x[1]['rmse'])[0]
         logger.info(f"\nBest Ensemble Method: {best_method}")
         logger.info(f"Performance of {best_method}:")
         logger.info(f"  MSE: {valid_results[best_method]['mse']:.6f}")
         logger.info(f"  RMSE: {valid_results[best_method]['rmse']:.6f}")
         logger.info(f"  R2: {valid_results[best_method]['r2']:.6f}")
-
-        # Do a final verification of the best method's predictions
         verify_prediction_scale(logger, Y_test, valid_results[best_method]['prediction'], 
-                              f"Best ensemble method ({best_method})", tolerance=0.2)
-        
+                               f"Best ensemble method ({best_method})", tolerance=0.2)
     else:
         logger.warning("All ensemble methods failed")
-
     return results
-

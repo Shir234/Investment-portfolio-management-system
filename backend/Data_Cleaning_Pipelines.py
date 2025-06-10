@@ -117,7 +117,46 @@ class AlphaVantageDataFetcher(BaseEstimator, TransformerMixin):
                     print(f"Error fetching data for ticker {self.ticker_symbol}: {e}")
                     raise ValueError(f"Failed to fetch data for {self.ticker_symbol}: {e}")
 
-# TODO -> ADD INDICATORS
+
+class RollingSharpeCalculator(BaseEstimator, TransformerMixin):
+    """
+    Transformer to calculate the rolling daily Sharpe ratio for a stock.
+    
+    Parameters:
+    - window (int): Number of days for the rolling window (default: 30).
+    - risk_free_rate (float): Annual risk-free rate (default: 0.02).
+    """
+    def __init__(self, window=30, risk_free_rate=0.02):
+        self.window = window
+        self.risk_free_rate = risk_free_rate
+    
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        # Copy input to avoid modifying original
+        X = X.copy()
+        
+        # Calculate daily returns
+        X['Daily_Return'] = X['Close'].pct_change()
+        
+        # Calculate rolling mean and standard deviation
+        X['Rolling_Mean'] = X['Daily_Return'].rolling(window=self.window).mean()
+        X['Rolling_Std'] = X['Daily_Return'].rolling(window=self.window).std()
+        
+        # Calculate daily risk-free rate
+        daily_risk_free = self.risk_free_rate / 252  # Assuming 252 trading days
+        
+        # Calculate rolling Sharpe ratio
+        #X['Daily_Sharpe_Ratio'] = (X['Rolling_Mean'] - daily_risk_free) / X['Rolling_Std'] #(None Annulized daily sharpe calc)
+        X['Daily_Sharpe_Ratio'] = (X['Rolling_Mean'] - daily_risk_free) / X['Rolling_Std'] * np.sqrt(252)
+        
+        # Drop intermediate columns
+        X.drop(['Daily_Return', 'Rolling_Mean', 'Rolling_Std'], axis=1, inplace=True)
+        
+        return X
+
+
 # Add market indicators
 class IndicatorCalculator(BaseEstimator, TransformerMixin):
     def __init__(self, include_prime_rate=True, prime_start="2013-01-01", prime_end="2024-01-01"):
@@ -367,51 +406,45 @@ class TransactionMetricsCalculator(BaseEstimator, TransformerMixin):
     def transform(self, X):
         data = X.copy()
 
-        # Initialize the transaction metrics columns
-        data['Transaction_Volatility'] = np.nan
-        data['Transaction_Returns'] = np.nan
-        data['Transaction_Sharpe'] = np.nan
-        data['Transaction_Duration'] = np.nan
+        # Initialize the transaction metrics columns with -1 (instead of np.nan)
+        data['Transaction_Volatility'] = -1
+        data['Transaction_Returns'] = -1
+        data['Transaction_Sharpe'] = -1
+        data['Transaction_Duration'] = -1
         
         last_buy_index = None
         last_buy_price = None
-        in_active_position = False
 
         # Process the data in a single pass
         for i in range(len(data)):
             # Record buy signal
             if not np.isnan(data['Buy'].iloc[i]):
                 last_buy_index = i
-                last_buy_price = data['Close'].iloc[i]
-                in_active_position = True
+                last_buy_price = data['Buy'].iloc[i]  # Use Buy price as the purchase price
 
-            # Calculate metrics based on the last known buy signal
-            if last_buy_index is not None:
+            # Calculate metrics only on sell signal
+            if not np.isnan(data['Sell'].iloc[i]) and last_buy_index is not None:
                 buy_date = data.index[last_buy_index]
                 current_date = data.index[i]
                 duration = (current_date - buy_date).days
 
                 # Calculate raw return for this transaction
-                returns = (data['Close'].iloc[i] - last_buy_price) / last_buy_price
+                returns = (data['Sell'].iloc[i] - last_buy_price) / last_buy_price
 
                 # Calculate volatility (standard deviation of daily returns) for this transaction
+                # Use Close prices between buy and sell to calculate volatility
                 daily_returns = data['Close'].iloc[last_buy_index:i+1].pct_change().dropna()
                 volatility = daily_returns.std() if len(daily_returns) > 1 else 0
 
                 # Calculate Sharpe ratio for this transaction
                 transaction_risk_free_rate = self.risk_free_rate * (duration / 365)
-                sharpe_ratio = (returns - transaction_risk_free_rate) / volatility if volatility != 0 else 0                        # all in the same scale: returns is the return ratio, the vplatility is pct
+                sharpe_ratio = (returns - transaction_risk_free_rate) / volatility if volatility != 0 else 0
 
-                # Store the metrics for every day while in a position
+                # Store the metrics only on the sell date
                 data.loc[data.index[i], 'Transaction_Volatility'] = volatility
                 data.loc[data.index[i], 'Transaction_Returns'] = returns
                 data.loc[data.index[i], 'Transaction_Sharpe'] = sharpe_ratio
                 data.loc[data.index[i], 'Transaction_Duration'] = duration
-
-                # If this is a sell day, mark that we're no longer in an active position
-                # but continue calculating using the same buy reference point
-                if not np.isnan(data['Sell'].iloc[i]):
-                    in_active_position = False
 
         return data
     
@@ -421,27 +454,31 @@ class TransactionMetricsCalculator(BaseEstimator, TransformerMixin):
 # ===============================================================================
 # Use forward fill then backward fill (normal in financial data) on all continues columns
 class MissingValueHandler(BaseEstimator, TransformerMixin):
+    """
+    Handle missing values in financial data.
+    
+    For the Daily_Sharpe_Ratio column, use the median of the entire dataset to fill the initial null values.
+    For other continuous columns, use forward-fill then backward-fill (standard approach for financial time series).
+    For categorical/binary columns, fill with a sentinel value (-1).
+    """
+    
     def __init__(self, exclude_columns=[
         # Signal and binary columns
-        'Signal', 'Signal_Shift', 'Buy', 'Sell', 
-        
+        'Signal', 'Signal_Shift', 'Buy', 'Sell',    
         # Categorical time features
-        'Day_of_Week', 'Month', 'Quarter', 
-        
+        'Day_of_Week', 'Month', 'Quarter',         
         # Binary indicators
         'Is_Month_End', 'Is_Month_Start', 'Is_Quarter_End',
-        # TODO -> ADD THESE IF WE ADD THEM IN THE INDICATOR CALCULATOR
-        # 'RSI_Overbought', 'RSI_Oversold',
-        # 'STOCH_Signal', 'MACD_CrossOver', 'ADX_Signal',
-        # 'Ichimoku_Signal', 'BB_Signal'
-        'ADX_Trend'
+        'ADX_Trend',
     ]):
         self.exclude_columns = exclude_columns
-
-    # def __init__(self, fill_columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'PSAR', 'MFI', 'MVP']):
-    #     self.fill_columns = fill_columns
-
+        self.sharpe_median = None
+    
     def fit(self, X, y=None):
+        # Calculate median Sharpe ratio from non-null values
+        if 'Daily_Sharpe_Ratio' in X.columns:
+            self.sharpe_median = X['Daily_Sharpe_Ratio'].dropna().median()
+            print(f"Median Sharpe ratio (for filling null values): {self.sharpe_median}")
         return self
 
     def transform(self, X):
@@ -449,7 +486,10 @@ class MissingValueHandler(BaseEstimator, TransformerMixin):
 
         # Handle all columns except those in exclude_columns
         for col in X_.columns:
-            if any(exclude in col for exclude in self.exclude_columns):
+            # Skip Daily_Sharpe_Ratio as it's already handled
+            if col == 'Daily_Sharpe_Ratio':
+                X_[col] = X_[col].fillna(self.sharpe_median).infer_objects(copy=False)
+            elif any(exclude in col for exclude in self.exclude_columns):
                 # For categorical/binary columns, fill with -1 as a sentinel value
                 X_[col] = X_[col].fillna(-1).infer_objects(copy=False)
             elif X_[col].dtype in ['float64', 'int64']:
@@ -533,6 +573,7 @@ class OutlierHandler(BaseEstimator, TransformerMixin):
         return X_
   
 
+
 class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
     """
     Handles outliers using percentile-based capping and optional log transformation.
@@ -540,8 +581,8 @@ class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
     - For other numeric columns: Applies capping and log transformation to address skewness.
     """
 
-    def __init__(self, target_column='Transaction_Sharpe', lower_percentile=1, 
-                 upper_percentile=99, exclude_columns=[
+    def __init__(self, target_columns=['Transaction_Sharpe', 'Daily_Sharpe_Ratio'], lower_percentile=5, 
+                 upper_percentile=95, exclude_columns=[
         # Price data - should not be transformed
         'Open', 'High', 'Low', 'Close', 'Volume',
         # Signal and binary columns
@@ -556,7 +597,7 @@ class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
         # External data 
         'Prime_Rate'
     ]):
-        self.target_column = target_column
+        self.target_columns = target_columns
         self.lower_percentile = lower_percentile
         self.upper_percentile = upper_percentile
         self.exclude_columns = exclude_columns
@@ -571,8 +612,12 @@ class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
             if X[col].dtype in ['float64', 'int64']
             and not any(exclude in col for exclude in self.exclude_columns)
             ]
+        
         # Exclude target_column from log transformation
-        self.log_transform_columns = [col for col in self.numeric_columns if col != self.target_column]
+        # Columns to log-transform = numeric columns excluding target columns
+        self.log_transform_columns = [
+            col for col in self.numeric_columns if col not in self.target_columns
+        ]
 
         # Compute percentiles for capping
         for col in self.numeric_columns:
@@ -618,6 +663,7 @@ class ComprehensiveOutlierHandler(BaseEstimator, TransformerMixin):
                     X_[col] = np.clip(col_data, p1, p99)
         return X_
 
+
 # Handle highly correlated features
 class CorrelationHandler(BaseEstimator, TransformerMixin):
     def __init__(self, threshold=0.95, keep_columns=['Close']):
@@ -632,8 +678,8 @@ class CorrelationHandler(BaseEstimator, TransformerMixin):
         self.columns_to_drop = [col for col in upper.columns if any(upper[col] > self.threshold)]
 
         # check all columns correlation with the target variable, if nan - remove (doesn't help for prediction later)
-        if 'Transaction_Sharpe' in X.columns:
-            target_corr = X.corr()['Transaction_Sharpe']
+        if 'Daily_Sharpe_Ratio' in X.columns:
+            target_corr = X.corr()['Daily_Sharpe_Ratio']
             nan_corr_columns = target_corr[target_corr.isna()].index.tolist()
             self.columns_to_drop.extend(nan_corr_columns)
     
@@ -641,8 +687,8 @@ class CorrelationHandler(BaseEstimator, TransformerMixin):
             if col in self.columns_to_drop:
                 self.columns_to_drop.remove(col)
 
-        if 'Transaction_Sharpe' in self.columns_to_drop:
-            self.columns_to_drop.remove('Transaction_Sharpe')
+        if 'Daily_Sharpe_Ratio' in self.columns_to_drop:
+            self.columns_to_drop.remove('Daily_Sharpe_Ratio')
 
         return self
   
@@ -658,14 +704,43 @@ class CorrelationHandler(BaseEstimator, TransformerMixin):
 # Create The Pipelines
 # ===============================================================================
 def create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate, api_key):
+    """
+    Creates a pipeline for fetching and processing stock data.
+    
+    Parameters:
+    - ticker_symbol (str): Stock ticker symbol.
+    - start_date (str): Start date for data (YYYY-MM-DD).
+    - end_date (str): End date for data (YYYY-MM-DD).
+    - risk_free_rate (float): Annual risk-free rate.
+    - api_key (str): Alpha Vantage API key.
+    
+    Returns:
+    - Pipeline: Scikit-learn pipeline object.
+    """
     return Pipeline([
         ('data_fetcher', AlphaVantageDataFetcher(ticker_symbol, start_date, end_date, api_key)),
+        ('rolling_sharpe_calculator', RollingSharpeCalculator(window=30, risk_free_rate=risk_free_rate)),
         ('indicator_calculator', IndicatorCalculator()),
         ('signal_calculator', SignalCalculator()),
         ('transaction_metrics_calculator', TransactionMetricsCalculator(risk_free_rate)),
     ])
 
 def create_data_cleaning_pipeline(correlation_threshold = 0.95):
+  """
+    Creates a pipeline for cleaning financial data.
+    
+    The pipeline handles:
+    1. Missing values - using median for Sharpe ratio and ffill/bfill for other numeric columns
+    2. Outliers - using percentile-based capping
+    3. Correlation - removing highly correlated features
+    
+    Parameters:
+    - correlation_threshold (float): Threshold for removing highly correlated features.
+    
+    Returns:
+    - Pipeline: Scikit-learn pipeline object.
+    """
+  
   return Pipeline([
       ('missing_value_handler', MissingValueHandler()),
       ('outlier_handler', ComprehensiveOutlierHandler()),

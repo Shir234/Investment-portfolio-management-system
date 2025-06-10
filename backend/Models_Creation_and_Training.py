@@ -9,16 +9,20 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 
+import optuna
+from optuna.integration import TFKerasPruningCallback
+
 from scipy.stats import uniform, randint
 
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Input, Bidirectional, BatchNormalization
 from tensorflow.keras.optimizers import Adam
 
 from joblib import parallel_backend
 
 from Logging_and_Validation import log_data_stats, verify_prediction_scale
+from Helper_Functions import save_csv_to_drive
 
 import json
 import os
@@ -54,108 +58,124 @@ Gradient Boosting Regression (GBR)
 Long Short Term Memory model (LSTM)
 """
 def create_models():
+
     try:
         models = {
-            # 'SVR': (SVR(), {
-            #     'kernel': ['rbf', 'linear'],
-            #     'C': uniform(0.1, 100),  # Range from 0.1 to 100.1
-            #     'epsilon': uniform(0.01, 0.1),  # Range from 0.01 to 0.11
-            #     'gamma': ['scale', 'auto'] + list(uniform(0.01, 0.5).rvs(3))  # Mix of fixed and random values
-            # }),
-            'XGBoost': (XGBRegressor(random_state=42), {
-                'n_estimators': randint(100, 300),  # Range from 100 to 300
-                'max_depth': randint(3, 10),  # Range from 3 to 9
-                'learning_rate': uniform(0.01, 0.1),  # Range from 0.01 to 0.11
-                'subsample': uniform(0.7, 0.3),  # Range from 0.7 to 1.0
-                'colsample_bytree': uniform(0.7, 0.3)  # Range from 0.7 to 1.0
+            'SVR': (SVR(), {
+                'kernel': ['rbf'],  # Focus on RBF based on fold results
+                'C': ('float', 5.0, 20.0),  # Narrowed from 0.1–20
+                'epsilon': ('float', 0.05, 0.3),  # Narrowed from 0.01–0.3
+                'gamma': ('float', 0.05, 0.5),  # Narrowed from 0.001–0.5
+                'max_iter': [15000]
             }),
-            'LightGBM': (LGBMRegressor(random_state=42, verbose=-1), {
-                'n_estimators': randint(100, 300),
-                'max_depth': randint(3, 8),
-                'learning_rate': uniform(0.01, 0.1),
-                'subsample': uniform(0.7, 0.3),
-                'colsample_bytree': uniform(0.7, 0.3),
+            'XGBoost': (XGBRegressor(random_state=42), {
+                'n_estimators': ('int', 100, 500),  # Narrowed from 100–1000
+                'max_depth': ('int', 3, 7),  # Narrowed from 3–15
+                'learning_rate': ('float', 0.01, 0.1),  # Narrowed from 0.001–0.2
+                'subsample': ('float', 0.7, 1.0),  # Narrowed from 0.5–1.0
+                'colsample_bytree': ('float', 0.6, 0.9),  # Narrowed from 0.5–1.0
+                'min_child_weight': ('float', 5, 20),  # Narrowed from 1–20
+                'gamma': ('float', 0.3, 0.5),
+                'reg_alpha': ('float', 0.3, 1.0),
+                'reg_lambda': ('float', 0.1, 1.0)
+            }),
+            'LightGBM': (LGBMRegressor(random_state=42, verbose=1), {
+                'n_estimators': ('int', 10, 50),
+                'max_depth': ('int', 2, 10),
+                'learning_rate': ('float', 0.01, 0.05),
+                'subsample': ('float', 0.6, 1.0),
+                'colsample_bytree': ('float', 0.6, 0.9),
+                'num_leaves': ('int', 5, 15),
+                'min_child_samples': ('int', 20, 50),
+                'reg_alpha': ('float', 0.0, 0.1),
+                'reg_lambda': ('float', 0.0, 0.1),
                 'force_row_wise': [True]
             }),
             'RandomForest': (RandomForestRegressor(random_state=42), {
-                'n_estimators': randint(100, 300),
-                'max_depth': randint(3, 8),
-                'min_samples_split': randint(2, 11),
-                'min_samples_leaf': randint(1, 5),
-                'max_features': ['sqrt', 0.5]
+                'n_estimators': ('int', 200, 600),  # Narrowed from 100–1000
+                'max_depth': ('int', 3, 10),  # Narrowed from 3–15
+                'min_samples_split': ('int', 5, 15),  # Narrowed from 2–15
+                'min_samples_leaf': ('int', 5, 10),  # Narrowed from 1–10
+                'max_features': ['sqrt', 0.3, 0.5, 1.0],  # Removed log2
+                'bootstrap': [True],  # Fixed to True
+                'warm_start': [False]  # Fixed to False
             }),
             'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
-                'n_estimators': randint(100, 300),
-                'max_depth': randint(3, 6),
-                'learning_rate': uniform(0.01, 0.1),
-                'subsample': uniform(0.7, 0.3),
-                'min_samples_split': randint(5, 15)
+                'n_estimators': ('int', 100, 500),  # Narrowed from 100–1000
+                'max_depth': ('int', 3, 7),  # Narrowed from 3–15
+                'learning_rate': ('float', 0.01, 0.05),  # Narrowed from 0.001–0.2
+                'subsample': ('float', 0.6, 1.0),  # Narrowed from 0.5–1.0
+                'min_samples_split': ('int', 2, 10),  # Narrowed from 2–15
+                'min_samples_leaf': ('int', 5, 10),  # Narrowed from 1–10
+                'max_features': ['sqrt', 0.3, 0.5],  # Removed log2, 0.7, 1.0
+                'alpha': ('float', 0.1, 0.7)  # Narrowed from 0.1–0.9
             }),
-            'LSTM': (None, {})
+            'LSTM': (None, {
+                'epochs': ('int', 50, 100),  # Reduced from 50–150
+                'batch_size': ('int', 16, 32),  # Reduced from 16–64
+                'units': ('int', 8, 32),  # Reduced from 8–48
+                'learning_rate': ('float', 0.001, 0.01),
+                'dropout': ('float', 0.1, 0.3),  # Narrowed from 0.1–0.5
+                'time_steps': ('int', 3, 5),  # Narrowed from 3–10
+                'layers': ('int', 1, 1),  # Fixed to 1
+                'bidirectional': [False],
+                'use_batch_norm': [False]
+            })
         }
         return models
     except Exception as e:
         print(f"Error creating models: {e}")
         return {}
     
+def optimize_model_with_optuna(model, params_grid, X_train, Y_train, X_val, Y_val, model_name, logger, target_scaler, n_trials=30):
+    def objective(trial):
+        params = {}
+        for param, value in params_grid.items():
+            if isinstance(value, list):
+                params[param] = trial.suggest_categorical(param, value)
+            elif isinstance(value, tuple) and value[0] == 'float':
+                params[param] = trial.suggest_float(param, value[1], value[2])
+            elif isinstance(value, tuple) and value[0] == 'int':
+                params[param] = trial.suggest_int(param, value[1], value[2])
 
-# def create_models():
-#     """
-#     Define models and their Optuna parameter search spaces.
-#     """
-#     models = {
-#         'SVR': (SVR(), {
-#             'kernel': ['rbf', 'linear'],
-#             'C': lambda trial: trial.suggest_float('C', 0.1, 10, log=True),
-#             'epsilon': lambda trial: trial.suggest_float('epsilon', 0.01, 0.2)
-#         }),
-#         'XGBoost': (XGBRegressor(random_state=42), {
-#             'n_estimators': lambda trial: trial.suggest_int('n_estimators', 50, 300),
-#             'max_depth': lambda trial: trial.suggest_int('max_depth', 2, 8),
-#             'learning_rate': lambda trial: trial.suggest_float('learning_rate', 0.005, 0.2, log=True),
-#             'subsample': lambda trial: trial.suggest_float('subsample', 0.6, 1.0)
-#         }),
-#         'LightGBM': (LGBMRegressor(random_state=42, verbose=-1), {
-#             'n_estimators': lambda trial: trial.suggest_int('n_estimators', 50, 300),
-#             'max_depth': lambda trial: trial.suggest_int('max_depth', 2, 8),
-#             'learning_rate': lambda trial: trial.suggest_float('learning_rate', 0.005, 0.2, log=True),
-#             'force_row_wise': [True]
-#         }),
-#         'RandomForest': (RandomForestRegressor(random_state=42), {
-#             'n_estimators': lambda trial: trial.suggest_int('n_estimators', 50, 300),
-#             'max_depth': lambda trial: trial.suggest_int('max_depth', 2, 8),
-#             'min_samples_split': lambda trial: trial.suggest_int('min_samples_split', 2, 10)
-#         }),
-#         'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
-#             'n_estimators': lambda trial: trial.suggest_int('n_estimators', 50, 300),
-#             'max_depth': lambda trial: trial.suggest_int('max_depth', 2, 8),
-#             'learning_rate': lambda trial: trial.suggest_float('learning_rate', 0.005, 0.2, log=True)
-#         }),
-#         'LSTM': (None, {})  # Handled separately
-#     }
-#     return models
+        model_instance = model.__class__(**params)
+        try:
+            model_instance.fit(X_train, Y_train)
+            Y_pred_scaled = model_instance.predict(X_val)
+            Y_pred = target_scaler.inverse_transform(Y_pred_scaled.reshape(-1, 1)).flatten()
+            rmse = np.sqrt(mean_squared_error(Y_val, Y_pred))
+            return rmse
+        except Exception as e:
+            logger.error(f"Error in trial: {e}")
+            return float('inf')
+
+    study = optuna.create_study(direction='minimize')
+    with parallel_backend('multiprocessing'):
+        study.optimize(objective, n_trials=n_trials, n_jobs=-1)
+    return study.best_params, study.best_value, study.best_trial
+
 
 
 def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ticker_symbol, date_folder):
     logger.info(f"\n{'-'*30}\nInitializing model training\n{'-'*30}")
-    # log_data_stats(logger, X_train_val, "X_train_val for models", include_stats=False)
-    # log_data_stats(logger, Y_train_val, "Y_train_val for models", include_stats=True)
 
     # We assume X_train_val is already PCA-transformed data
     logger.info("Using PCA-transformed input data without additional scaling")
+    X_train_val_scaled = X_train_val  # Use PCA data directly
 
     # Create global scaler for final output
     target_scaler = RobustScaler()
-    # The features are already scaled by RobustScaler and transformed by PCA
-    X_train_val_scaled = X_train_val  # Use PCA data directly
     # Scale the target variable (same for both PCA and non-PCA)
     target_scaler.fit(Y_train_val.values.reshape(-1, 1))
     Y_train_val_scaled = target_scaler.transform(Y_train_val.values.reshape(-1, 1)).flatten()
 
     # Time series cross-validation with 5 folds, to ensure temporal order (sequence of events in time)
-    tscv = TimeSeriesSplit(n_splits=5)                                   
+    tscv = TimeSeriesSplit(n_splits=3) # originaly 5                                    
     models = create_models()
     results = {}
+
+    # Dictionary to store fold metrics for each model
+    all_fold_metrics = {}
 
     # Iterate each model
     for model_name, (model, params_grid) in models.items():    
@@ -163,22 +183,28 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
 
         best_mse_scores = []                                                               # lists to store scores and parameters for the models
         best_rmse_scores = []
+        best_r2_scores = []
         best_params = []
         best_score = float('inf')
         best_model = None
         best_model_prediction = None
         Y_val_best = None
 
+        # Create a list to store fold metrics for this model
+        fold_metrics = []
+
         # Reshape the data for LSTM model
         if model_name == 'LSTM':
             logger.info(f"Handling LSTM model separately with special reshaping")
-            results[model_name] = train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, None, target_scaler)
+            lstm_results = train_lstm_model_with_cv(logger,X_train_val_scaled, Y_train_val, tscv, None, target_scaler)
+            results[model_name] = lstm_results
+            #results[model_name] = train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, None, target_scaler)
+
+            # Extract LSTM fold metrics from the results
+            if 'fold_metrics' in lstm_results:
+                all_fold_metrics[model_name] = lstm_results['fold_metrics']
             continue
-
-        # Add timeout or max iterations for SVR
-        if model_name == 'SVR':
-            model.set_params(max_iter=5000)  # Limit iterations
-
+        
         # Each fold: split the data and to train and val (using the tcsv indices) then scale
         # For each fold, use the pre-scaled data with the global scalers
         for fold, (train_idx, val_idx) in enumerate(tscv.split(X_train_val)): 
@@ -193,35 +219,28 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             # Original Y values for computing metrics
             Y_val_original = Y_train_val.iloc[val_idx].values
 
+            if len(X_train_fold) < 300 or len(X_val_fold) < 150:
+                logger.warning(f"Skipping fold {fold + 1} for {model_name}: insufficient samples (Train: {len(X_train_fold)}, Val: {len(X_val_fold)})")
+                continue
+
             logger.info(f"  Train fold shapes: X={X_train_fold.shape}, Y={Y_train_fold.shape}")
             logger.info(f"  Validation fold shapes: X={X_val_fold.shape}, Y={Y_val_fold.shape}")
 
             # Grid search
-            logger.info(f"  Running GridSearchCV for {model_name} on fold {fold + 1}...")
-            # Reduce the number of CV splits for SVR to speed up
-            cv_splits = 2 if model_name == 'SVR' else 3
+            logger.info(f"  Running Optuna optimization for {model_name} on fold {fold + 1}...")
+            # Increased number of trials by 50% for all models
+            n_trials = 30 if model_name != 'SVR' else 20  # increased from 40->60 and from 30->40
 
-            n_iter = 30 if model_name in ['XGBoost', 'LightGBM', 'RandomForest', 'GradientBoosting'] else 15
-            with parallel_backend('multiprocessing'):
-                random_search = RandomizedSearchCV(
-                    estimator=model,
-                    param_distributions=params_grid,
-                    n_iter=n_iter,  # More iterations for complex models
-                    scoring='neg_mean_squared_error',
-                    cv=cv_splits,
-                    n_jobs=-1,
-                    verbose=1,
-                    random_state=42  # For reproducibility
-                )
-    
             try:
-                random_search.fit(X_train_fold, Y_train_fold)
-                best_params.append(random_search.best_params_)
-                logger.info(f"  Best parameters: {random_search.best_params_}")
+                best_params_fold, best_mse, _ = optimize_model_with_optuna(
+                    model, params_grid, X_train_fold, Y_train_fold, X_val_fold, Y_val_original, model_name, logger, target_scaler, n_trials
+                )
+                best_params.append(best_params_fold)
+                logger.info(f"  Best parameters: {best_params_fold}")
 
-                # Validate using the best model
-                best_model_fold = random_search.best_estimator_
-                Y_pred_scaled  = best_model_fold.predict(X_val_fold)                                
+                best_model_fold = model.__class__(**best_params_fold)
+                best_model_fold.fit(X_train_fold, Y_train_fold)
+                Y_pred_scaled = best_model_fold.predict(X_val_fold)                                
             
                 # Convert predictions back to original scale
                 Y_pred = target_scaler.inverse_transform(Y_pred_scaled.reshape(-1, 1)).flatten()
@@ -233,37 +252,59 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                 mse = mean_squared_error(Y_val_original, Y_pred)
                 rmse = np.sqrt(mse)
                 mae = mean_absolute_error(Y_val_original, Y_pred)
+                r2 = r2_score(Y_val_original, Y_pred)
                 best_mse_scores.append(mse)
                 best_rmse_scores.append(rmse)
+                best_r2_scores.append(r2)
                 logger.info(f"  Fold {fold + 1} - MSE: {mse:.4f}, RMSE: {rmse:.4f},  MAE: {mae:.4f}")
 
+                # Store fold metrics
+                fold_metrics.append({
+                    'Fold': fold + 1,
+                    'MSE': mse,
+                    'RMSE': rmse,
+                    'MAE': mae,
+                    'R2': r2,
+                    'Min_Ratio': min_ratio,
+                    'Max_Ratio': max_ratio,
+                    'Parameters': str(best_params_fold)
+                })
+
+
                 # Update best model
-                if mse < best_score:
-                    best_score = mse
+                if rmse < best_score:
+                    best_score = rmse
                     best_model = best_model_fold
                     best_model_prediction = Y_pred
                     Y_val_best= Y_val_original
-                    logger.info(f"  New best model found with MSE: {mse:.4f}")
+                    logger.info(f"  New best model found with RMSE: {rmse:.4f}")
 
 
             except Exception as e:
                 logger.error(f"  Error in {model_name} training on fold {fold + 1}: {e}")
                 continue
+
+        # Store fold metrics for this model
+        if fold_metrics:
+            all_fold_metrics[model_name] = fold_metrics
             
         # Save the best model for each model type, the results and the parameters
         results[model_name] = {                                                       
             'best_mse_scores': best_mse_scores,
             'best_rmse_scores': best_rmse_scores,
+            'best_r2_scores': best_r2_scores,
             'best_params': best_params,
             'best_model': best_model,
             'best_model_prediction': best_model_prediction,
-            'Y_val_best' : Y_val_best
+            'Y_val_best' : Y_val_best,
+            'fold_metrics': fold_metrics
         }
 
         logger.info(f"\nSummary for {model_name}:")
         if best_mse_scores:
             avg_mse = np.mean(best_mse_scores)
             avg_rmse = np.mean(best_rmse_scores)
+            avg_r2 = np.mean(best_r2_scores)
             logger.info(f"  Average MSE: {avg_mse:.4f}, Average RMSE: {avg_rmse:.4f}")
         else:
             logger.info(f"  No successful folds for {model_name}")
@@ -277,13 +318,13 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             try:
                 logger.info(f"Retraining {model_name} on full dataset...")
                 # Get best parameters
-                best_fold_idx = np.argmin(result['best_mse_scores'])
+                best_fold_idx = np.argmin(result['best_rmse_scores'])
                 best_params = result['best_params'][best_fold_idx]
                 # Create a new model instance with the best parameters
                 base_model = create_models()[model_name][0]
                 for param, value in best_params.items():
                     setattr(base_model, param, value)
-            
+                
                 # Fit on all training data
                 base_model.fit(X_train_val_scaled, Y_train_val_scaled)
 
@@ -292,18 +333,26 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                 Y_retrain_pred = target_scaler.inverse_transform(Y_retrain_pred_scaled.reshape(-1, 1)).flatten()
                 retrain_mse = mean_squared_error(Y_train_val, Y_retrain_pred)
                 retrain_rmse = np.sqrt(retrain_mse)
+                retrain_r2 = r2_score(Y_train_val, Y_retrain_pred)
 
                 logger.info(f"  Retrained {model_name} - MSE: {retrain_mse:.4f}, RMSE: {retrain_rmse:.4f}")
-                verify_prediction_scale(logger, Y_train_val, Y_retrain_pred, f"{model_name} retrained")
-            
-                # Replace the best model
-                results[model_name]['best_model'] = base_model
-                logger.info(f"  Successfully retrained {model_name}")
+                min_ratio, max_ratio = verify_prediction_scale(logger, Y_train_val, Y_retrain_pred, f"{model_name} retrained")
                 
+                # Store retrained model and metrics
+                results[model_name]['retrained_model'] = base_model
+                results[model_name]['retrained_rmse'] = retrain_rmse
+                results[model_name]['retrained_metrics'] = {
+                    'MSE': retrain_mse,
+                    'RMSE': retrain_rmse,
+                    'R2': retrain_r2,
+                    'Min_Ratio': min_ratio,
+                    'Max_Ratio': max_ratio
+                }
+                logger.info(f"  Successfully retrained {model_name}, keys: {list(results[model_name].keys())}")
+                    
             except Exception as e:
                 logger.error(f"  Error retraining {model_name}: {e}")
                 logger.error("  Keeping the best fold model instead")
-                # Keep the fold model if retraining fails
                 pass
     
     try:
@@ -318,11 +367,13 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             # Calculate metrics
             avg_mse = np.mean(result['best_mse_scores'])
             avg_rmse = np.mean(result['best_rmse_scores'])
+            avg_r2 = np.mean(result['best_r2_scores'])
             
             # Find best fold
             best_fold_idx = np.argmin(result['best_mse_scores'])
             best_fold_mse = result['best_mse_scores'][best_fold_idx]
             best_fold_rmse = result['best_rmse_scores'][best_fold_idx]
+            best_fold_r2 = result['best_r2_scores'][best_fold_idx]
 
             # Get best parameters
             best_fold_params = None
@@ -334,8 +385,10 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                 'Model': model_name,
                 'Average_MSE': avg_mse,
                 'Average_RMSE': avg_rmse,
+                'Average_R2': avg_r2,
                 'Best_Fold_MSE': best_fold_mse,
                 'Best_Fold_RMSE': best_fold_rmse,
+                'Best_Fold_R2': best_fold_r2,
                 'Best_Parameters': best_fold_params
             })
 
@@ -346,21 +399,55 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
         metrics_df = metrics_df.sort_values('Average_MSE')
         metrics_df['Rank'] = range(1, len(metrics_df) + 1)
         
-        # Save to CSV
-        drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results/"
-        # Create date folder inside Google Drive path
-        drive_date_folder = os.path.join(drive_path, current_date)
-        # Create directory if it doesn't exist
-        os.makedirs(drive_date_folder,exist_ok=True)
-        try:
-            metrics_df.to_csv(f'{date_folder}/{ticker_symbol}_training_validation_results.csv')
-            metrics_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_training_validation_results.csv"))
-            logger.info(f"Saved clean data for {ticker_symbol} to folders")
-        except Exception as e:
-            logger.error(f"Error saving to Google Drive: {e}")
-            os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
-            metrics_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_training_validation_results.csv"))
+        # Save main training results
+        save_csv_to_drive(logger, metrics_df, ticker_symbol, 'training_validation_results', date_folder, current_date, index=False)
+        
+        # Save detailed fold metrics for each model
+        for model_name, fold_metrics in all_fold_metrics.items():
+            if fold_metrics:
+                fold_df = pd.DataFrame(fold_metrics)
+                save_csv_to_drive(logger, fold_df, ticker_symbol, f'{model_name}_fold_metrics', date_folder, current_date, index=False)
+
+        # Print ranking to log
+        logger.info("\nModel Ranking (by Average MSE):")
+        for i, row in metrics_df.iterrows():
+            logger.info(f"{row['Rank']}. {row['Model']} - MSE: {row['Average_MSE']:.4f}, RMSE: {row['Average_RMSE']:.4f}")
+
+        # # Save to CSV
+        # drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results/"
+        # # Create date folder inside Google Drive path
+        # drive_date_folder = os.path.join(drive_path, current_date)
+        # # Create directory if it doesn't exist
+        # os.makedirs(drive_date_folder,exist_ok=True)
+
+        # try:
+        #     metrics_df.to_csv(f'{date_folder}/{ticker_symbol}_training_validation_results.csv')
+        #     metrics_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_training_validation_results.csv"))
+            
+        #     # Save detailed fold metrics for each model separately
+        #     for model_name, fold_metrics in all_fold_metrics.items():
+        #         if fold_metrics:
+        #             # Create DataFrame for the fold metrics
+        #             fold_df = pd.DataFrame(fold_metrics)               
+        #             # Save to local folder
+        #             fold_df.to_csv(f'{date_folder}/{ticker_symbol}_{model_name}_fold_metrics.csv', index=False)                 
+        #             # Save to Google Drive folder
+        #             fold_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_{model_name}_fold_metrics.csv"), index=False)
+
+        #     logger.info(f"Saved clean data for {ticker_symbol} to folders")
+
+        # except Exception as e:
+        #     logger.error(f"Error saving to Google Drive: {e}")
+        #     os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
+        #     metrics_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_training_validation_results.csv"))
+
+        #     # Save fold metrics locally
+        #     for model_name, fold_metrics in all_fold_metrics.items():
+        #         if fold_metrics:
+        #             fold_df = pd.DataFrame(fold_metrics)
+        #             fold_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_{model_name}_fold_metrics.csv"), index=False)
                 
+
         # Print ranking to log
         logger.info("\nModel Ranking (by Average MSE):")
         for i, row in metrics_df.iterrows():
@@ -391,360 +478,373 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
 #     return np.array(X_rolled), np.array(y_rolled)
 
 
-def create_rolling_window_data(X, y, time_steps=5):
+def create_rolling_window_data(X, y, time_steps=3):
     """
-    Create rolling window data for LSTM training.
+    Create rolling window data for LSTM training, predicting the next timestep.
     
     Parameters:
     -----------
-    X : array-like, Input features
+    X : array-like, Input features (e.g., PCA-transformed with shape (samples, features))
     y : array-like, Target values
     time_steps : int, Number of time steps (window size)
     
     Returns:
     --------
     X_rolled : ndarray, Rolling window input data with shape (samples, time_steps, features)
-    y_rolled : ndarray, Target values aligned with the last step of each window
+    y_rolled : ndarray, Target values for the next timestep after each window
     """
     if len(X) != len(y):
-        raise ValueError(f"X and y must have the same number of samples, got X: {len(X)}, y: {len(y)}")
-        
-    X_rolled, y_rolled = [], []
-    for i in range(len(X) - time_steps):  # Note: changed to avoid going past array bounds
-        X_rolled.append(X[i:(i + time_steps)])
-        y_rolled.append(y[i + time_steps - 1])  # Use the target at the end of the window
+        raise ValueError(f"X and y must have same length, got X: {len(X)}, y: {len(y)}")
     
-    # Convert to numpy arrays
+    if len(X) < time_steps + 1:
+        raise ValueError(f"Insufficient data for time_steps={time_steps}, need at least {time_steps + 1} samples, got {len(X)}")
+    
+    X_rolled, y_rolled = [], []
+    for i in range(len(X) - time_steps):
+        X_rolled.append(X[i:(i + time_steps)])
+        y_rolled.append(y[i + time_steps])
+    
     X_rolled = np.array(X_rolled)
     y_rolled = np.array(y_rolled)
     
-    # Verify shapes are compatible
-    if len(X_rolled) != len(y_rolled):
-        raise ValueError(f"Resulting arrays have different lengths: X_rolled: {len(X_rolled)}, y_rolled: {len(y_rolled)}")
-        
+    if len(X_rolled) == 0 or len(y_rolled) == 0:
+        raise ValueError("No valid rolling windows created")
+    
     return X_rolled, y_rolled
 
 
 
-def train_lstm_model(X_train, y_train, X_val, y_val, params):
+def train_lstm_model(logger, X_train, y_train, X_val, y_val, params, trial=None):
     """
-    Train an LSTM model with specified parameters
-
+    Train an enhanced LSTM model with various architecture configurations.
+    
     Parameters:
-    - X_train, y_train: Training data
-    - X_val, y_val: Validation data
-    - params: Dictionary with LSTM parameters (epochs, batch_size, units, etc.)
-
+    -----------
+    X_train : array-like, Input features for training
+    y_train : array-like, Target values for training
+    X_val : array-like, Input features for validation
+    y_val : array-like, Target values for validation
+    params : dict, Model hyperparameters
+    trial : optuna.Trial, optional, Trial object for hyperparameter optimization
+    
     Returns:
-    - model: Trained LSTM model
-    - mse: Mean squared error on validation data
-    - rmse: Root mean squared error on validation data
-    - y_pred: Predictions on validation data
+    --------
+    model : keras.Model, Trained LSTM model
+    mse : float, Mean squared error on validation set
+    rmse : float, Root mean squared error on validation set
+    y_pred : array, Predicted values on validation set
     """
     try:
-        # Get parameters with defaults
         epochs = params.get('epochs', 100)
         batch_size = params.get('batch_size', 32)
-        units = params.get('units', 50)
-        learning_rate = params.get('learning_rate', 0.01)
-        time_steps = params.get('time_steps', 5)
-        dropout_rate = params.get('dropout', 0.2)
+        units = params.get('units', 64)
+        learning_rate = params.get('learning_rate', 0.001)
+        dropout_rate = params.get('dropout', 0.3)
+        time_steps = params.get('time_steps', 3)
+        layers = params.get('layers', 1)
+        bidirectional = params.get('bidirectional', False)
+        use_batch_norm = params.get('use_batch_norm', False)
 
-        # Print shape information for debugging
-        print(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
-        print(f"X_val shape: {X_val.shape}, y_val shape: {y_val.shape}")
+        if X_train.shape[0] < time_steps + 1:
+            raise ValueError(f"Insufficient samples: {X_train.shape[0]} for time_steps={time_steps}")
+        if np.any(np.isnan(X_train)) or np.any(np.isnan(y_train)):
+            raise ValueError("NaN in input data")
 
-        # Create rolling window data
         X_train_rolled, y_train_rolled = create_rolling_window_data(X_train, y_train, time_steps)
         X_val_rolled, y_val_rolled = create_rolling_window_data(X_val, y_val, time_steps)
 
-        # Print shapes after rolling windows
-        print(f"After windowing - X_train_rolled: {X_train_rolled.shape}, y_train_rolled: {y_train_rolled.shape}")
-        print(f"After windowing - X_val_rolled: {X_val_rolled.shape}, y_val_rolled: {y_val_rolled.shape}")
+        inputs = Input(shape=(time_steps, X_train.shape[1]))
+        x = inputs
+        for i in range(layers):
+            if bidirectional:
+                x = Bidirectional(LSTM(units, return_sequences=(i < layers-1)))(x)
+            else:
+                x = LSTM(units, return_sequences=(i < layers-1))(x)
+            if use_batch_norm:
+                x = BatchNormalization()(x)
+            x = Dropout(dropout_rate)(x)
+        x = Dense(1)(x)
+        model = Model(inputs=inputs, outputs=x)
 
-        # Create and compile model
-        feature_dim = X_train.shape[1]
-        # model = Sequential([
-        #     LSTM(units, activation='relu', input_shape=(time_steps, feature_dim), return_sequences=False),
-        #     Dropout(dropout_rate),
-        #     Dense(1)
-        # ])
+        model.compile(optimizer=Adam(learning_rate), loss='mse')
+        callbacks = [EarlyStopping(patience=5, restore_best_weights=True)]
+        if trial:
+            callbacks.append(TFKerasPruningCallback(trial, 'val_loss', interval=5))
 
-        inputs = Input(shape=(time_steps, feature_dim))
-        lstm_layer = LSTM(units, activation='relu', return_sequences=False)(inputs)
-        dropout_layer = Dropout(dropout_rate)(lstm_layer)
-        outputs = Dense(1)(dropout_layer)
-        model = Model(inputs=inputs, outputs=outputs)
-
-        model.compile(optimizer=Adam(learning_rate=learning_rate), loss='mse')
-
-        early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-
-        # Train model
-        history = model.fit(
+        model.fit(
             X_train_rolled, y_train_rolled,
             epochs=epochs,
             batch_size=batch_size,
             validation_data=(X_val_rolled, y_val_rolled),
-            callbacks=[early_stopping],
-            verbose=1
+            callbacks=callbacks,
+            verbose=0
         )
 
-        # Predict and evaluate
-        y_pred = model.predict(X_val_rolled).flatten()
+        y_pred = model.predict(X_val_rolled, verbose=0).flatten()
         mse = mean_squared_error(y_val_rolled, y_pred)
-        rmse = np.sqrt(mse)
 
-        return model, mse, rmse, y_pred
-    
+        return model, mse, np.sqrt(mse), y_pred
+
     except Exception as e:
-        print(f"Error in LSTM training: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return None, float('inf'), float('inf'), np.zeros_like(y_val[:len(y_val)-time_steps+1])
+        if logger:
+            logger.error(f"LSTM error: {e}")
+        return None, float('inf'), float('inf'), np.zeros_like(y_val)
        
 
-def train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, feature_scaler, target_scaler):
+def train_lstm_model_with_cv(logger, X_train_val, Y_train_val, tscv, feature_scaler, target_scaler):
     """
-    Train LSTM model using time series cross-validation with manual parameter search.
-    Now handles both regular features and PCA-transformed data.
+    Train LSTM model using time series cross-validation with Optuna hyperparameter optimization.
+    Handles both regular features and PCA-transformed data.
     
     Parameters:
-    - X_train_val: Features for training/validation
-    - Y_train_val: Target variable for training/validation
-    - tscv: Time series cross-validation splitter
-    - feature_scaler: Scaler for features
-    - target_scaler: Scaler for target variable
+    - X_train_val: Features for training/validation (DataFrame or ndarray)
+    - Y_train_val: Target variable for training/validation (Series or ndarray)
+    - tscv: TimeSeriesSplit object for cross-validation
+    - feature_scaler: Scaler for features (None for PCA-transformed data)
+    - target_scaler: Scaler for target variable (RobustScaler)
 
     Returns:
-    - Dictionary containing training results
+    - Dictionary containing training results:
+        - best_mse_scores: List of MSE scores for each fold
+        - best_rmse_scores: List of RMSE scores for each fold
+        - best_r2_scores: List of R² scores for each fold
+        - best_params: List of best parameters for each fold
+        - best_model: Best trained LSTM model
+        - best_model_prediction: Predictions from the best model
+        - Y_val_best: Validation targets for the best model
+        - fold_metrics: List of fold metrics including model
+        - retrained_model: Model retrained on full dataset
+        - retrained_rmse: RMSE of retrained model
+        - retrained_r2: R² of retrained model
     """
+    fold_metrics = []
+    data_is_pca = is_pca_transformed_data(X_train_val)
+    if data_is_pca and logger:
+        logger.info("Training LSTM on PCA-transformed data")
 
-    try:
-        # Check if input data is already PCA-transformed
-        data_is_pca = is_pca_transformed_data(X_train_val)
-        if data_is_pca:
-            print("Training LSTM on PCA-transformed data")
+    best_mse_scores, best_rmse_scores, best_r2_scores, best_params = [], [], [], []
+    best_model, best_score, best_model_prediction, Y_val_best = None, float('inf'), None, None
 
-        best_mse_scores = []
-        best_rmse_scores = []
-        best_params = []
-        best_model = None
-        best_score = float('inf')
-        best_model_prediction = None
-        Y_val_best = None
+    def objective(trial):
+        params = {
+            'epochs': trial.suggest_int('epochs', 50, 150),
+            'batch_size': trial.suggest_int('batch_size', 16, 64),
+            #'batch_size': trial.suggest_int('batch_size', 16, 32),  # Smaller batches
+            'units': trial.suggest_int('units', 32, 128),
+            #'units': trial.suggest_int('units', 32, 64),  # Smaller networks
+            'learning_rate': trial.suggest_float('learning_rate', 0.0001, 0.01, log=True),
+            #'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.005, log=True),
+            'dropout': trial.suggest_float('dropout', 0.2, 0.5),
+            'time_steps': trial.suggest_int('time_steps', 3, 5),
+            'layers': trial.suggest_int('layers', 1, 2),
+            'bidirectional': trial.suggest_categorical('bidirectional', [True, False]),
+            'use_batch_norm': trial.suggest_categorical('use_batch_norm', [True, False])
+        }
+        mse_scores = []
 
-        time_steps = 5
-
-        # Simpler architecture with fewer units since PCA reduces dimensionality
-        lstm_param_grid = [
-            {'epochs': 50, 'batch_size': 32, 'units': 32, 'learning_rate': 0.01, 'dropout': 0.1},
-            {'epochs': 100, 'batch_size': 32, 'units': 32, 'learning_rate': 0.005, 'dropout': 0.2},
-            {'epochs': 75, 'batch_size': 64, 'units': 16, 'learning_rate': 0.01, 'dropout': 0.1},
-            {'epochs': 150, 'batch_size': 32, 'units': 24, 'learning_rate': 0.002, 'dropout': 0.2}
-        ]
-
-        for fold, (train_idx, val_idx) in enumerate(tscv.split(X_train_val)):
-            print(f"\nTraining on fold {fold + 1} for LSTM...")
-
-            # Split the data
+        for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X_train_val)):
+            if logger:
+                logger.info(f"Optimizing LSTM on fold {fold_idx + 1}")
             X_train_fold = X_train_val.iloc[train_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[train_idx]
             X_val_fold = X_train_val.iloc[val_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[val_idx]
             Y_train_fold = Y_train_val.iloc[train_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[train_idx]
             Y_val_fold = Y_train_val.iloc[val_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[val_idx]
 
-            print(f"Training fold shapes - X: {X_train_fold.shape}, Y: {len(Y_train_fold)}")
-            print(f"Validation fold shapes - X: {X_val_fold.shape}, Y: {len(Y_val_fold)}")
-      
-            # Target scaling is the same regardless of PCA
-            fold_target_scaler = RobustScaler()
-            Y_train_fold_array = Y_train_fold.values if isinstance(Y_train_fold, pd.Series) else Y_train_fold
-            Y_val_fold_array = Y_val_fold.values if isinstance(Y_val_fold, pd.Series) else Y_val_fold
-            
-            # Features are already PCA-transformed, so we only need to convert to arrays
+            if len(X_train_fold) < params['time_steps'] + 1 or len(X_val_fold) < params['time_steps'] + 1:
+                if logger:
+                    logger.warning(f"Skipping fold {fold_idx + 1}: insufficient samples (Train: {len(X_train_fold)}, Val: {len(X_val_fold)})")
+                return float('inf')
+
             X_train_scaled = X_train_fold.values if isinstance(X_train_fold, pd.DataFrame) else X_train_fold
             X_val_scaled = X_val_fold.values if isinstance(X_val_fold, pd.DataFrame) else X_val_fold
+            Y_train_scaled = target_scaler.transform(Y_train_fold.values.reshape(-1, 1)).flatten() if isinstance(Y_train_fold, pd.Series) else target_scaler.transform(Y_train_fold.reshape(-1, 1)).flatten()
+            Y_val_scaled = target_scaler.transform(Y_val_fold.values.reshape(-1, 1)).flatten() if isinstance(Y_val_fold, pd.Series) else target_scaler.transform(Y_val_fold.reshape(-1, 1)).flatten()
 
-            Y_train_scaled = fold_target_scaler.fit_transform(Y_train_fold_array.reshape(-1, 1)).flatten()
-            Y_val_scaled = fold_target_scaler.transform(Y_val_fold_array.reshape(-1, 1)).flatten()
-
-            # Perform a manual grid search across LSTM parameters
-            fold_best_mse = float('inf')
-            fold_best_rmse = float('inf')
-            fold_best_params = None
-            fold_best_model = None
-            fold_best_preds = None
-            fold_best_preds_original = None
-
-            print(f"Performing manual grid search for LSTM on fold {fold + 1}...")
-
-            for params in lstm_param_grid:
-                try:
-                    # Get time steps for this parameter set
-                    time_steps = params.get('time_steps', 3)               
-                    
-                    # Train LSTM model with current parameters
-                    model, mse, rmse, y_pred_scaled = train_lstm_model(
-                        X_train_scaled, Y_train_scaled, 
-                        X_val_scaled, Y_val_scaled, 
-                        params
-                    )
-
-                    # If training failed, skip this parameter set
-                    if model is None:
-                        continue
-
-                    # Convert predictions back to original scale for final evaluation
-                    y_pred_original = fold_target_scaler.inverse_transform(
-                        y_pred_scaled.reshape(-1, 1)
-                    ).flatten()
-
-                    # For validation predictions, we need to adjust Y_val_fold to match length
-                    adjusted_val_fold = Y_val_fold.iloc[:(len(y_pred_original))] if isinstance(Y_val_fold, pd.Series) else Y_val_fold[:(len(y_pred_original))]
-                    
-                    # Calculate metrics on original scale
-                    if len(adjusted_val_fold) == len(y_pred_original):
-                        mse_original = mean_squared_error(adjusted_val_fold, y_pred_original)
-                        rmse_original = np.sqrt(mse_original)
-                        print(f"Parameters: {params}, MSE (scaled): {mse:.4f}, MSE (original): {mse_original:.4f}")
-                        
-                        if mse_original < fold_best_mse:
-                            fold_best_mse = mse_original
-                            fold_best_rmse = rmse_original
-                            fold_best_params = params
-                            fold_best_model = model
-                            fold_best_preds = y_pred_scaled
-                            fold_best_preds_original = y_pred_original
-                            fold_best_Y_val = adjusted_val_fold
-                    else:
-                        print(f"Skipping params {params}: Length mismatch between predictions and validation data")
-
-                except Exception as e:
-                    print(f"Error training LSTM with params {params}: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    continue
-
-            # If we found a working model
-            if fold_best_model is not None:
-                # Save results
-                best_mse_scores.append(fold_best_mse)
-                best_rmse_scores.append(fold_best_rmse)
-                best_params.append(fold_best_params)
-
-                print(f"Best parameters found for fold {fold + 1}: {fold_best_params}")
-                print(f"End of Fold {fold + 1} - MSE: {best_mse_scores[-1]:.4f}, RMSE: {fold_best_rmse:.4f}")
-
-                # Update best model overall if this fold's model is better
-                if best_mse_scores[-1] < best_score:
-                    best_score = best_mse_scores[-1]
-                    best_model = fold_best_model
-                    best_model_prediction = fold_best_preds_original
-                    Y_val_best = Y_val_fold.values
-
-        # After all folds, retrain the best model on all data using the global scaler
-        if best_params and len(best_params) > 0:
             try:
-                print("Retraining LSTM with best parameters on full training set...")
-            
-                # Get best parameters from the best fold
+                model, mse, _, y_pred_scaled = train_lstm_model(logger,
+                    X_train_scaled, Y_train_scaled, X_val_scaled, Y_val_scaled, params, trial
+                )
+                if model is None:
+                    if logger:
+                        logger.error(f"Fold {fold_idx + 1} failed: model is None")
+                    return float('inf')
+
+                y_pred_original = target_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
+                adjusted_val_fold = Y_val_fold.iloc[:len(y_pred_original)] if isinstance(Y_val_fold, pd.Series) else Y_val_fold[:len(y_pred_original)]
+                mse_original = mean_squared_error(adjusted_val_fold, y_pred_original)
+                mse_scores.append(mse_original)
+                if logger:
+                    logger.info(f"Fold {fold_idx + 1} MSE: {mse_original:.4f}")
+            except Exception as e:
+                if logger:
+                    logger.error(f"Fold {fold_idx + 1} error: {str(e)}")
+                return float('inf')
+
+        return np.mean(mse_scores) if mse_scores else float('inf')
+
+    try:
+        study = optuna.create_study(direction='minimize')
+        study.optimize(objective, n_trials=40)  # Increased trials for better optimization
+
+        best_params_fold = study.best_params
+        best_mse = study.best_value
+        if logger:
+            logger.info(f"Best LSTM parameters from Optuna: {best_params_fold}, Best MSE: {best_mse:.4f}")
+
+        for fold, (train_idx, val_idx) in enumerate(tscv.split(X_train_val)):
+            if logger:
+                logger.info(f"\nTraining on fold {fold + 1} for LSTM...")
+            if len(train_idx) < best_params_fold['time_steps'] + 1 or len(val_idx) < best_params_fold['time_steps'] + 1:
+                if logger:
+                    logger.warning(f"Skipping fold {fold + 1}: insufficient samples (Train: {len(train_idx)}, Val: {len(val_idx)})")
+                continue
+
+            X_train_fold = X_train_val.iloc[train_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[train_idx]
+            X_val_fold = X_train_val.iloc[val_idx] if isinstance(X_train_val, pd.DataFrame) else X_train_val[val_idx]
+            Y_train_fold = Y_train_val.iloc[train_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[train_idx]
+            Y_val_fold = Y_train_val.iloc[val_idx] if isinstance(Y_train_val, pd.Series) else Y_train_val[val_idx]
+
+            if logger:
+                logger.info(f"Training fold shapes - X: {X_train_fold.shape}, Y: {len(Y_train_fold)}")
+                logger.info(f"Validation fold shapes - X: {X_val_fold.shape}, Y: {len(Y_val_fold)}")
+
+            X_train_scaled = X_train_fold.values if isinstance(X_train_fold, pd.DataFrame) else X_train_fold
+            X_val_scaled = X_val_fold.values if isinstance(X_val_fold, pd.DataFrame) else X_val_fold
+            Y_train_scaled = target_scaler.transform(Y_train_fold.values.reshape(-1, 1)).flatten() if isinstance(Y_train_fold, pd.Series) else target_scaler.transform(Y_train_fold.reshape(-1, 1)).flatten()
+            Y_val_scaled = target_scaler.transform(Y_val_fold.values.reshape(-1, 1)).flatten() if isinstance(Y_val_fold, pd.Series) else target_scaler.transform(Y_val_fold.reshape(-1, 1)).flatten()
+
+            model, mse, rmse, y_pred_scaled = train_lstm_model(logger,
+                X_train_scaled, Y_train_scaled, X_val_scaled, Y_val_scaled, best_params_fold
+            )
+            if model is None:
+                if logger:
+                    logger.error(f"Fold {fold + 1} failed: model is None")
+                continue
+
+            y_pred_original = target_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
+            adjusted_val_fold = Y_val_fold.iloc[:len(y_pred_original)] if isinstance(Y_val_fold, pd.Series) else Y_val_fold[:len(y_pred_original)]
+            mse_original = mean_squared_error(adjusted_val_fold, y_pred_original)
+            rmse_original = np.sqrt(mse_original)
+            r2_original = r2_score(adjusted_val_fold, y_pred_original)
+            mae_original = mean_absolute_error(adjusted_val_fold, y_pred_original)
+            min_ratio, max_ratio = verify_prediction_scale(logger, adjusted_val_fold, y_pred_original, f"LSTM fold {fold+1}")
+
+            best_mse_scores.append(mse_original)
+            best_rmse_scores.append(rmse_original)
+            best_r2_scores.append(r2_original)
+            best_params.append(best_params_fold)
+
+            if logger:
+                logger.info(f"Best parameters for fold {fold + 1}: {best_params_fold}")
+                logger.info(f"End of Fold {fold + 1} - MSE: {mse_original:.4f}, RMSE: {rmse_original:.4f}, R²: {r2_original:.4f}")
+
+            fold_metrics.append({
+                'Fold': fold + 1,
+                'MSE': mse_original,
+                'RMSE': rmse_original,
+                'MAE': mae_original,
+                'R2': r2_original,
+                'Min_Ratio': min_ratio,
+                'Max_Ratio': max_ratio,
+                'Parameters': best_params_fold,  # Store as dict, not string
+                'model': model,  # Save the trained model
+                'y_val': adjusted_val_fold,
+                'predictions': y_pred_original
+            })
+
+            if rmse_original < best_score:
+                best_score = rmse_original
+                best_model = model
+                best_model_prediction = y_pred_original
+                Y_val_best = adjusted_val_fold
+
+        # Retrain on full dataset
+        if best_params and best_model:
+            try:
+                if logger:
+                    logger.info("Retraining LSTM with best parameters on full training set...")
                 best_fold_idx = np.argmin(best_mse_scores)
                 final_best_params = best_params[best_fold_idx]
-                
-                # Convert to numpy arrays if needed for scaling
+
                 X_train_val_array = X_train_val.values if isinstance(X_train_val, pd.DataFrame) else X_train_val
                 Y_train_val_array = Y_train_val.values if isinstance(Y_train_val, pd.Series) else Y_train_val
-                
-                # Scale only target variable
                 X_train_val_scaled = X_train_val_array
                 Y_train_val_scaled = target_scaler.transform(Y_train_val_array.reshape(-1, 1)).flatten()
-                
-                # Get time steps and dropout rate
-                time_steps = 5  # Default value
-                
-                # Create rolling window data for final model training
-                try:
-                    X_rolled, Y_rolled = create_rolling_window_data(X_train_val_scaled, Y_train_val_scaled, time_steps)
-                    print(f"Created rolling window data: X shape: {X_rolled.shape}, Y shape: {Y_rolled.shape}")
-                except Exception as e:
-                    print(f"Error creating rolling windows: {e}")
-                    return {
-                        'best_mse_scores': best_mse_scores,
-                        'best_rmse_scores': best_rmse_scores,
-                        'best_params': best_params,
-                        'best_model': best_model,
-                        'best_model_prediction': best_model_prediction,
-                        'Y_val_best': Y_val_best
-                    }
-                
-                # Create and compile the final model with dropout                
-                features_count = X_train_val_scaled.shape[1]
-                dropout_rate = final_best_params.get('dropout', 0.2)
 
-                # final_model = Sequential([
-                #     LSTM(final_best_params['units'], 
-                #          activation='relu', 
-                #          input_shape=(time_steps, features_count), 
-                #          return_sequences=False),
-                #     Dropout(dropout_rate),
-                #     Dense(1)
-                # ])
-                inputs = Input(shape=(time_steps, features_count))
-                lstm_layer = LSTM(final_best_params['units'], 
-                                  activation='relu', 
-                                  return_sequences=False)(inputs)
-                dropout_layer = Dropout(dropout_rate)(lstm_layer)
-                outputs = Dense(1)(dropout_layer)
-                final_model = Model(inputs=inputs, outputs=outputs)
+                X_full_rolled, y_full_rolled = create_rolling_window_data(X_train_val_scaled, Y_train_val_scaled, final_best_params['time_steps'])
+                
+                inputs = Input(shape=(final_best_params['time_steps'], X_train_val_scaled.shape[1]))
+                x = inputs
+                for i in range(final_best_params['layers']):
+                    if final_best_params['bidirectional']:
+                        x = Bidirectional(LSTM(final_best_params['units'], return_sequences=(i < final_best_params['layers']-1)))(x)
+                    else:
+                        x = LSTM(final_best_params['units'], return_sequences=(i < final_best_params['layers']-1))(x)
+                    if final_best_params['use_batch_norm']:
+                        x = BatchNormalization()(x)
+                    x = Dropout(final_best_params['dropout'])(x)
+                x = Dense(1)(x)
+                retrained_model = Model(inputs=inputs, outputs=x)
 
-                final_model.compile(
-                    optimizer=Adam(learning_rate=final_best_params['learning_rate']), 
-                    loss='mse'
-                )
-                
-                # Add early stopping
-                early_stopping = EarlyStopping(
-                    monitor='loss',
-                    patience=10,
-                    restore_best_weights=True
-                )
-                
-                # Train the final model
-                final_model.fit(
-                    X_rolled, 
-                    Y_rolled,
+                retrained_model.compile(optimizer=Adam(learning_rate=final_best_params['learning_rate']), loss='mse')
+                retrained_model.fit(
+                    X_full_rolled, y_full_rolled,
                     epochs=final_best_params['epochs'],
                     batch_size=final_best_params['batch_size'],
-                    callbacks=[early_stopping],
-                    verbose=1
+                    callbacks=[EarlyStopping(patience=5, restore_best_weights=True)],
+                    verbose=0
                 )
 
-                # Replace the best model with this retrained version
-                best_model = final_model
-                print("Successfully retrained LSTM on full dataset")
+                y_pred_full = retrained_model.predict(X_full_rolled, verbose=0).flatten()
+                y_pred_full_original = target_scaler.inverse_transform(y_pred_full.reshape(-1, 1)).flatten()
+                y_full_original = target_scaler.inverse_transform(y_full_rolled.reshape(-1, 1)).flatten()
+                retrain_mse = mean_squared_error(y_full_original, y_pred_full_original)
+                retrain_rmse = np.sqrt(retrain_mse)
+                retrain_r2 = r2_score(y_full_original, y_pred_full_original)
 
+                if logger:
+                    logger.info(f"Retrained LSTM - MSE: {retrain_mse:.4f}, RMSE: {retrain_rmse:.4f}, R²: {retrain_r2:.4f}")
             except Exception as e:
-                print(f"Error retraining LSTM on full dataset: {e}")
-                # Keep the fold model if retraining fails
-                pass
+                if logger:
+                    logger.error(f"Error retraining LSTM on full dataset: {e}")
+                retrained_model = None
+                retrain_rmse = best_score
+                retrain_r2 = max(best_r2_scores) if best_r2_scores else 0.0
 
-        # Return results dictionary
-        return {
+        result = {
             'best_mse_scores': best_mse_scores,
             'best_rmse_scores': best_rmse_scores,
+            'best_r2_scores': best_r2_scores,
             'best_params': best_params,
             'best_model': best_model,
             'best_model_prediction': best_model_prediction,
-            'Y_val_best': Y_val_best
+            'Y_val_best': Y_val_best,
+            'fold_metrics': fold_metrics,
+            'retrained_model': retrained_model,
+            'retrained_rmse': retrain_rmse,
+            'retrained_r2': retrain_r2
         }
-    
+        
+        if logger:
+            logger.info(f"LSTM result keys: {list(result.keys())}")
+            logger.info(f"LSTM fold_metrics structure: {[list(f.keys()) for f in fold_metrics]}")
+            logger.info(f"LSTM retrained_model exists: {retrained_model is not None}")
+
+        return result
+
     except Exception as e:
-        print(f"Error in LSTM training: {e}")
+        if logger:
+            logger.error(f"Error in LSTM training: {e}")
         return {
             'best_mse_scores': [],
             'best_rmse_scores': [],
+            'best_r2_scores': [],
             'best_params': [],
             'best_model': None,
             'best_model_prediction': None,
-            'Y_val_best': None
+            'Y_val_best': None,
+            'fold_metrics': fold_metrics,
+            'retrained_model': None,
+            'retrained_rmse': float('inf'),
+            'retrained_r2': -float('inf')
         }
