@@ -3,7 +3,6 @@ from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QLabel, QLineEdit,
 from datetime import datetime
 import logging
 from data.trading_connector import execute_trading_strategy
-from backend.trading_logic import run_integrated_trading_strategy
 import pandas as pd
 import os
 
@@ -228,8 +227,31 @@ class InputPanel(QWidget):
                 portfolio_history = result.get('portfolio_history', [])
                 portfolio_value = result.get('portfolio_value', investment_amount)
                 orders = result.get('orders', [])
+                warning_message = result.get('warning_message', '')
+                correlation = result.get('signal_correlation', 0.0)
+                buy_hit_rate = result.get('buy_hit_rate', 0.0)
+                sell_hit_rate = result.get('sell_hit_rate', 0.0)
                 
+                signal_quality_message = (f"Signal Quality Metrics:\n"
+                                        f"Correlation: {correlation:.3f}\n"
+                                        f"Buy Hit Rate: {buy_hit_rate:.1%}\n"
+                                        f"Sell Hit Rate: {sell_hit_rate:.1%}")
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Information)
+                msg.setWindowTitle("Signal Quality")
+                msg.setText(signal_quality_message)
+                msg.setStandardButtons(QMessageBox.Ok)
+                msg.setStyleSheet(self.get_message_box_style())
+                msg.exec_()
                 
+                if correlation < 0.1:
+                    msg = QMessageBox()
+                    msg.setIcon(QMessageBox.Warning)
+                    msg.setWindowTitle("Low Signal Quality")
+                    msg.setText("Signal-return correlation is low. Strategy may be unreliable.")
+                    msg.setStandardButtons(QMessageBox.Ok)
+                    msg.setStyleSheet(self.get_message_box_style())
+                    msg.exec_()
                 
                 if self.mode_combo.currentText().lower() == "semi-automatic" and orders:
                     msg = QMessageBox()
