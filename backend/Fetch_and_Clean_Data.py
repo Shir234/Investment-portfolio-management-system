@@ -6,35 +6,13 @@ import time
 import logging
 import datetime
 from Data_Cleaning_Pipelines import create_stock_data_pipeline, create_data_cleaning_pipeline
+from Helper_Functions import load_valid_tickers, save_csv_to_drive
 
-
-def load_valid_tickers(logger, file_path="valid_tickers_av.csv"):
-    """
-    Loads valid tickers from a CSV file
-    Parameters:
-    - file_path (str): Path to the CSV file containing valid tickers
-        
-    Returns:
-    - list: List of valid ticker symbols
-    """
-    if not os.path.exists(file_path):
-        logger.error(f"Error: File {file_path} not found.")
-        return []
-    
-    try:
-        df = pd.read_csv(file_path)
-        tickers = df['Ticker'].tolist()
-        logger.info(f"Loaded {len(tickers)} tickers from {file_path}")
-        return tickers
-    except Exception as e:
-        logger.error(f"Error loading tickers from {file_path}: {e}")
-        return []
     
 def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date, api_key, 
                                               ticker_symbol, start_date, end_date, risk_free_rate = 0.02, requests_this_minute=0, minute_start_time=None):
     """
     Runs the full pipeline for a single stock with rate limiting
-    
     Returns:
     - tuple: (success, requests_this_minute, minute_start_time)
     """
@@ -43,7 +21,6 @@ def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date,
 
     if minute_start_time is None:
         minute_start_time = time.time()
-
 
     try:
         start_time = time.time()
@@ -67,12 +44,12 @@ def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date,
         #drive_path = r"G:\My Drive\Investment portfolio management system\code_results\results\predictions/"
         # # machine's Path
         # drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions/" #(previous path)
-        drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions"
+        # drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions"
         
-        # Create date folder inside Google Drive path
-        drive_date_folder = os.path.join(drive_path, current_date)
-        # Create directory if it doesn't exist
-        os.makedirs(drive_date_folder,exist_ok=True)
+        # # Create date folder inside Google Drive path
+        # drive_date_folder = os.path.join(drive_path, current_date)
+        # # Create directory if it doesn't exist
+        # os.makedirs(drive_date_folder,exist_ok=True)
 
         # Run first pipeline, fetch data
         logger.info(f"\n{'-'*30}\nFetching and processing data for {ticker_symbol}\n{'-'*30}")
@@ -84,35 +61,43 @@ def full_pipeline_fetch_data_for_single_stock(logger, date_folder, current_date,
         # Adjust this number based on your actual pipeline implementation
         requests_this_minute += 10
         logger.info(f"API request count: {requests_this_minute}/75 this minute")
-        
-        data.to_csv(f'{date_folder}/{ticker_symbol}_data.csv')        
 
         if data.empty:
             logger.error(f"No data returned for ticker {ticker_symbol}")
             return False, requests_this_minute, minute_start_time
         
-        try:
-            data.to_csv(f'{date_folder}/{ticker_symbol}_raw_data.csv')        
-            data.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_raw_data.csv"))
-            logger.info(f"Saved raw data for {ticker_symbol} to folders")
-        except Exception as e:
-            logger.error(f"Error saving to Google Drive: {e}")
-            os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
+        data.index.name = "Date"  # Name the index column
+        save_csv_to_drive(logger, df, ticker_symbol, 'raw_data', date_folder, current_date, index=True)
+        logger.info(f"Saved raw data for {ticker_symbol} to folders")
+
+        # try:
+        #     data.index.name = "Date"  # Name the index column
+        #     data.to_csv(f'{date_folder}/{ticker_symbol}_raw_data.csv')
+        #     data.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_raw_data.csv"))
+        #     logger.info(f"Saved raw data for {ticker_symbol} to folders")
+        # except Exception as e:
+        #     logger.error(f"Error saving to Google Drive: {e}")
+        #     os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
         
         # Run second pipeline, clean and process
         logger.info(f"\n{'-'*30}\nCleaning data for {ticker_symbol}\n{'-'*30}")
         pipeline_clean = create_data_cleaning_pipeline()
         data_clean = pipeline_clean.fit_transform(data)
 
-        # Save locally and to Google Drive
-        try:
-            data_clean.to_csv(f'{date_folder}/{ticker_symbol}_clean_data.csv')
-            data_clean.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_clean_data.csv"))
-            logger.info(f"Saved clean data for {ticker_symbol} to folders")
-        except Exception as e:
-            logger.error(f"Error saving to Google Drive: {e}")
-            os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
-            data_clean.to_csv(os.path.join(current_date, f"{ticker_symbol}_clean_data.csv"))
+        data_clean.index.name = "Date"  # Name the index column
+        save_csv_to_drive(logger, data_clean, ticker_symbol, 'clean_data', date_folder, current_date, index=True)
+        logger.info(f"Saved clean data for {ticker_symbol} to folders")
+        
+        # # Save locally and to Google Drive
+        # try:
+        #     data_clean.index.name = "Date"  # Name the index column
+        #     data_clean.to_csv(f'{date_folder}/{ticker_symbol}_clean_data.csv')
+        #     data_clean.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_clean_data.csv"))
+        #     logger.info(f"Saved clean data for {ticker_symbol} to folders")
+        # except Exception as e:
+        #     logger.error(f"Error saving to Google Drive: {e}")
+        #     os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
+        #     data_clean.to_csv(os.path.join(current_date, f"{ticker_symbol}_clean_data.csv"))
         
         # Check if we have transaction metrics
         if 'Transaction_Sharpe' not in data_clean.columns:
@@ -211,11 +196,10 @@ def run_pipeline_fetch_data(logger, date_folder, current_date, api_key, tickers_
     logger.info(f"{'='*50}")
     
     # Save results to file
-    summary_df = pd.DataFrame(results['tickers_processed'])
+    summary_df = pd.DataFrame(results['tickers_processed'])   
     summary_df.to_csv(f'{date_folder}/pipeline_summary_{current_date}.csv', index=False)
     
     return results
-
 
 
 
@@ -249,7 +233,8 @@ if __name__ == "__main__":
         date_folder, 
         current_date, 
         api_key=API_KEY,
-        tickers_file="valid_tickers_av.csv", 
+        tickers_file="valid_tickers_av.csv", # for more than 1 ticker
+        #tickers_file="one_ticker.csv", # for 1 ticker
         start_date="2013-01-01", 
         end_date="2024-01-01"
     )

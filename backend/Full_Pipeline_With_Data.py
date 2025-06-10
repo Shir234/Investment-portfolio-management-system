@@ -10,33 +10,12 @@ from Feature_Selection_and_Optimization import analyze_feature_importance, evalu
 from Logging_and_Validation import log_data_stats, validate_data_quality, verify_prediction_scale
 from Models_Creation_and_Training import train_and_validate_models
 from Ensembles import ensemble_pipeline
-
-def load_valid_tickers(logger, file_path="valid_tickers.csv"):
-    """
-    Loads valid tickers from a CSV file
-    Parameters:
-    - file_path (str): Path to the CSV file containing valid tickers
-        
-    Returns:
-    - list: List of valid ticker symbols
-    """
-    if not os.path.exists(file_path):
-        logger.error(f"Error: File {file_path} not found.")
-        return []
-    
-    try:
-        df = pd.read_csv(file_path)
-        tickers = df['Ticker'].tolist()
-        logger.info(f"Loaded {len(tickers)} tickers from {file_path}")
-        return tickers
-    except Exception as e:
-        logger.error(f"Error loading tickers from {file_path}: {e}")
-        return []
+from Helper_Functions import load_valid_tickers, save_csv_to_drive
     
 # ===============================================================================
 # Full Pipeline For Single Stock
 # ===============================================================================
-def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date, ticker_symbol, start_date, end_date, risk_free_rate = 0.02):
+def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date, ticker_symbol, start_date, end_date, risk_free_rate = 0.02, importance_threshold=0.9):
     logger.info(f"STARTING PIPELINE FOR TICKER {ticker_symbol}")
 
     try:
@@ -55,111 +34,78 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
 
         # Process the loaded clean data
         logger.info(f"\n{'-'*30}\nProcessing loaded clean data for {ticker_symbol}\n{'-'*30}")
-        
-        # Handle the index column if it was read as a normal column
-        if 'Unnamed: 0' in data_clean.columns:
-            # This is likely the index column saved by to_csv
-            data_clean = data_clean.set_index('Unnamed: 0')
-        
-        # Convert the index to datetime if it's a string date
-        if isinstance(data_clean.index[0], str):
-            try:
-                data_clean.index = pd.to_datetime(data_clean.index)
-                logger.info(f"Converted index to datetime for {ticker_symbol}")
-            except Exception as e:
-                logger.warning(f"Could not convert index to datetime: {e}")
-        
+    
         # Check if we have transaction metrics
-        if 'Transaction_Sharpe' not in data_clean.columns:
-            logger.error(f"No Transaction_Sharpe data for {ticker_symbol}. Skipping.")
+        if 'Daily_Sharpe_Ratio' not in data_clean.columns:
+            logger.error(f"No Daily_Sharpe_Ratio data for {ticker_symbol}. Skipping.")
             return False
-
-        """
-        # Run first pipeline, fetch data
-        logger.info(f"\n{'-'*30}\nFetching and processing data for {ticker_symbol}\n{'-'*30}")
-        
-        pipeline = create_stock_data_pipeline(ticker_symbol, start_date, end_date, risk_free_rate)
-        data = pipeline.fit_transform(pd.DataFrame())
-        data.to_csv(f'{date_folder}/{ticker_symbol}_data.csv')
-        #log_data_stats(logger , data, f"{ticker_symbol} raw data", log_head=True)
-        
-
-        if data.empty:
-            logger.error(f"No data returned for ticker {ticker_symbol}")
-            return False
-        
-        # Validate data quality
-       # validate_data_quality(data, f"{ticker_symbol} raw data")
-       
-        # Run second pipeline, clean and process
-        logger.info(f"\n{'-'*30}\nCleaning data for {ticker_symbol}\n{'-'*30}")
-        pipeline_clean = create_data_cleaning_pipeline()
-        data_clean = pipeline_clean.fit_transform(data)
-        #log_data_stats(logger, data_clean, f"{ticker_symbol} cleaned data", log_head=True)
-        
-        # # Validate cleaned data quality
-        # ##validate_data_quality(data_clean, f"{ticker_symbol} cleaned data")
-
-        # Save locally and to Google Drive
-        try:
-            data_clean.to_csv(f'{date_folder}/{ticker_symbol}_clean_data.csv')
-            data_clean.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_clean_data.csv"))
-            logger.info(f"Saved clean data for {ticker_symbol} to folders")
-        except Exception as e:
-            logger.error(f"Error saving to Google Drive: {e}")
-            os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
-            data_clean.to_csv(os.path.join(current_date, f"{ticker_symbol}_clean_data.csv"))
-        
-        # Check if we have transaction metrics
-        if 'Transaction_Sharpe' not in data_clean.columns:
-            logger.error(f"No Transaction_Sharpe data for {ticker_symbol}. Skipping.")
-            return False
-        """
        
         # Split the data to train and test, create train and val the models
         logger.info(f"\n{'-'*30}\nSplitting data for {ticker_symbol}\n{'-'*30}")
-
         # Make sure we're working with numeric data only for X
         numeric_columns = data_clean.select_dtypes(include=np.number).columns.tolist()
-        # Ensure Transaction_Sharpe is included if it's numeric
-        numeric_columns = [col for col in numeric_columns if col != 'Transaction_Sharpe']
+        # Ensure 'Daily_Sharpe_Ratio' is included if it's numeric
+        numeric_columns = [col for col in numeric_columns if col != 'Daily_Sharpe_Ratio']
         
         # Use only numeric columns for X
         X = data_clean[numeric_columns]
-        Y = data_clean['Transaction_Sharpe']
+        Y = data_clean['Daily_Sharpe_Ratio']
 
         logger.info(f"Using {len(numeric_columns)} numeric features for modeling")
         logger.info(f"First 5 features: {numeric_columns[:5]}")
 
         train_size = 0.8
         split_idx = int(len(data_clean)*train_size)
-
         X_train_val = X.iloc[:split_idx]
         Y_train_val = Y.iloc[:split_idx]
         X_test = X.iloc[split_idx:]
         Y_test = Y.iloc[split_idx:]
 
-        # Feature selection
-        logger.info(f"\n{'-'*30}\nPerforming feature selection for {ticker_symbol}\n{'-'*30}")
-        feature_results = evaluate_feature_sets(X_train_val, Y_train_val)
+        # Step 1: Feature Importance Analysis
+        logger.info(f"\n{'-'*30}\nAnalyzing feature importance for {ticker_symbol}\n{'-'*30}")
+        feature_importance_df = analyze_feature_importance(X_train_val, Y_train_val, model_type='xgboost')
+        logger.info(f"Feature Importance Results:\n{feature_importance_df.head(10)}")
+
+        # Step 2: Pre-Filter Features Based on Cumulative Importance
+        cumulative_importance = feature_importance_df['Importance'].cumsum()
+        selected_features = feature_importance_df[cumulative_importance <= importance_threshold]['Feature'].tolist()
+
+        if not selected_features:
+            selected_features = feature_importance_df['Feature'].tolist()[:int(len(feature_importance_df) * 0.5)]
+            logger.warning(f"No features met the importance threshold. Using top 50% of features: {len(selected_features)} features selected.")
+        else:
+            logger.info(f"Selected {len(selected_features)} features based on cumulative importance threshold of {importance_threshold}")
+
+        # Subset the data to selected features
+        X_train_val_filtered = X_train_val[selected_features]
+        X_test_filtered = X_test[selected_features]
+
+
+        # Step 3: Feature Selection with PCA on Filtered Features
+        logger.info(f"\n{'-'*30}\nPerforming feature selection for {ticker_symbol} with filtered features\n{'-'*30}")
+        feature_results = evaluate_feature_sets(X_train_val_filtered, Y_train_val)  # Pass filtered data
         logger.info("\nFeature Selection Method Comparison:")
         logger.info(f"{feature_results['average_results'][['Feature_Method', 'Num_Features', 'RMSE', 'R2']]}")
-
-        # Select best feature set based on results
+        
+        # Select best feature set
         best_method = feature_results['best_method']
         best_features = feature_results['best_features']
-        
         logger.info(f"\nBest feature set: {best_method} with {best_features['components_selected']} components")
-        # For PCA, we need to transform the data
+            
         pca = best_features['pca']
         scaler = best_features['scaler']
-        
+
+        # Ensure scaler is fitted on filtered features
+        #scaler.fit(X_train_val_filtered)  # Re-fit scaler on selected features
         # Transform training data
-        X_train_val_scaled = scaler.transform(X_train_val)
+        print("Before scaling:", X_train_val_filtered.iloc[0, :3].values)
+        X_train_val_scaled = scaler.transform(X_train_val_filtered)
+        print("After scaling:", X_train_val_scaled[0, :3])
+        print("Scaler mean:", scaler.center_[:3])
+        print("Scaler scale:", scaler.scale_[:3])
         X_train_val_selected = pca.transform(X_train_val_scaled)
-        
         # Transform test data
-        X_test_scaled = scaler.transform(X_test)
+        X_test_scaled = scaler.transform(X_test_filtered)
         X_test_selected = pca.transform(X_test_scaled)
         
         # Create dataframes with component names for easier tracking
@@ -167,10 +113,10 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
         X_train_val_selected = pd.DataFrame(X_train_val_selected, index=X_train_val.index, columns=component_names)
         X_test_selected = pd.DataFrame(X_test_selected, index=X_test.index, columns=component_names)
 
-        # Validate feature consistency
-        logger.info(f"\n{'-'*30}\nValidating feature consistency\n{'-'*30}")
-        validate_feature_consistency(X_train_val, X_train_val_selected, best_features)
-        validate_feature_consistency(X_test, X_test_selected, best_features)
+        # # Validate feature consistency
+        # logger.info(f"\n{'-'*30}\nValidating feature consistency\n{'-'*30}")
+        # validate_feature_consistency(X_train_val_filtered, X_train_val_selected, best_features)
+        # validate_feature_consistency(X_test_filtered, X_test_selected, best_features)
 
         # Model training
         logger.info(f"\n{'-'*30}\nTraining models for {ticker_symbol}\n{'-'*30}")
@@ -181,66 +127,92 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
  
         # Ensemble prediction
         logger.info(f"\n{'-'*30}\nRunning ensemble methods for {ticker_symbol}\n{'-'*30}")
-        ensemble_results = ensemble_pipeline(logger, model_results, X_train_val_selected, X_test_selected, Y_train_val, Y_test, target_scaler, feature_scaler)
+        ensemble_results = ensemble_pipeline(logger, model_results, X_train_val_selected, X_test_selected, Y_train_val, Y_test, target_scaler)
 
         # Save results
-        try:
-            logger.info(f"\n{'-'*30}\nSaving results for {ticker_symbol}\n{'-'*30}")
-            df = pd.DataFrame.from_dict(ensemble_results, orient='index')
-            df.index.name = 'Method Name'
-            df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
-            df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_results.csv"))
+        logger.info(f"\n{'-'*30}\nSaving results for {ticker_symbol}\n{'-'*30}")
+        # Save ensemble comparison results
+        df = pd.DataFrame.from_dict(ensemble_results, orient='index')
+        df.index.name = 'Method Name'
+        save_csv_to_drive(logger, df, ticker_symbol, 'results', date_folder, current_date)
 
-            # Find best prediction and get its length
-            best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
-            best_prediction = ensemble_results[best_method]['prediction']
-            prediction_length = len(best_prediction)  # Get actual prediction length
+        # Find best prediction and get its length
+        best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
+        best_prediction = ensemble_results[best_method]['prediction']
+        prediction_length = len(best_prediction)
 
-            # Use the same index as X_test but only up to the prediction length
-            results_index = X_test.index[:prediction_length]
+        # Use the same index as X_test but only up to the prediction length
+        results_index = X_test.index[:prediction_length]
+        
+        # Create the DataFrame with all aligned data - trimming all data to match prediction length
+        results_df = pd.DataFrame({
+            'Ticker': ticker_symbol,
+            'Close': data_clean.loc[X_test.index[:prediction_length], 'Close'],
+            'Buy': data_clean.loc[X_test.index[:prediction_length], 'Buy'],
+            'Sell': data_clean.loc[X_test.index[:prediction_length], 'Sell'],
+            'Actual_Sharpe': Y_test.iloc[:prediction_length],
+            'Best_Prediction': best_prediction
+        }, index=results_index)
 
-            # Create the DataFrame with all aligned data - trimming all data to match prediction length
-            # Get the original columns that we need for the results dataframe
-            if 'Close' in data_clean.columns and 'Buy' in data_clean.columns and 'Sell' in data_clean.columns:
-                results_df = pd.DataFrame({
-                    'Ticker': ticker_symbol,
-                    'Close': data_clean.loc[X_test.index[:prediction_length], 'Close'],
-                    'Buy': data_clean.loc[X_test.index[:prediction_length], 'Buy'],
-                    'Sell': data_clean.loc[X_test.index[:prediction_length], 'Sell'],
-                    'Actual_Sharpe': Y_test.iloc[:prediction_length],
-                    'Best_Prediction': best_prediction
-                }, index=results_index)
-            else:
-                # Fallback if we don't have those specific columns
-                results_df = pd.DataFrame({
-                    'Ticker': ticker_symbol,
-                    'Actual_Sharpe': Y_test.iloc[:prediction_length],
-                    'Best_Prediction': best_prediction
-                }, index=results_index)
-                logger.warning(f"Some columns (Close/Buy/Sell) not found in the data. Created simplified results.")
+        results_df.index = pd.to_datetime(results_index)
+        results_df.index.name = "Date"
+        
+        # Save prediction results
+        save_csv_to_drive(logger, results_df, ticker_symbol, 'ensemble_prediction_results', date_folder, current_date)
+        
+        # Verify final prediction scale
+        verify_prediction_scale(logger, Y_test.iloc[:prediction_length], best_prediction, f"{ticker_symbol} best ensemble method")
+
+
+
+        # try:
+        #     logger.info(f"\n{'-'*30}\nSaving results for {ticker_symbol}\n{'-'*30}")
+        #     df = pd.DataFrame.from_dict(ensemble_results, orient='index')
+        #     df.index.name = 'Method Name'
+        #     df.to_csv(f'{date_folder}/{ticker_symbol}_results.csv')
+        #     df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_results.csv"))
+
+        #     # Find best prediction and get its length
+        #     best_method = min(ensemble_results.items(), key=lambda x: x[1]['rmse'])[0]
+        #     best_prediction = ensemble_results[best_method]['prediction']
+        #     prediction_length = len(best_prediction)  # Get actual prediction length
+
+        #     # Use the same index as X_test but only up to the prediction length
+        #     results_index = X_test.index[:prediction_length]
+        #     # Create the DataFrame with all aligned data - trimming all data to match prediction length
+        #     # Get the original columns that we need for the results dataframe
+        #     results_df = pd.DataFrame({
+        #         'Ticker': ticker_symbol,
+        #         'Close': data_clean.loc[X_test.index[:prediction_length], 'Close'],
+        #         'Buy': data_clean.loc[X_test.index[:prediction_length], 'Buy'],
+        #         'Sell': data_clean.loc[X_test.index[:prediction_length], 'Sell'],
+        #         'Actual_Sharpe': Y_test.iloc[:prediction_length],
+        #         'Best_Prediction': best_prediction
+        #     }, index=results_index)
+
+        #     results_df.index = pd.to_datetime(results_index)
+        #     results_df.index.name = "Date"
+        #     # results_df.index.name = "Date"
+        #     results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensemble_prediction_results.csv')
+        #     results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensemble_prediction_results.csv"))
+        #     logger.info(f"Saved results for {ticker_symbol} to Google Drive dated folder")
             
-            results_df.to_csv(f'{date_folder}/{ticker_symbol}_ensemble_prediction_results.csv')
-            results_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_ensemble_prediction_results.csv"))
-            logger.info(f"Saved results for {ticker_symbol} to Google Drive dated folder")
-            
-            # Verify final prediction scale
-            verify_prediction_scale(logger, Y_test.iloc[:prediction_length], best_prediction, f"{ticker_symbol} best ensemble method")
+        #     # Verify final prediction scale
+        #     verify_prediction_scale(logger, Y_test.iloc[:prediction_length], best_prediction, f"{ticker_symbol} best ensemble method")
 
 
-        except Exception as e:
-            logger.error(f"Error saving results to Google Drive: {e}")
-            logger.error(f"Exception details: {str(e)}")
-
-            # Added fallback saving option for emergencies
-            try:
-                # Try with a simpler approach if the dataframe creation failed
-                np.savetxt(os.path.join(current_date, f"{ticker_symbol}_best_prediction.csv"),
-                           best_prediction, delimiter=",", header="Prediction")
+        # except Exception as e:
+        #     logger.error(f"Error saving results to Google Drive: {e}")
+        #     # Added fallback saving option for emergencies
+        #     try:
+        #         # Try with a simpler approach if the dataframe creation failed
+        #         np.savetxt(os.path.join(current_date, f"{ticker_symbol}_best_prediction.csv"),
+        #                    best_prediction, delimiter=",", header="Prediction")
                 
-                results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensemble_prediction_results.csv"))
-                logger.info(f"Saved simplified prediction to local folder")
-            except Exception as e2:
-                logger.error(f"Even simple saving failed: {e2}")
+        #         results_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_ensemble_prediction_results.csv"))
+        #         logger.info(f"Saved simplified prediction to local folder")
+        #     except Exception as e2:
+        #         logger.error(f"Even simple saving failed: {e2}")
                 
         end_time = time.time()
         logger.info(f"\n{'='*50}")
@@ -255,10 +227,11 @@ def full_pipeline_for_single_stock(data_clean, logger, date_folder, current_date
         traceback.print_exc()
         return False
     
+
 # ===============================================================================
 # Running the -> Full Pipeline For Single Stock
 # ===============================================================================
-def run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers.csv", start_date="2013-01-01", end_date="2024-01-01"):
+def run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers_av.csv", start_date="2013-01-01", end_date="2024-01-01"):
     """
     Main function to run the complete pipeline
     
@@ -291,7 +264,7 @@ def run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers.
     logger.info(f"Loaded {len(valid_tickers)} valid tickers.")
 
     base_directory = "results" 
-    clean_data_date_folder = "20250426"
+    clean_data_date_folder = "20250513"
     date_path = os.path.join(base_directory, clean_data_date_folder)
 
     if not os.path.exists(date_path):
@@ -316,9 +289,13 @@ def run_pipeline(logger, date_folder, current_date, tickers_file="valid_tickers.
                 continue
 
             # Read the CSV file - use date parsing to handle the index correctly
-            ticker_clean_data = pd.read_csv(ticker_csv_path, parse_dates=True)
-            logger.info(f"Successfully loaded clean data for {ticker}")
+            #ticker_clean_data = pd.read_csv(ticker_csv_path, parse_dates=True)
+            ticker_clean_data = pd.read_csv(ticker_csv_path, parse_dates=['Date'], index_col='Date')
+            if not isinstance(ticker_clean_data.index, pd.DatetimeIndex):
+                logger.warning(f"Index for {ticker} is not a DatetimeIndex. Converting to datetime.")
+                ticker_clean_data.index = pd.to_datetime(ticker_clean_data.index)
 
+            logger.info(f"Successfully loaded clean data for {ticker}")
             # Debug information about the loaded data
             logger.info(f"Data shape: {ticker_clean_data.shape}")
             logger.info(f"Columns: {ticker_clean_data.columns.tolist()[:5]}...")
