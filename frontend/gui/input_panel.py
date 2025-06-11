@@ -1,3 +1,7 @@
+import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend')))
+
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QLabel, QLineEdit, 
                              QDateEdit, QPushButton, QComboBox, QMessageBox, QVBoxLayout)
 from datetime import datetime

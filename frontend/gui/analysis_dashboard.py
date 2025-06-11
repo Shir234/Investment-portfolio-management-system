@@ -105,7 +105,7 @@ class AnalysisDashboard(QWidget):
     def set_theme(self, is_dark_mode):
         """Apply light or dark theme to the dashboard."""
         self.is_dark_mode = is_dark_mode
-        plt.style.use('dark_background' if is_dark_mode else 'seaborn-white')
+        plt.style.use('dark_background' if is_dark_mode else 'seaborn-v0_8-white')
         if is_dark_mode:
             group_style = "color: #ffffff; background-color: #353535;"
             combo_style = "background-color: #3c3f41; color: #ffffff; selection-background-color: #2a82da;"

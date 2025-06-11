@@ -1,3 +1,8 @@
+
+import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend')))
+
 from PyQt5.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QLabel
 from PyQt5.QtCore import Qt, QPoint
 from gui.input_panel import InputPanel

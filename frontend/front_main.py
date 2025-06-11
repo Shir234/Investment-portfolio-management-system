@@ -3,7 +3,9 @@ import os
 import logging
 import pandas as pd
 
-
+import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend')))
 # Suppress matplotlib and NumExpr logs
 os.environ["NUMEXPR_MAX_THREADS"] = "8"
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
