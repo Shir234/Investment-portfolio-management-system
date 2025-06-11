@@ -202,7 +202,7 @@ def sell_logic(daily_data, buy_threshold, holdings, current_date, mode="automati
     STOP_LOSS = -0.10           # Sell when 10% loss
 
 
-    for ticker, holding in list (holding.items()):
+    for ticker, holding in list (holdings.items()):
         ticker_data = daily_data[daily_data['Ticker'] == ticker]
         if ticker_data.empty:
             continue
