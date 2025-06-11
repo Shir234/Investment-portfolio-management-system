@@ -1,11 +1,13 @@
 # trading_logic.py
-
+import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend')))
 import pandas as pd
 import numpy as np
 import logging
 import datetime
 import json
-import os
+
 
 from logging_config import get_isolated_logger
 
