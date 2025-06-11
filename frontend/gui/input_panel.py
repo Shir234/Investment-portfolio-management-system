@@ -1,7 +1,8 @@
 import os
 import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend')))
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend')))  # Commented out as misplaced but kept for reference
+# from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QLabel, QLineEdit, 
+#                              QDateEdit, QPushButton, QComboBox, QMessageBox, QVBoxLayout)
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QLabel, QLineEdit, 
                              QDateEdit, QPushButton, QComboBox, QMessageBox, QVBoxLayout)
 from datetime import datetime
@@ -137,26 +138,34 @@ class InputPanel(QWidget):
         self.reset_button.setStyleSheet(button_style_reset)
         
     def get_message_box_style(self):
-        """Return QMessageBox stylesheet based on theme."""
-        return f"""
-            QMessageBox {{ 
-                background-color: {'#353535' if self.is_dark_mode else '#f0f0f0'}; 
-                color: {'#ffffff' if self.is_dark_mode else 'black'}; 
-            }}
-            QMessageBox QLabel {{ 
-                color: {'#ffffff' if self.is_dark_mode else 'black'}; 
-            }}
-            QMessageBox QPushButton {{ 
-                background-color: {'#444444' if self.is_dark_mode else '#e0e0e0'}; 
-                color: {'#ffffff' if self.is_dark_mode else 'black'}; 
-                border: 1px solid {'#666666' if self.is_dark_mode else '#cccccc'}; 
-                padding: 5px 15px; 
-                border-radius: 3px; 
-            }}
-            QMessageBox QPushButton:hover {{ 
-                background-color: {'#555555' if self.is_dark_mode else '#d0d0d0'}; 
-            }}
-        """
+        """Return stylesheet for QMessageBox based on the current theme."""
+        if self.is_dark_mode:  # Assuming is_dark_mode is a class attribute
+            return """
+                QMessageBox { background-color: #353535; color: #ffffff; }
+                QMessageBox QLabel { color: #ffffff; }
+                QMessageBox QPushButton { background-color: #444444; color: #ffffff; border: 1px solid #666666; }
+                QMessageBox QPushButton:hover { background-color: #555555; }
+                QMessageBox::item:selected { background-color: #2a82da; color: #ffffff; }
+            """
+        else:  # Light mode
+            return """
+                QMessageBox { background-color: #f0f0f0; color: black; }
+                QMessageBox QLabel { color: black; }
+                QMessageBox QPushButton { background-color: #e0e0e0; color: black; border: 1px solid #cccccc; }
+                QMessageBox QPushButton:hover { background-color: #d0d0d0; }
+                QMessageBox::item:selected { background-color: #2a82da; color: black; }
+            """
+        
+    def show_message_box(self, icon, title, text, buttons):
+        """Helper method to create and show a QMessageBox with current theme."""
+        msg = QMessageBox()
+        msg.setIcon(icon)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(buttons)
+        msg.setStyleSheet("")  # Clear any cached style
+        msg.setStyleSheet(self.get_message_box_style())  # Reapply current theme
+        return msg.exec_()
         
     def reset_portfolio(self):
         """Delete portfolio_state.json to reset portfolio state."""
