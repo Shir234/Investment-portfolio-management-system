@@ -20,7 +20,9 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
     logger.info("="*50)
     logger.info(f"Parameters: Investment=${investment_amount}, Risk={risk_level}, Mode={mode}, Reset={reset_state}")
     logger.info(f"Date range: {start_date} to {end_date}")
-    
+    # Remove the premature logging of orders
+    # logger.info(f"Orders returned: {orders}")  # This caused the error
+
     try:
         # Validate inputs
         if end_date < start_date:
@@ -41,23 +43,12 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
         logger.info("Validating prediction quality...")
         correlation, buy_hit_rate, sell_hit_rate, sharpe_min, sharpe_max = validate_prediction_quality(merged_data)
         
-        # logger.info(f"Signal Quality Results:")
-        # logger.info(f"  Correlation: {correlation:.3f}")
-        # logger.info(f"  Buy Hit Rate: {buy_hit_rate:.1%}")
-        # logger.info(f"  Sell Hit Rate: {sell_hit_rate:.1%}")
-        # logger.info(f"  Sharpe Range: [{sharpe_min:.2f}, {sharpe_max:.2f}]")
-        
         warning_message = ""
-        # if correlation < 0.1:
-        #     warning_message = f"Low signal-return correlation ({correlation:.3f}). Strategy may be unreliable."
-        #     logger.warning(warning_message)
-
+        
         logger.info(f"Calling trading strategy...")
         logger.info(f"  Mode: {mode}")
         logger.info(f"  Reset State: {reset_state}")
         
-        # NOTE: All the detailed trading logic will be logged to logs/trading_only_YYYYMMDD.log
-        # This connector logging appears in logs/app_YYYYMMDD.log
         result = run_trading_strategy(
             merged_data=merged_data,
             investment_amount=investment_amount,
@@ -80,6 +71,9 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
             logger.info(f"  Portfolio history entries: {len(portfolio_history)}")
             logger.info(f"  Final portfolio value: ${portfolio_value:,.2f}")
         
+        # Log orders after they are assigned
+        logger.info(f"Orders returned: {len(orders)}")
+
         if portfolio_history:
             initial_value = investment_amount
             final_value = portfolio_value

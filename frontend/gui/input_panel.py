@@ -1,29 +1,22 @@
 import os
 import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend')))  # Commented out as misplaced but kept for reference
-# from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QLabel, QLineEdit, 
-#                              QDateEdit, QPushButton, QComboBox, QMessageBox, QVBoxLayout)
+from logging_config import setup_logging, get_logger
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QLabel, QLineEdit, 
-                             QDateEdit, QPushButton, QComboBox, QMessageBox, QVBoxLayout)
+                             QDateEdit, QPushButton, QComboBox, QMessageBox, QVBoxLayout,QDoubleSpinBox)
 from datetime import datetime
 import logging
 from data.trading_connector import execute_trading_strategy
 import pandas as pd
 import os
+from backend.trading_logic_new import get_orders  # Import get_orders
 
 # Ensure logs directory exists
 if not os.path.exists('logs'):
     os.makedirs('logs')
 
 # Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    handlers=[
-        logging.FileHandler('logs/app.log'),
-        logging.StreamHandler()
-    ]
-)
+from logging_config import get_logger
+logger = get_logger(__name__)
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
@@ -53,7 +46,10 @@ class InputPanel(QWidget):
         self.risk_label = QLabel("Risk Level (0-10):")
         self.risk_label.setObjectName("risk_label")
         self.risk_label.setStyleSheet("color: #ffffff;")
-        self.risk_input = QLineEdit("10")
+        self.risk_input = QDoubleSpinBox()  # Replace QLineEdit with QDoubleSpinBox
+        self.risk_input.setRange(0, 10)  # Set range 0-10
+        self.risk_input.setValue(10)  # Default value
+        self.risk_input.setSingleStep(0.1)  # Allow fine-grained adjustments
         self.risk_input.setStyleSheet("background-color: #3c3f41; color: #ffffff;")
         risk_layout.addWidget(self.risk_label)
         risk_layout.addWidget(self.risk_input)
@@ -203,7 +199,7 @@ class InputPanel(QWidget):
     def update_portfolio(self):
         try:
             investment_amount = float(self.investment_input.text())
-            risk_level = float(self.risk_input.text()) * 10
+            risk_level = self.risk_input.value() * 10  # Get value from QDoubleSpinBox
             start_date = pd.Timestamp(self.start_date.date().toPyDate(), tz='UTC')
             end_date = pd.Timestamp(self.end_date.date().toPyDate(), tz='UTC')
 

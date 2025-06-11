@@ -23,13 +23,12 @@ class MainWindow(QMainWindow):
 
         # Theme toggle button layout
         theme_layout = QHBoxLayout()
-        theme_layout.addStretch()
+        theme_layout.addStretch()  # Push button to the right
         self.theme_button = QPushButton("🌙")
         self.theme_button.setFixedSize(24, 24)
         self.theme_button.clicked.connect(self.toggle_theme)
-        self.theme_button.setStyleSheet("background-color: #2a82da; color: #ffffff; border-radius: 12px;" if self.is_dark_mode else "background-color: #2a82da; color: black; border-radius: 12px;")
+        self.theme_button.setStyleSheet("...")
         theme_layout.addWidget(self.theme_button)
-        theme_layout.addStretch()
         main_layout.addLayout(theme_layout)
 
         # Create tab widget
