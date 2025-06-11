@@ -5,7 +5,9 @@ sys.path.append(backend_path)
 print(f"Added to sys.path: {backend_path}")  # Debug print
 import pandas as pd
 import logging 
+
 from backend.trading_logic_new import run_trading_strategy, get_orders, get_portfolio_history, validate_prediction_quality
+from logging_config import get_logger
 
 # Use centralized logger
 logger = get_logger('trading_connector')
