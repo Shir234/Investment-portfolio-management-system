@@ -1,11 +1,13 @@
+import sys
+import os
+backend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
+sys.path.append(backend_path)
+print(f"Added to sys.path: {backend_path}")  # Debug print
 import pandas as pd
 import logging 
 from backend.trading_logic_new import run_trading_strategy, get_orders, get_portfolio_history, validate_prediction_quality
 
-# Import centralized logging (remove the old logging.basicConfig)
-from logging_config import get_logger
-
-# Use regular logger for GUI/connector logging (goes to main app log)
+# Use centralized logger
 logger = get_logger('trading_connector')
 logger.setLevel(logging.INFO)
 
@@ -64,7 +66,6 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
             reset_state=reset_state
         )
         
-        # Process results based on mode
         if mode == "semi-automatic":
             orders, warning_message = result
             portfolio_history = get_portfolio_history()
@@ -77,7 +78,6 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
             logger.info(f"  Portfolio history entries: {len(portfolio_history)}")
             logger.info(f"  Final portfolio value: ${portfolio_value:,.2f}")
         
-        # Log performance summary
         if portfolio_history:
             initial_value = investment_amount
             final_value = portfolio_value
@@ -100,7 +100,6 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
         }
         
     except ValueError as ve:
-        # User input errors
         logger.error(f"Input validation error: {ve}")
         return False, {
             'orders': [],
@@ -113,7 +112,6 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
         }
         
     except Exception as e:
-        # Unexpected errors
         logger.error(f"Unexpected error in execute_trading_strategy: {e}", exc_info=True)
         return False, {
             'orders': [],
@@ -141,18 +139,15 @@ def get_order_history_df():
         logger.debug(f"Order DataFrame shape: {order_df.shape}")
         logger.debug(f"Order DataFrame columns: {list(order_df.columns)}")
         
-        # Expected columns for validation
         expected_columns = [
-            'date', 'ticker', 'action', 'shares_amount', 'price', 
-            'investment_amount', 'transaction_cost', 'previous_shares', 
+            'date', 'ticker', 'action', 'shares_amount', 'price',
+            'investment_amount', 'transaction_cost', 'previous_shares',
             'new_total_shares', 'sharpe', 'ticker_weight', 'weighted_allocation'
         ]
         
-        # Check for missing columns
         missing_cols = set(expected_columns) - set(order_df.columns)
         if missing_cols:
             logger.warning(f"Missing columns in order DataFrame: {missing_cols}")
-            # Return DataFrame with expected columns (empty)
             return pd.DataFrame(columns=expected_columns)
         
         logger.info("Order history DataFrame created successfully")
@@ -169,31 +164,26 @@ def log_trading_summary():
         logger.info("TRADING STATE SUMMARY")
         logger.info("="*40)
         
-        # Get current orders
         orders = get_orders()
         logger.info(f"Total orders in history: {len(orders)}")
         
         if orders:
-            # Count by action type
             buy_orders = [o for o in orders if o.get('action') == 'buy']
             sell_orders = [o for o in orders if o.get('action') == 'sell']
             
             logger.info(f"  Buy orders: {len(buy_orders)}")
             logger.info(f"  Sell orders: {len(sell_orders)}")
             
-            # Get unique tickers
             tickers = set(o.get('ticker', 'Unknown') for o in orders)
             logger.info(f"  Unique tickers traded: {len(tickers)}")
             logger.info(f"  Tickers: {sorted(list(tickers))}")
             
-            # Calculate total investment
             total_investment = sum(o.get('investment_amount', 0) for o in buy_orders)
             total_sales = sum(o.get('investment_amount', 0) for o in sell_orders)
             
             logger.info(f"  Total invested: ${total_investment:,.2f}")
             logger.info(f"  Total sales: ${total_sales:,.2f}")
         
-        # Get portfolio history
         portfolio_history = get_portfolio_history()
         logger.info(f"Portfolio history entries: {len(portfolio_history)}")
         
