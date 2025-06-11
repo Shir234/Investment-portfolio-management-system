@@ -1,6 +1,6 @@
 import pandas as pd
 import logging 
-from backend.trading_logic import run_integrated_trading_strategy, get_orders, get_portfolio_history, validate_prediction_quality
+from backend.trading_logic_new import run_trading_strategy, get_orders, get_portfolio_history, validate_prediction_quality
 
 # Import centralized logging (remove the old logging.basicConfig)
 from logging_config import get_logger
@@ -37,24 +37,24 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
         logger.info("Validating prediction quality...")
         correlation, buy_hit_rate, sell_hit_rate, sharpe_min, sharpe_max = validate_prediction_quality(merged_data)
         
-        logger.info(f"Signal Quality Results:")
-        logger.info(f"  Correlation: {correlation:.3f}")
-        logger.info(f"  Buy Hit Rate: {buy_hit_rate:.1%}")
-        logger.info(f"  Sell Hit Rate: {sell_hit_rate:.1%}")
-        logger.info(f"  Sharpe Range: [{sharpe_min:.2f}, {sharpe_max:.2f}]")
+        # logger.info(f"Signal Quality Results:")
+        # logger.info(f"  Correlation: {correlation:.3f}")
+        # logger.info(f"  Buy Hit Rate: {buy_hit_rate:.1%}")
+        # logger.info(f"  Sell Hit Rate: {sell_hit_rate:.1%}")
+        # logger.info(f"  Sharpe Range: [{sharpe_min:.2f}, {sharpe_max:.2f}]")
         
         warning_message = ""
-        if correlation < 0.1:
-            warning_message = f"Low signal-return correlation ({correlation:.3f}). Strategy may be unreliable."
-            logger.warning(warning_message)
+        # if correlation < 0.1:
+        #     warning_message = f"Low signal-return correlation ({correlation:.3f}). Strategy may be unreliable."
+        #     logger.warning(warning_message)
 
-        logger.info(f"Calling integrated trading strategy...")
+        logger.info(f"Calling trading strategy...")
         logger.info(f"  Mode: {mode}")
         logger.info(f"  Reset State: {reset_state}")
         
         # NOTE: All the detailed trading logic will be logged to logs/trading_only_YYYYMMDD.log
         # This connector logging appears in logs/app_YYYYMMDD.log
-        result = run_integrated_trading_strategy(
+        result = run_trading_strategy(
             merged_data=merged_data,
             investment_amount=investment_amount,
             risk_level=risk_level,

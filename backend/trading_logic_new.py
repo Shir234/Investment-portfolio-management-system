@@ -2,7 +2,7 @@
 import os
 import pandas as pd
 import json
-
+import logging
 from logging_config import get_isolated_logger
 
 # Create isolated trading logger - ONLY trading logic will appear in this log file
@@ -47,6 +47,21 @@ def map_risk_to_sharpe_thresholds(risk_level, sharpe_min, sharpe_max):
     logger.info(f"Risk Level {risk_level}: Buy threshold = {buy_threshold:.3f}, Sell threshold = {sell_threshold:.3f}")
     return buy_threshold, sell_threshold
 
+
+def get_orders():
+    """
+    Return a copy of the orders list.
+    """
+    logger.debug(f"Returning orders: {len(orders)}")
+    return orders.copy()
+
+
+def get_portfolio_history():
+    """
+    Return a copy of the portfolio history list.
+    """
+    logger.debug(f"Returning portfolio history: {len(portfolio_history)}")
+    return portfolio_history.copy()
 
 def load_ticker_weights(weights_file='final_tickers_score.csv'):
     """
@@ -121,13 +136,8 @@ def calculate_position_size(sharpe_value, ticker_weight, available_cash, signal_
 
     # 1 Normalize ticker weight to usable range
     # Convert from (-1, +1) to (0.2, 1.0) so even negative weights get some allocation
-    if ticker_weight >= 0:
-        # Positive weights: 0.6 to 1.0
-        normalized_weight = 0.6 + (ticker_weight * 0.4)
-    else:
-        # Negative weights: 0.2 to 0.6  
-        normalized_weight = 0.6 + (ticker_weight * 0.4)  # ticker_weight is negative
-    
+    normalized_weight = 0.6 + (ticker_weight * 0.4)
+
     # Ensure weight is in valid range
     normalized_weight = max(0.2, min(normalized_weight, 1.0))
 
@@ -157,7 +167,7 @@ def calculate_position_size(sharpe_value, ticker_weight, available_cash, signal_
 
 
 # def process_sell_signals(daily_data, holdings, current_date, risk_level, mode="automatic", orders=None, suggested_orders=None):
-def sell_logic(daily_data, holdings, current_date, mode="automatic", orders=None, suggested_orders=None):
+def sell_logic(daily_data, buy_threshold, holdings, current_date, mode="automatic", orders=None, suggested_orders=None):
     """
     Process sell signals for existing LONG and SHORT positions.
     
@@ -186,12 +196,82 @@ def sell_logic(daily_data, holdings, current_date, mode="automatic", orders=None
     sell_orders_count = 0
     transaction_cost_bps = 5  # 0.05% transaction cost (bps=basis point)
 
+    # Simple rules
+    MIN_HOLDING_DAYS = 5        # Hold at least 5 days
+    PROFIT_TARGET = 0.15        # Sell when 15% profit
+    STOP_LOSS = -0.10           # Sell when 10% loss
+
+
     for ticker, holding in list (holding.items()):
         ticker_data = daily_data[daily_data['Ticker'] == ticker]
         if ticker_data.empty:
             continue
+
+        current_price = ticker_data.iloc[0]['Close']
+        purchase_price = holding['purchase_price']
+        purchase_date = holding['purchase_date']
+        shares = holding['shares']
+
+        # Calculate days held and profit/loss
+        days_held = (current_date - purchase_date).days
+        profit_pct = (current_price - purchase_price) / purchase_price
+        current_sharpe = ticker_data.iloc[0]['Best_Prediction']
+
+        # Decision: Should we sell?
+        should_sell = False
+        sell_reason = ""
+        
+        if days_held >= MIN_HOLDING_DAYS:
+            if profit_pct >= PROFIT_TARGET:
+                should_sell = True
+                sell_reason = f"Profit target hit: {profit_pct:.1%}"
+            # elif current_sharpe < buy_threshold:  # Same threshold you used to buy
+            #     should_sell = True
+            #     sell_reason = f"Signal weakened: Sharpe={current_sharpe:.3f} < {buy_threshold:.3f}"
+            # elif profit_pct <= STOP_LOSS:
+            #     should_sell = True
+            #     sell_reason = f"Stop loss hit: {profit_pct:.1%}"
+        
+        if should_sell:
+            # Execute the sell
+            sale_value = shares * current_price
+            transaction_cost = sale_value * (transaction_cost_bps / 10000)
+            net_proceeds = sale_value - transaction_cost
+            profit_loss = net_proceeds - (shares * purchase_price)
+            
+            # Create sell order
+            order = {
+                'date': current_date,
+                'ticker': ticker,
+                'action': 'sell',
+                'shares_amount': shares,
+                'price': current_price,
+                'investment_amount': sale_value,
+                'transaction_cost': transaction_cost,
+                'total_proceeds': net_proceeds,
+                'profit_loss': profit_loss,
+                'profit_pct': profit_pct,
+                'days_held': days_held,
+                'sell_reason': sell_reason,
+                'purchase_price': purchase_price
+            }
+            
+            if mode == "automatic":
+                cash_from_sales += net_proceeds
+                del holdings[ticker]  # Remove from holdings
+                if orders is not None:
+                    orders.append(order)
+                sell_orders_count += 1
+                
+                logger.info(f"SELL {ticker}: {sell_reason}, Days={days_held}, "
+                           f"Profit=${profit_loss:.2f} ({profit_pct:.1%})")
+            else:
+                if suggested_orders is not None:
+                    suggested_orders.append(order)
     
-    
+    return cash_from_sales, sell_orders_count
+
+  
 # def process_buy_signals(daily_data, buy_threshold, sell_threshold, holdings, cash, current_date, risk_level, ticker_weights, default_weight, max_positions, max_daily_deployment, mode="automatic", orders=None, suggested_orders=None):
 def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_weights, default_weight, max_positions, mode="automatic", orders=None, suggested_orders=None):
     """
@@ -290,10 +370,11 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
 
         # Calculate position size using your function
         position_size = calculate_position_size(
-            sharpe_value=sharpe,
-            ticker_weight=ticker_weight, 
-            available_cash=cash,
-            sharpe_threshold=buy_threshold
+            sharpe_value = sharpe,
+            ticker_weight = ticker_weight, 
+            available_cash = cash,
+            #sharpe_threshold=buy_threshold
+            signal_strength = signal_strength
         )
 
         # if position_size < 200:  # Minimum position size
@@ -388,7 +469,7 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
 
 
 #def run_integrated_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False):
-def execute_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False):
+def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False):
     """
     Execute trading strategy combining Buy/Sell functions with LONG/SHORT support.
     
@@ -458,6 +539,9 @@ def execute_trading_strategy(merged_data, investment_amount, risk_level, start_d
         # Add technical indicators for momentum confirmation
 
         # Portfolio parameters based on risk level
+        # Portfolio parameters
+        max_positions = 100  # Maximum number of different stocks
+
         
         # Get Buy / Sell transaction for each dat - based on trading logic 
         for current_date in date_range:
@@ -468,17 +552,91 @@ def execute_trading_strategy(merged_data, investment_amount, risk_level, start_d
 
             # TODO: ADD SOMETHING IF THE DAILY DATA IS EMPTY
 
+            if daily_data.empty:
+                # No data today - just record portfolio value
+                current_value = cash
+                for ticker, holding in holdings.items():
+                    # Use last known price or skip
+                    last_price_data = merged_data[
+                        (merged_data['Ticker'] == ticker) & 
+                        (merged_data['date'] <= current_date)
+                    ].tail(1)
+                    if not last_price_data.empty:
+                        current_value += holding['shares'] * last_price_data.iloc[0]['Close']
+                
+                portfolio_history.append({
+                    'date': current_date,
+                    'value': current_value,
+                    'holdings': holdings.copy(),
+                    'cash': cash,
+                    'num_positions': len(holdings)
+                })
+                continue
+
             logger.debug(f"Processing {current_date.date()}: {len(daily_data)} tickers")
 
-            # First - Sell, so the money from the sell transaction could be used in the Buy later
+            # STEP 1: SELL FIRST (to free up cash for buying)
+            cash_from_sales, sell_count = sell_logic(
+                daily_data=daily_data,
+                buy_threshold=buy_threshold,
+                holdings=holdings,
+                current_date=current_date,
+                mode=mode,
+                orders=orders if mode == "automatic" else None,
+                suggested_orders=suggested_orders
+            )
+            cash += cash_from_sales
+            total_sell_orders += sell_count
 
+            # STEP 2: BUY (with updated cash amount)
+            cash_used, buy_count = buy_logic(
+                daily_data=daily_data,
+                buy_threshold=buy_threshold,
+                holdings=holdings,
+                cash=cash,
+                current_date=current_date,
+                ticker_weights=ticker_weights,
+                default_weight=default_weight,
+                max_positions=max_positions,
+                mode=mode,
+                orders=orders if mode == "automatic" else None,
+                suggested_orders=suggested_orders
+            )
+            cash -= cash_used
+            total_buy_orders += buy_count
 
+            # STEP 3: Calculate current portfolio value
+            current_value = cash
+            for ticker, holding in holdings.items():
+                ticker_data = daily_data[daily_data['Ticker'] == ticker]
+                if not ticker_data.empty:
+                    current_value += holding['shares'] * ticker_data.iloc[0]['Close']
 
+            # STEP 4: Record daily portfolio snapshot
+            portfolio_history.append({
+                'date': current_date,
+                'value': current_value,
+                'holdings': holdings.copy(),
+                'cash': cash,
+                'num_positions': len(holdings)
+            })
 
+            logger.debug(f"Day summary: Sells={sell_count}, Buys={buy_count}, "
+                        f"Cash=${cash:.0f}, Value=${current_value:.0f}, Positions={len(holdings)}")
 
+        # After the loop - calculate final results
+        final_value = portfolio_history[-1]['value'] if portfolio_history else investment_amount
+        total_return = (final_value / investment_amount - 1) * 100
 
-    
-        
+        logger.info(f"Strategy completed: Buy orders={total_buy_orders}, Sell orders={total_sell_orders}")
+        logger.info(f"Final value: ${final_value:.2f} ({total_return:.1f}% return)")
+
+        # Return results based on mode
+        if mode == "automatic":
+            return orders, portfolio_history, final_value, warning_message
+        else:
+            return suggested_orders, warning_message
+
     except Exception as e:
         logger.error(f"Error in integrated trading strategy: {e}", exc_info=True)
         warning_message = f"Strategy error: {e}"
@@ -490,3 +648,32 @@ def execute_trading_strategy(merged_data, investment_amount, risk_level, start_d
 
 
 
+def validate_prediction_quality(merged_data, forward_days=5):
+    """
+    Validate that predictions are reliable enough for trading.
+    Test if predicted Sharpe predicts future returns.
+    """
+
+    merged_data = merged_data.sort_values(['Ticker', 'date']).copy()
+    merged_data['forward_return'] = merged_data.groupby('Ticker')['Close'].pct_change(forward_days).shift(-forward_days)
+    
+    correlation = merged_data['Best_Prediction'].corr(merged_data['forward_return'])
+    sharpe_min = merged_data['Best_Prediction'].min()
+    sharpe_max = merged_data['Best_Prediction'].max()
+    
+    # Calculate hit rates for compatibility with calling code
+    buy_threshold = sharpe_max * 0.25  # Dynamic based on range
+    sell_threshold = sharpe_min * 0.25
+    
+    strong_buy = merged_data[merged_data['Best_Prediction'] >= buy_threshold]
+    strong_sell = merged_data[merged_data['Best_Prediction'] <= sell_threshold]
+    
+    buy_hit_rate = (strong_buy['forward_return'] > 0).mean() if not strong_buy.empty else 0
+    sell_hit_rate = (strong_sell['forward_return'] < 0).mean() if not strong_sell.empty else 0
+    
+    logger.info(f"Sharpe-Return Correlation: {correlation:.3f}")
+    logger.info(f"Sharpe Range: [{sharpe_min:.2f}, {sharpe_max:.2f}]")
+    logger.info(f"Strong Buy Hit Rate (Sharpe ≥ {buy_threshold:.2f}): {buy_hit_rate:.1%}")
+    logger.info(f"Strong Sell Hit Rate (Sharpe ≤ {sell_threshold:.2f}): {sell_hit_rate:.1%}")
+    
+    return correlation, buy_hit_rate, sell_hit_rate, sharpe_min, sharpe_max
