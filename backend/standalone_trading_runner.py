@@ -201,6 +201,17 @@ class TradingRunner:
                     selected_orders=None):
         """
         Run the trading strategy.
+        
+        Args:
+            investment_amount: Starting cash
+            risk_level: 0-10 (0=conservative, 10=aggressive)
+            start_date: Start date (auto-detect if None)
+            end_date: End date (auto-detect if None)
+            mode: "automatic" or "semi-automatic"
+            reset_state: Whether to reset portfolio state
+            use_weights: Whether to use ticker weights
+            use_signal_strength: Whether to use signal strength
+            selected_orders: List of orders to execute (for semi-automatic mode)
         """
         try:
             # Auto-detect date range if not provided
@@ -247,14 +258,13 @@ class TradingRunner:
             
             if mode == "automatic":
                 orders, portfolio_history, final_value, warning_message = result
+
             else:
-                # Handle semi-automatic mode
-                if selected_orders:
-                    # When executing selected orders, just get orders and warning
-                    orders, warning_message = result
-                    portfolio_history = get_portfolio_history()
-                    final_value = portfolio_history[-1]['value'] if portfolio_history else investment_amount
-                else:
+                # # Handle semi-automatic mode with selected_orders
+                # if selected_orders:
+                #     # When executing selected orders, we still get the full result
+                #     orders, portfolio_history, final_value, warning_message = result[0], get_portfolio_history(), result[0][-1]['final_value'] if result[0] else investment_amount, result[1] if len(result) > 1 else ""
+                # else:
                     # When just getting suggestions
                     orders, warning_message = result
                     portfolio_history = get_portfolio_history()

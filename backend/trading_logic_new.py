@@ -685,7 +685,13 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
 
             current_value = cash
             for ticker, holding in holdings.items():
-                current_value += holding['shares'] * selected_orders[-1]['price']  # Approximate
+                # Find the current price for this ticker from selected orders, or use purchase price
+                ticker_price = holding['purchase_price']  # fallback
+                for order in selected_orders:
+                    if order['ticker'] == ticker:
+                        ticker_price = order['price']
+                        break
+                current_value += holding['shares'] * ticker_price
 
             portfolio_history.append({
                 'date': current_date,
