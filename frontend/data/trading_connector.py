@@ -56,7 +56,7 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
             end_date=end_date,
             mode=mode,
             reset_state=reset_state,
-            selected_orders=selected_orders  # Pass selected_orders for semi-automatic mode
+            selected_orders=selected_orders
         )
 
         portfolio_history = get_portfolio_history()
@@ -106,7 +106,7 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
             'orders': [],
             'portfolio_history': portfolio_history,
             'portfolio_value': 0.0,
-            'cash': cash,  # Use current cash
+            'cash': cash,
             'warning_message': str(ve),
             'signal_correlation': 0.0,
             'buy_hit_rate': 0.0,
@@ -121,7 +121,7 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
             'orders': [],
             'portfolio_history': portfolio_history,
             'portfolio_value': 0.0,
-            'cash': cash,  # Use current cash
+            'cash': cash,
             'warning_message': f"Error executing strategy: {e}",
             'signal_correlation': 0.0,
             'buy_hit_rate': 0.0,
@@ -138,8 +138,8 @@ def get_order_history_df():
             logger.info("No orders found in history")
             return pd.DataFrame()
 
-        logger.info(f"Retrieved {len(orders)} orders from history")
-
+        logger.info(f"Retrieved {len(orders)} orders from orders history")
+        
         order_df = pd.DataFrame(orders)
         logger.debug(f"Order DataFrame shape: {order_df.shape}")
         logger.debug(f"Order DataFrame columns: {list(order_df.columns)}")
@@ -163,43 +163,43 @@ def get_order_history_df():
         logger.error(f"Error generating order history DataFrame: {e}", exc_info=True)
         return pd.DataFrame()
 
-def log_trading_summary():
-    """Log a summary of current trading state."""
+def log_trading_orders():
+    """Log a summary of current trading orders."""
     try:
-        logger.info("="*40)
-        logger.info("TRADING STATE SUMMARY")
-        logger.info("="*40)
-
+        logger.info("="*50)
+        logger.info("TRADING ORDERS SUMMARY")
+        logger.info("="*50)
+        
         orders = get_orders()
         logger.info(f"Total orders in history: {len(orders)}")
-
+        
         if orders:
             buy_orders = [o for o in orders if o.get('action') == 'buy']
             sell_orders = [o for o in orders if o.get('action') == 'sell']
-
+            
             logger.info(f"  Buy orders: {len(buy_orders)}")
             logger.info(f"  Sell orders: {len(sell_orders)}")
-
-            tickers = set(o.get('ticker', 'Unknown') for o in orders)
+            
+            tickers = sorted(set(o.get('ticker', 'Unknown') for o in orders))
             logger.info(f"  Unique tickers traded: {len(tickers)}")
-            logger.info(f"  Tickers: {sorted(list(tickers))}")
-
+            logger.info(f"  Tickers: {tickers}")
+            
             total_investment = sum(o.get('investment_amount', 0) for o in buy_orders)
             total_sales = sum(o.get('investment_amount', 0) for o in sell_orders)
-
+            
             logger.info(f"  Total invested: ${total_investment:,.2f}")
             logger.info(f"  Total sales: ${total_sales:,.2f}")
-
+        
         portfolio_history = get_portfolio_history()
         logger.info(f"Portfolio history entries: {len(portfolio_history)}")
-
+        
         if portfolio_history:
             latest_entry = portfolio_history[-1]
             logger.info(f"  Latest portfolio value: ${latest_entry.get('value', 0):,.2f}")
             logger.info(f"  Latest cash: ${latest_entry.get('cash', 0):,.2f}")
             logger.info(f"  Active positions: {len(latest_entry.get('holdings', {}))}")
-
-        logger.info("="*40)
-
+        
+        logger.info("="*50)
+        
     except Exception as e:
-        logger.error(f"Error generating trading summary: {e}", exc_info=True)
+        logger.error(f"Error generating trading orders summary: {e}", exc_info=True)
