@@ -1,9 +1,11 @@
 # trading_logic_new.py
 import os
+import sys
 import pandas as pd
 import json
 import logging
-from logging_config import get_isolated_logger
+
+from frontend.logging_config import get_isolated_logger
 
 # Create isolated trading logger - ONLY trading logic will appear in this log file
 logger = get_isolated_logger("trading_logic", "trading_only", logging.INFO)
@@ -167,7 +169,7 @@ def calculate_position_size(sharpe_value, ticker_weight, available_cash, signal_
 
 
 # def process_sell_signals(daily_data, holdings, current_date, risk_level, mode="automatic", orders=None, suggested_orders=None):
-def sell_logic(daily_data, buy_threshold, holdings, current_date, mode="automatic", orders=None, suggested_orders=None):
+def sell_logic(daily_data, sell_threshold, holdings, current_date, mode="automatic", orders=None, suggested_orders=None):
     """
     Process sell signals for existing LONG and SHORT positions.
     
@@ -225,9 +227,9 @@ def sell_logic(daily_data, buy_threshold, holdings, current_date, mode="automati
             if profit_pct >= PROFIT_TARGET:
                 should_sell = True
                 sell_reason = f"Profit target hit: {profit_pct:.1%}"
-            # elif current_sharpe < buy_threshold:  # Same threshold you used to buy
-            #     should_sell = True
-            #     sell_reason = f"Signal weakened: Sharpe={current_sharpe:.3f} < {buy_threshold:.3f}"
+            elif current_sharpe < sell_threshold:  # Same threshold you used to buy
+                should_sell = True
+                sell_reason = f"Signal weakened: Sharpe={current_sharpe:.3f} < {sell_threshold:.3f}"
             # elif profit_pct <= STOP_LOSS:
             #     should_sell = True
             #     sell_reason = f"Stop loss hit: {profit_pct:.1%}"
@@ -273,7 +275,7 @@ def sell_logic(daily_data, buy_threshold, holdings, current_date, mode="automati
 
   
 # def process_buy_signals(daily_data, buy_threshold, sell_threshold, holdings, cash, current_date, risk_level, ticker_weights, default_weight, max_positions, max_daily_deployment, mode="automatic", orders=None, suggested_orders=None):
-def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_weights, default_weight, max_positions, mode="automatic", orders=None, suggested_orders=None):
+def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_weights, default_weight, max_positions, mode="automatic", orders=None, suggested_orders=None, use_weights=True, use_signal_strength=True):
     """
     Process buy signals - buy when predicted sharpe > threshold.
     Only buy top half of signals using signal strength and weights.
@@ -322,19 +324,50 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
     logger.info(f"Found {len(buy_candidates)} buy candidates above threshold {buy_threshold:.3f}")
     
     # STEP 2: Add weight and signal strength information
-    buy_candidates['ticker_weight'] = buy_candidates['Ticker'].map(
-        lambda x: ticker_weights.get(x, default_weight)
-    )
+    if use_weights:
+        buy_candidates['ticker_weight'] = buy_candidates['Ticker'].map(
+            lambda x: ticker_weights.get(x, default_weight)
+        )
+    else:
+        # Set uniform weight for all candidates
+        buy_candidates['ticker_weight'] = default_weight
+        logger.info("NOT using ticker weights - all candidates have equal weight")
     
-    # Signal strength = how much above threshold
-    buy_candidates['signal_strength'] = (
-        buy_candidates['Best_Prediction'] - buy_threshold
-    )
+    if use_signal_strength:
+        # Signal strength = how much above threshold
+        buy_candidates['signal_strength'] = (
+            buy_candidates['Best_Prediction'] - buy_threshold
+        )
+    else:
+        # Set uniform signal strength for all candidates
+        buy_candidates['signal_strength'] = 0.0  # Neutral value
+        logger.info("NOT using signal strength - all candidates have equal signal strength")
+
 
     # STEP 3: Sort by weight (highest first), then by signal strength
-    buy_candidates = buy_candidates.sort_values([
-        'ticker_weight', 'signal_strength', 'Ticker'
-    ], ascending=[False, False, True])
+    sort_columns = []
+    sort_ascending = []
+    
+    if use_weights:
+        sort_columns.append('ticker_weight')
+        sort_ascending.append(False)  # Highest weight first
+    
+    if use_signal_strength:
+        sort_columns.append('signal_strength')
+        sort_ascending.append(False)  # Highest signal strength first
+    
+    # Always add ticker for consistent sorting
+    sort_columns.append('Ticker')
+    sort_ascending.append(True)  # Alphabetical order
+    
+    # If neither weights nor signal strength are used, just sort by ticker
+    if not use_weights and not use_signal_strength:
+        logger.info("Sorting candidates alphabetically by ticker (no weights or signal strength)")
+        buy_candidates = buy_candidates.sort_values(['Ticker'], ascending=[True])
+    else:
+        logger.info(f"Sorting candidates by: {sort_columns}")
+        buy_candidates = buy_candidates.sort_values(sort_columns, ascending=sort_ascending)
+
 
     # STEP 4: Take only TOP HALF of candidates
     top_half_count = max(1, len(buy_candidates) // 2)
@@ -369,13 +402,20 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
             continue
 
         # Calculate position size using your function
-        position_size = calculate_position_size(
-            sharpe_value = sharpe,
-            ticker_weight = ticker_weight, 
-            available_cash = cash,
-            #sharpe_threshold=buy_threshold
-            signal_strength = signal_strength
-        )
+        if use_weights or use_signal_strength:
+            position_size = calculate_position_size(
+                sharpe_value = sharpe,
+                ticker_weight = ticker_weight, 
+                available_cash = cash,
+                #sharpe_threshold=buy_threshold
+                signal_strength = signal_strength
+            )
+        else:
+            # Simple equal allocation when not using weights/signal strength
+            # Allocate a fixed percentage of available cash per position
+            base_allocation_pct = 0.05  # 5% of available cash per position
+            position_size = cash * base_allocation_pct
+            logger.debug(f"Using simple allocation: {base_allocation_pct*100}% of cash = ${position_size:.2f}")
 
         # if position_size < 200:  # Minimum position size
         #     logger.info(f"Skipping {ticker}: Position too small ${position_size:.2f}")
@@ -469,7 +509,7 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
 
 
 #def run_integrated_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False):
-def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False, selected_orders=None):
+def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False, use_weights=True, use_signal_strength=True):
     """
     Execute trading strategy combining Buy/Sell functions with LONG/SHORT support.
     
@@ -521,13 +561,15 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
         merged_data['date'] = pd.to_datetime(merged_data['date'], utc=True)
         date_range = pd.date_range(start=start_date, end=end_date, freq='D', tz='UTC')
         
-
         # Validate data
 
         # Validate prediction quality
 
         # Load ticker weights and calculate thresholds
-        ticker_weights = load_ticker_weights()
+        if use_weights:
+            ticker_weights = load_ticker_weights()
+        else:
+            ticker_weights = {}
         default_weight = 0.02  # 2% default weight
 
         sharpe_min = merged_data['Best_Prediction'].min()
@@ -540,7 +582,7 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
 
         # Portfolio parameters based on risk level
         # Portfolio parameters
-        max_positions = 100  # Maximum number of different stocks
+        max_positions = 50  # Maximum number of different stocks
 
         
         # Get Buy / Sell transaction for each dat - based on trading logic 
@@ -577,30 +619,32 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
 
             # STEP 1: SELL FIRST (to free up cash for buying)
             cash_from_sales, sell_count = sell_logic(
-                daily_data=daily_data,
-                buy_threshold=buy_threshold,
-                holdings=holdings,
-                current_date=current_date,
-                mode=mode,
-                orders=orders if mode == "automatic" else None,
-                suggested_orders=suggested_orders
+                daily_data = daily_data,
+                sell_threshold = sell_threshold,
+                holdings = holdings,
+                current_date = current_date,
+                mode = mode,
+                orders = orders if mode == "automatic" else None,
+                suggested_orders = suggested_orders
             )
             cash += cash_from_sales
             total_sell_orders += sell_count
 
             # STEP 2: BUY (with updated cash amount)
             cash_used, buy_count = buy_logic(
-                daily_data=daily_data,
-                buy_threshold=buy_threshold,
+                daily_data = daily_data,
+                buy_threshold = buy_threshold,
                 holdings=holdings,
-                cash=cash,
-                current_date=current_date,
-                ticker_weights=ticker_weights,
-                default_weight=default_weight,
-                max_positions=max_positions,
-                mode=mode,
-                orders=orders if mode == "automatic" else None,
-                suggested_orders=suggested_orders
+                cash = cash,
+                current_date = current_date,
+                ticker_weights = ticker_weights,
+                default_weight = default_weight,
+                max_positions = max_positions,
+                mode = mode,
+                orders = orders if mode == "automatic" else None,
+                suggested_orders = suggested_orders,
+                use_weights=use_weights,
+                use_signal_strength=use_signal_strength
             )
             cash -= cash_used
             total_buy_orders += buy_count
