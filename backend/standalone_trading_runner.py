@@ -197,17 +197,10 @@ class TradingRunner:
                     mode="automatic",
                     reset_state=True,
                     use_weights=True,
-                    use_signal_strength=True):
+                    use_signal_strength=True,
+                    selected_orders=None):
         """
         Run the trading strategy.
-        
-        Args:
-            investment_amount: Starting cash
-            risk_level: 0-10 (0=conservative, 10=aggressive)
-            start_date: Start date (auto-detect if None)
-            end_date: End date (auto-detect if None)
-            mode: "automatic" or "semi-automatic"
-            reset_state: Whether to reset portfolio state
         """
         try:
             # Auto-detect date range if not provided
@@ -232,7 +225,9 @@ class TradingRunner:
             self.logger.info(f"Reset State: {reset_state}")
             self.logger.info(f"Use Weights: {use_weights}")
             self.logger.info(f"Use Signal Strength: {use_signal_strength}")
-            
+            if selected_orders:
+                self.logger.info(f"Selected Orders: {len(selected_orders)} orders to execute")
+        
             # Validate prediction quality first
             correlation, buy_hit_rate, sell_hit_rate, sharpe_min, sharpe_max = validate_prediction_quality(self.data)
             
@@ -246,15 +241,24 @@ class TradingRunner:
                 mode=mode,
                 reset_state=reset_state,
                 use_weights=use_weights,
-                use_signal_strength=use_signal_strength
+                use_signal_strength=use_signal_strength,
+                selected_orders=selected_orders
             )
             
             if mode == "automatic":
                 orders, portfolio_history, final_value, warning_message = result
             else:
-                orders, warning_message = result
-                portfolio_history = get_portfolio_history()
-                final_value = portfolio_history[-1]['value'] if portfolio_history else investment_amount
+                # Handle semi-automatic mode
+                if selected_orders:
+                    # When executing selected orders, just get orders and warning
+                    orders, warning_message = result
+                    portfolio_history = get_portfolio_history()
+                    final_value = portfolio_history[-1]['value'] if portfolio_history else investment_amount
+                else:
+                    # When just getting suggestions
+                    orders, warning_message = result
+                    portfolio_history = get_portfolio_history()
+                    final_value = portfolio_history[-1]['value'] if portfolio_history else investment_amount
             
             # Store results
             self.results = {
@@ -268,7 +272,9 @@ class TradingRunner:
                 'investment_amount': investment_amount,
                 'total_return_pct': ((final_value / investment_amount) - 1) * 100,
                 'use_weights': use_weights,
-                'use_signal_strength': use_signal_strength
+                'use_signal_strength': use_signal_strength,
+                'mode': mode,
+                'selected_orders_count': len(selected_orders) if selected_orders else 0
             }
             
             self.logger.info("="*80)
@@ -278,6 +284,8 @@ class TradingRunner:
             self.logger.info(f"Final Value: ${final_value:,.2f}")
             self.logger.info(f"Total Return: {self.results['total_return_pct']:.2f}%")
             self.logger.info(f"Features Used: Weights={use_weights}, Signal Strength={use_signal_strength}")
+            if selected_orders:
+                self.logger.info(f"Executed Selected Orders: {len(selected_orders)}")
             self.logger.info(f"Warning: {warning_message}")
             
             return self.results
@@ -570,120 +578,6 @@ class TradingRunner:
         except Exception as e:
             self.logger.error(f"Error in enhanced trade profitability analysis: {e}", exc_info=True)
             return pd.DataFrame()
-    # def analyze_trade_profitability(self):
-    #     """
-    #     Analyze profitability of individual trades.
-    #     Returns a DataFrame with detailed trade analysis.
-    #     """
-    #     try:
-    #         orders = self.results.get('orders', [])
-    #         if not orders:
-    #             self.logger.warning("No orders found for profitability analysis")
-    #             return pd.DataFrame()
-            
-    #         # Convert to DataFrame for easier analysis
-    #         orders_df = pd.DataFrame(orders)
-            
-    #         # Separate buy and sell orders
-    #         buy_orders = orders_df[orders_df['action'] == 'buy'].copy()
-    #         sell_orders = orders_df[orders_df['action'] == 'sell'].copy()
-            
-    #         if sell_orders.empty:
-    #             self.logger.warning("No sell orders found - cannot calculate trade profitability")
-    #             return pd.DataFrame()
-            
-    #         # Track trade profitability
-    #         trade_results = []
-            
-    #         for _, sell_order in sell_orders.iterrows():
-    #             ticker = sell_order['ticker']
-    #             sell_date = sell_order['date']
-    #             sell_price = sell_order['price']
-    #             shares_sold = sell_order['shares_amount']
-                
-    #             # Get profit/loss info from sell order
-    #             if 'profit_loss' in sell_order and 'purchase_price' in sell_order:
-    #                 # Direct profit/loss calculation from sell order
-    #                 profit_loss = sell_order['profit_loss']
-    #                 purchase_price = sell_order['purchase_price']
-    #                 days_held = sell_order.get('days_held', 0)
-    #                 profit_pct = sell_order.get('profit_pct', 0)
-                    
-    #                 trade_result = {
-    #                     'ticker': ticker,
-    #                     'shares': shares_sold,
-    #                     'buy_price': purchase_price,
-    #                     'sell_price': sell_price,
-    #                     'sell_date': sell_date,
-    #                     'days_held': days_held,
-    #                     'profit_loss_dollar': profit_loss,
-    #                     'profit_loss_pct': profit_pct * 100,
-    #                     'trade_value': shares_sold * sell_price,
-    #                     'is_profitable': profit_loss > 0
-    #                 }
-    #                 trade_results.append(trade_result)
-    #             else:
-    #                 # Fallback: find matching buy orders
-    #                 ticker_buys = buy_orders[buy_orders['ticker'] == ticker]
-    #                 if not ticker_buys.empty:
-    #                     # Use the most recent buy order as approximation
-    #                     recent_buy = ticker_buys.iloc[-1]
-    #                     buy_price = recent_buy['price']
-    #                     profit_loss = shares_sold * (sell_price - buy_price)
-    #                     profit_pct = ((sell_price / buy_price) - 1) * 100
-                        
-    #                     trade_result = {
-    #                         'ticker': ticker,
-    #                         'shares': shares_sold,
-    #                         'buy_price': buy_price,
-    #                         'sell_price': sell_price,
-    #                         'sell_date': sell_date,
-    #                         'days_held': 0,  # Unknown
-    #                         'profit_loss_dollar': profit_loss,
-    #                         'profit_loss_pct': profit_pct,
-    #                         'trade_value': shares_sold * sell_price,
-    #                         'is_profitable': profit_loss > 0
-    #                     }
-    #                     trade_results.append(trade_result)
-            
-    #         if not trade_results:
-    #             self.logger.warning("Could not match any buy/sell pairs for profitability analysis")
-    #             return pd.DataFrame()
-            
-    #         # Create results DataFrame
-    #         trades_df = pd.DataFrame(trade_results)
-            
-    #         # Summary statistics
-    #         total_trades = len(trades_df)
-    #         profitable_trades = len(trades_df[trades_df['is_profitable']])
-    #         win_rate = (profitable_trades / total_trades) * 100 if total_trades > 0 else 0
-    #         total_profit_loss = trades_df['profit_loss_dollar'].sum()
-    #         avg_profit_loss = trades_df['profit_loss_dollar'].mean()
-    #         avg_return_pct = trades_df['profit_loss_pct'].mean()
-            
-    #         self.logger.info("="*60)
-    #         self.logger.info("TRADE PROFITABILITY ANALYSIS")
-    #         self.logger.info("="*60)
-    #         self.logger.info(f"Total Completed Trades: {total_trades}")
-    #         self.logger.info(f"Profitable Trades: {profitable_trades}")
-    #         self.logger.info(f"Win Rate: {win_rate:.1f}%")
-    #         self.logger.info(f"Total Profit/Loss: ${total_profit_loss:,.2f}")
-    #         self.logger.info(f"Average Profit/Loss per Trade: ${avg_profit_loss:,.2f}")
-    #         self.logger.info(f"Average Return per Trade: {avg_return_pct:.2f}%")
-            
-    #         # Top profitable and losing trades
-    #         if len(trades_df) > 0:
-    #             best_trade = trades_df.loc[trades_df['profit_loss_dollar'].idxmax()]
-    #             worst_trade = trades_df.loc[trades_df['profit_loss_dollar'].idxmin()]
-                
-    #             self.logger.info(f"Best Trade: {best_trade['ticker']} (+${best_trade['profit_loss_dollar']:.2f}, {best_trade['profit_loss_pct']:.1f}%)")
-    #             self.logger.info(f"Worst Trade: {worst_trade['ticker']} (${worst_trade['profit_loss_dollar']:.2f}, {worst_trade['profit_loss_pct']:.1f}%)")
-            
-    #         return trades_df
-            
-    #     except Exception as e:
-    #         self.logger.error(f"Error in trade profitability analysis: {e}", exc_info=True)
-    #         return pd.DataFrame()
     
     def save_results(self, filename_prefix="trading_results"):
         """Save all results to files."""
@@ -780,6 +674,88 @@ class TradingRunner:
         except Exception as e:
             self.logger.error(f"Error printing holdings: {e}", exc_info=True)
 
+    def get_suggested_orders(self, 
+                        investment_amount=10000,
+                        risk_level=5,
+                        start_date=None,
+                        end_date=None,
+                        use_weights=True,
+                        use_signal_strength=True):
+        """
+        Get suggested orders without executing them (semi-automatic mode).
+        
+        Returns:
+            tuple: (suggested_orders, warning_message)
+        """
+        try:
+            self.logger.info("Getting suggested orders (semi-automatic mode)")
+            
+            result = self.run_strategy(
+                investment_amount=investment_amount,
+                risk_level=risk_level,
+                start_date=start_date,
+                end_date=end_date,
+                mode="semi-automatic",
+                reset_state=False,  # Don't reset when just getting suggestions
+                use_weights=use_weights,
+                use_signal_strength=use_signal_strength,
+                selected_orders=None  # No pre-selected orders
+            )
+            
+            suggested_orders = result['orders']
+            warning_message = result.get('warning_message', '')
+            
+            self.logger.info(f"Generated {len(suggested_orders)} suggested orders")
+            return suggested_orders, warning_message
+            
+        except Exception as e:
+            self.logger.error(f"Error getting suggested orders: {e}", exc_info=True)
+            return [], f"Error: {e}"
+
+
+    def execute_selected_orders(self, 
+                            selected_orders,
+                            investment_amount=10000,
+                            reset_state=False):
+        """
+        Execute specific orders that were selected from suggestions.
+        
+        Args:
+            selected_orders: List of order dictionaries to execute
+            investment_amount: Starting cash (if resetting state)
+            reset_state: Whether to reset portfolio state before execution
+        
+        Returns:
+            dict: Execution results
+        """
+        try:
+            if not selected_orders:
+                self.logger.warning("No orders provided for execution")
+                return self.results
+            
+            self.logger.info(f"Executing {len(selected_orders)} selected orders")
+            
+            # Execute the selected orders
+            result = self.run_strategy(
+                investment_amount=investment_amount,
+                risk_level=5,  # Not used when executing specific orders
+                start_date=None,  # Not used when executing specific orders
+                end_date=None,    # Not used when executing specific orders
+                mode="semi-automatic",
+                reset_state=reset_state,
+                use_weights=True,  # Not relevant for execution
+                use_signal_strength=True,  # Not relevant for execution
+                selected_orders=selected_orders
+            )
+            
+            self.logger.info(f"Successfully executed {len(selected_orders)} orders")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error executing selected orders: {e}", exc_info=True)
+            return self.results
+
+
 
 def cleanup_temp_files():
     """Clean up any temporary files created during execution."""
@@ -794,11 +770,18 @@ def cleanup_temp_files():
 
 
 def main():
-    """Main function for standalone execution."""
+    """
+    Main function for standalone execution.
+    """
+
     # Configuration - UPDATE THESE VALUES
     CSV_PATH = "20250527_all_tickers_results.csv"  # UPDATE THIS PATH
     INVESTMENT_AMOUNT = 10000
-    RISK_LEVEL = 3  # 0-10
+    RISK_LEVEL = 0  # 0-10
+
+    # Trading mode selection
+    #TRADING_MODE = "automatic"
+    TRADING_MODE = "semi-automatic"
     
     # # Optional: specify date range
     # START_DATE = "2022-01-01"
@@ -825,19 +808,58 @@ def main():
         print(f"Initializing with data file: {CSV_PATH}")
         runner = TradingRunner(CSV_PATH)
         
-        # Run strategy
-        print(f"Running strategy...")
-        results = runner.run_strategy(
-            investment_amount=INVESTMENT_AMOUNT,
-            risk_level=RISK_LEVEL,
-            start_date=START_DATE,
-            end_date=END_DATE,
-            mode="automatic",
-            reset_state=True,
-            use_weights=True,
-            use_signal_strength=True
-        )
+        if TRADING_MODE == "automatic":
+            print(f"Running AUTOMATIC strategy...")
+            results = runner.run_strategy(
+                investment_amount=INVESTMENT_AMOUNT,
+                risk_level=RISK_LEVEL,
+                start_date=START_DATE,
+                end_date=END_DATE,
+                mode="automatic",
+                reset_state=True,
+                use_weights=True,
+                use_signal_strength=True
+            )
+            
+        elif TRADING_MODE == "semi-automatic":
+            print(f"Running SEMI-AUTOMATIC strategy...")
+            
+            # Step 1: Get suggestions
+            suggested_orders, warning = runner.get_suggested_orders(
+                investment_amount=INVESTMENT_AMOUNT,
+                risk_level=RISK_LEVEL,
+                start_date=START_DATE,
+                end_date=END_DATE,
+                use_weights=True,
+                use_signal_strength=True
+            )
+            
+            print(f"Received {len(suggested_orders)} suggested orders")
+
+            # Step 2: Example filtering (customize as needed)
+            selected_orders = []
+            for order in suggested_orders[:10]:  # Take first 10 as example
+                if order['action'] == 'buy' and order.get('signal_strength', 0) > 0.05:
+                    selected_orders.append(order)
+                elif order['action'] == 'sell' and order.get('profit_pct', 0) > 0.03:
+                    selected_orders.append(order)
+            
+            print(f"Selected {len(selected_orders)} orders for execution")
+            
+            # Step 3: Execute selected orders
+            if selected_orders:
+                results = runner.execute_selected_orders(
+                    selected_orders=selected_orders,
+                    investment_amount=INVESTMENT_AMOUNT,
+                    reset_state=True
+                )
+            else:
+                print("No orders selected for execution")
+                results = runner.results
+        else:
+            raise ValueError(f"Invalid TRADING_MODE: {TRADING_MODE}")
         
+
         # Analyze trades
         print(f"Analyzing trade profitability...")
         trades_df = runner.analyze_trade_profitability()
@@ -863,10 +885,16 @@ def main():
         
         # Quick summary
         print(f"\n  QUICK SUMMARY:")
+        print(f"  Mode: {TRADING_MODE}")
         print(f"  Initial Investment: ${INVESTMENT_AMOUNT:,}")
         print(f"  Final Value: ${results['final_value']:,.2f}")
         print(f"  Total Return: {results['total_return_pct']:.2f}%")
         print(f"  Total Orders: {len(results['orders'])}")
+
+        if trades_df is not None and hasattr(trades_df, 'attrs') and 'summary' in trades_df.attrs:
+            summary = trades_df.attrs['summary']
+            print(f"  Win Rate: {summary.get('overall_win_rate', 0):.1f}%")
+            print(f"  70% Target Met: {'YES' if summary.get('meets_70_percent_target', False) else 'NO'}")
         
     except FileNotFoundError:
         print(f"  ERROR: Data file not found: {CSV_PATH}")
