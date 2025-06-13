@@ -469,7 +469,7 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
 
 
 #def run_integrated_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False):
-def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False):
+def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False, selected_orders=None):
     """
     Execute trading strategy combining Buy/Sell functions with LONG/SHORT support.
     
@@ -646,7 +646,18 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
             return [], warning_message
 
 
-
+def save_portfolio_state():
+    """Save orders and portfolio history to portfolio_state.json."""
+    try:
+        state = {
+            'orders': orders,
+            'portfolio_history': portfolio_history
+        }
+        with open(portfolio_state_file, 'w') as f:
+            json.dump(state, f, default=str)
+        logger.debug(f"Portfolio state saved: {len(orders)} orders, {len(portfolio_history)} history entries")
+    except Exception as e:
+        logger.error(f"Error saving portfolio state: {e}")
 
 def validate_prediction_quality(merged_data, forward_days=5):
     """
