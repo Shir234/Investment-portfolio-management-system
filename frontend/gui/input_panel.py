@@ -1,26 +1,110 @@
 import os
-from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QLabel, QLineEdit, 
-                             QDateEdit, QPushButton, QComboBox, QMessageBox, 
-                             QVBoxLayout, QDoubleSpinBox,QDialog,QFileDialog)
-from PyQt5.QtCore import QDate
-from backend.trading_logic_new import get_orders
-from datetime import datetime
 import pandas as pd
+from datetime import datetime, date
+from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit, 
+                             QDateEdit, QPushButton, QComboBox, QMessageBox, 
+                             QDoubleSpinBox, QDialog, QFileDialog, QTableWidget, 
+                             QTableWidgetItem, QCheckBox)
+from PyQt5.QtCore import QDate, Qt
 import logging
 from logging_config import get_logger
-from data.trading_connector import execute_trading_strategy
-from backend.trading_logic_new import get_portfolio_history
 from data.trading_connector import execute_trading_strategy, get_order_history_df, log_trading_orders
+from backend.trading_logic_new import get_orders, get_portfolio_history
 
 # Set up logging
 logger = get_logger(__name__)
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+
+class TradeConfirmationDialog(QDialog):
+    """Dialog for confirming trades in semi-automatic mode."""
+    def __init__(self, orders, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Confirm Trades")
+        self.orders = orders
+        self.selected_orders = []
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Configure the dialog UI with a table and buttons."""
+        layout = QVBoxLayout(self)
+        
+        self.table = QTableWidget()
+        self.table.setRowCount(len(self.orders))
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["Select", "Date", "Ticker", "Action", "Shares", "Price"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        
+        for row, order in enumerate(self.orders):
+            checkbox = QCheckBox()
+            checkbox.setChecked(True)
+            self.table.setCellWidget(row, 0, checkbox)
+            
+            self.table.setItem(row, 1, QTableWidgetItem(str(order.get('date', ''))))
+            self.table.setItem(row, 2, QTableWidgetItem(order.get('ticker', '')))
+            self.table.setItem(row, 3, QTableWidgetItem(order.get('action', '')))
+            self.table.setItem(row, 4, QTableWidgetItem(str(order.get('shares_amount', 0))))
+            self.table.setItem(row, 5, QTableWidgetItem(f"${order.get('price', 0):,.2f}"))
+            
+            for col in range(1, 6):
+                if self.table.item(row, col):
+                    self.table.item(row, col).setTextAlignment(Qt.AlignCenter)
+        
+        self.table.resizeColumnsToContents()
+        layout.addWidget(self.table)
+        
+        button_layout = QHBoxLayout()
+        accept_button = QPushButton("Accept Selected")
+        accept_button.clicked.connect(self.accept_selected)
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(accept_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+        
+        self.setStyleSheet("""
+            QTableWidget {
+                background-color: #3c3f41;
+                color: #ffffff;
+                border: 1px solid #555555;
+            }
+            QTableWidget::item {
+                border: 1px solid #555555;
+            }
+            QTableWidget::item:selected {
+                background-color: #2a82da;
+            }
+            QHeaderView::section {
+                background-color: #353535;
+                color: #ffffff;
+                border: 1px solid #555555;
+            }
+            QPushButton {
+                background-color: #2a82da;
+                color: #ffffff;
+                padding: 5px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #3a92ea;
+            }
+        """)
+    
+    def accept_selected(self):
+        """Collect selected orders and accept the dialog."""
+        self.selected_orders = []
+        for row in range(self.table.rowCount()):
+            checkbox = self.table.cellWidget(row, 0)
+            if checkbox.isChecked():
+                self.selected_orders.append(self.orders[row])
+        self.accept()
 
 class InputPanel(QWidget):
     """Panel for user inputs and financial metrics display."""
     def __init__(self, data_manager, parent=None):
         super().__init__(parent)
         self.data_manager = data_manager
+        self.portfolio_state_file = 'data/portfolio_state.json'
+        self.is_dark_mode = True
         self.init_ui()
         self.update_date_tooltips()
         logger.info("InputPanel initialized")
@@ -31,75 +115,96 @@ class InputPanel(QWidget):
 
         # Investment Amount
         investment_layout = QHBoxLayout()
-        investment_label = QLabel("Investment Amount ($):")
+        self.investment_label = QLabel("Investment Amount ($):")
+        self.investment_label.setObjectName("investment_label")
         self.investment_input = QLineEdit("10000")
         self.investment_input.setPlaceholderText("Enter amount")
-        investment_layout.addWidget(investment_label)
+        investment_layout.addWidget(self.investment_label)
         investment_layout.addWidget(self.investment_input)
         layout.addLayout(investment_layout)
 
         # Risk Level
         risk_layout = QHBoxLayout()
-        risk_label = QLabel("Risk Level (0-10):")
-        self.risk_input = QLineEdit("5")
-        self.risk_input.setPlaceholderText("Enter 0-10")
-        risk_layout.addWidget(risk_label)
+        self.risk_label = QLabel("Risk Level (0-10):")
+        self.risk_label.setObjectName("risk_label")
+        self.risk_input = QDoubleSpinBox()
+        self.risk_input.setRange(0, 10)
+        self.risk_input.setValue(5)
+        self.risk_input.setSingleStep(0.1)
+        risk_layout.addWidget(self.risk_label)
         risk_layout.addWidget(self.risk_input)
         layout.addLayout(risk_layout)
 
         # Date Range
         date_layout = QHBoxLayout()
-        start_date_label = QLabel("Start Date:")
+        self.start_label = QLabel("Start Date:")
+        self.start_label.setObjectName("start_label")
         self.start_date_input = QDateEdit()
         self.start_date_input.setCalendarPopup(True)
-        self.start_date_input.setDate(QDate.currentDate().addDays(-30))
-        end_date_label = QLabel("End Date:")
+        self.start_date_input.setDate(QDate(2021, 10, 18))
+        self.start_date_input.dateChanged.connect(self.update_end_date_minimum)
+        self.end_label = QLabel("End Date:")
+        self.end_label.setObjectName("end_label")
         self.end_date_input = QDateEdit()
         self.end_date_input.setCalendarPopup(True)
-        self.end_date_input.setDate(QDate.currentDate())
-        date_layout.addWidget(start_date_label)
+        self.end_date_input.setDate(QDate(2023, 12, 22))
+        date_layout.addWidget(self.start_label)
         date_layout.addWidget(self.start_date_input)
-        date_layout.addWidget(end_date_label)
+        date_layout.addWidget(self.end_label)
         date_layout.addWidget(self.end_date_input)
         layout.addLayout(date_layout)
 
         # Mode Selection
         mode_layout = QHBoxLayout()
-        mode_label = QLabel("Mode:")
+        self.mode_label = QLabel("Trading Mode:")
+        self.mode_label.setObjectName("mode_label")
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["Automatic", "Semi-Automatic"])
-        mode_layout.addWidget(mode_label)
+        mode_layout.addWidget(self.mode_label)
         mode_layout.addWidget(self.mode_combo)
         layout.addLayout(mode_layout)
 
         # CSV File Selection
         file_layout = QHBoxLayout()
-        file_label = QLabel("Data File:")
+        self.file_label = QLabel("Data File:")
+        self.file_label.setObjectName("file_label")
         self.file_input = QLineEdit()
         self.file_input.setReadOnly(True)
         self.file_button = QPushButton("Browse")
         self.file_button.clicked.connect(self.browse_file)
-        file_layout.addWidget(file_label)
+        file_layout.addWidget(self.file_label)
         file_layout.addWidget(self.file_input)
         file_layout.addWidget(self.file_button)
         layout.addLayout(file_layout)
 
-        # Execute Button
-        self.execute_button = QPushButton("Execute Strategy")
+        # Buttons
+        button_layout = QHBoxLayout()
+        self.execute_button = QPushButton("Execute Trading Strategy")
+        self.execute_button.setObjectName("execute_button")
         self.execute_button.clicked.connect(self.execute_strategy)
-        layout.addWidget(self.execute_button)
+        self.reset_button = QPushButton("Reset Portfolio")
+        self.reset_button.setObjectName("reset_button")
+        self.reset_button.clicked.connect(self.reset_portfolio)
+        button_layout.addWidget(self.execute_button)
+        button_layout.addWidget(self.reset_button)
+        layout.addLayout(button_layout)
 
         # Financial Metrics
         metrics_layout = QVBoxLayout()
-        self.cash_label = QLabel("Liquid Cash: $0.00")
-        self.portfolio_label = QLabel("Portfolio Value: $0.00")
-        self.total_label = QLabel("Total Value: $0.00")
+        self.cash_label = QLabel("Liquid Cash: N/A")
+        self.cash_label.setObjectName("cash_label")
+        self.portfolio_label = QLabel("Portfolio Value: N/A")
+        self.portfolio_label.setObjectName("portfolio_value_label")
+        self.total_label = QLabel("Total Value: N/A")
+        self.total_label.setObjectName("total_value_label")
         metrics_layout.addWidget(self.cash_label)
         metrics_layout.addWidget(self.portfolio_label)
         metrics_layout.addWidget(self.total_label)
         layout.addLayout(metrics_layout)
 
         self.setLayout(layout)
+        self.set_theme(self.is_dark_mode)
+        self.update_financial_metrics(0, 0)
     
     def browse_file(self):
         """Open file dialog to select CSV file."""
@@ -155,112 +260,9 @@ class InputPanel(QWidget):
             logger.debug("Updated date tooltips")
         except Exception as e:
             logger.error(f"Error updating date tooltips: {e}")
-                    
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        
-        # Investment input
-        investment_layout = QHBoxLayout()
-        self.investment_label = QLabel("Investment Amount ($):")
-        self.investment_label.setObjectName("investment_label")
-        self.investment_label.setStyleSheet("color: #ffffff;")
-        self.investment_input = QLineEdit("10000")
-        self.investment_input.setStyleSheet("background-color: #3c3f41; color: #ffffff;")
-        investment_layout.addWidget(self.investment_label)
-        investment_layout.addWidget(self.investment_input)
-        layout.addLayout(investment_layout)
-        
-        # Risk level input
-        risk_layout = QHBoxLayout()
-        self.risk_label = QLabel("Risk Level (0-10):")
-        self.risk_label.setObjectName("risk_label")
-        self.risk_label.setStyleSheet("color: #ffffff;")
-        self.risk_input = QDoubleSpinBox()
-        self.risk_input.setRange(0, 10)
-        self.risk_input.setValue(10)
-        self.risk_input.setSingleStep(0.1)
-        self.risk_input.setStyleSheet("background-color: #3c3f41; color: #ffffff;")
-        risk_layout.addWidget(self.risk_label)
-        risk_layout.addWidget(self.risk_input)
-        layout.addLayout(risk_layout)
-        
-        # Date input
-        date_layout = QHBoxLayout()
-        self.start_label = QLabel("Start Date:")
-        self.start_label.setObjectName("start_label")
-        self.start_label.setStyleSheet("color: #ffffff;")
-        self.start_date = QDateEdit()
-        self.start_date.setDate(datetime(2021, 10, 18))
-        self.start_date.setCalendarPopup(True)
-        self.start_date.setStyleSheet("background-color: #3c3f41; color: #ffffff;")
-        self.start_date.setToolTip("Select a date after the latest trade or dataset start.")
-        self.end_label = QLabel("End Date:")
-        self.end_label.setObjectName("end_label")
-        self.end_label.setStyleSheet("color: #ffffff;")
-        self.end_date = QDateEdit()
-        self.end_date.setDate(datetime(2023, 12, 22))
-        self.end_date.setCalendarPopup(True)
-        self.end_date.setStyleSheet("background-color: #3c3f41; color: #ffffff;")
-        self.end_date.setToolTip("Select a date after the start date and within dataset range.")
-        date_layout.addWidget(self.start_label)
-        date_layout.addWidget(self.start_date)
-        date_layout.addWidget(self.end_label)
-        date_layout.addWidget(self.end_date)
-        layout.addLayout(date_layout)
-        
-        # Trading mode
-        mode_layout = QHBoxLayout()
-        self.mode_label = QLabel("Trading Mode:")
-        self.mode_label.setObjectName("mode_label")
-        self.mode_label.setStyleSheet("color: #ffffff;")
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Automatic", "Semi-automatic"])
-        self.mode_combo.setStyleSheet("background-color: #3c3f41; color: #ffffff; selection-background-color: #2a82da;")
-        mode_layout.addWidget(self.mode_label)
-        mode_layout.addWidget(self.mode_combo)
-        layout.addLayout(mode_layout)
-        
-        # Buttons
-        button_layout = QHBoxLayout()
-        self.execute_button = QPushButton("Execute Trading Strategy")
-        self.execute_button.setObjectName("execute_button")
-        self.execute_button.clicked.connect(self.update_portfolio)
-        self.execute_button.setStyleSheet("background-color: #2a82da; color: #ffffff;")
-        self.reset_button = QPushButton("Reset Portfolio")
-        self.reset_button.setObjectName("reset_button")
-        self.reset_button.clicked.connect(self.reset_portfolio)
-        self.reset_button.setStyleSheet("background-color: #ff4444; color: #ffffff;")
-        button_layout.addWidget(self.execute_button)
-        button_layout.addWidget(self.reset_button)
-        layout.addLayout(button_layout)
-        
-        # Financial metrics
-        metrics_layout = QVBoxLayout()
-        self.cash_label = QLabel("Liquid Cash: N/A")
-        self.cash_label.setObjectName("cash_label")
-        self.cash_label.setStyleSheet("color: #ffffff; font-weight: bold;")
-        self.portfolio_value_label = QLabel("Portfolio Value: N/A")
-        self.portfolio_value_label.setObjectName("portfolio_value_label")
-        self.portfolio_value_label.setStyleSheet("color: #ffffff; font-weight: bold;")
-        self.total_value_label = QLabel("Total Value: N/A")
-        self.total_value_label.setObjectName("total_value_label")
-        self.total_value_label.setStyleSheet("color: #ffffff; font-weight: bold;")
-        metrics_layout.addWidget(self.cash_label)
-        metrics_layout.addWidget(self.portfolio_value_label)
-        metrics_layout.addWidget(self.total_value_label)
-        layout.addLayout(metrics_layout)
-        
-        self.update_financial_metrics()
-    
-    def update_financial_metrics(self, cash, portfolio_value):
-        """Update financial metrics display."""
-        self.cash_label.setText(f"Liquid Cash: ${cash:,.2f}")
-        self.portfolio_label.setText(f"Portfolio Value: ${portfolio_value:,.2f}")
-        self.total_label.setText(f"Total Value: ${(cash + portfolio_value):,.2f}")
-        logger.debug(f"Updated financial metrics: Cash=${cash:,.2f}, Portfolio=${portfolio_value:,.2f}")
     
     def update_date_constraints(self):
-        """Set minimum and maximum dates based on existing trades and dataset."""
+        """Set minimum dates based on existing trades and dataset."""
         orders = get_orders()
         dataset_start = self.data_manager.dataset_start_date
         dataset_end = self.data_manager.dataset_end_date
@@ -272,25 +274,55 @@ class InputPanel(QWidget):
         elif dataset_start:
             min_date = dataset_start
         else:
-            min_date = pd.Timestamp(datetime(2000, 1, 1), tz='UTC')  # Fallback
+            min_date = pd.Timestamp(datetime(2000, 1, 1), tz='UTC')
         
         max_date = dataset_end if dataset_end else pd.Timestamp(datetime.now(), tz='UTC')
         
-        self.start_date.setMinimumDate(min_date.date())
-        self.start_date.setMaximumDate(max_date.date())
-        self.end_date.setMinimumDate(min_date.date())
-        self.end_date.setMaximumDate(max_date.date())
-        self.start_date.dateChanged.connect(self.update_end_date_minimum)
+        self.start_date_input.setMinimumDate(QDate(min_date.year, min_date.month, min_date.day))
+        self.start_date_input.setMaximumDate(QDate(max_date.year, max_date.month, max_date.day))
+        self.end_date_input.setMinimumDate(QDate(min_date.year, min_date.month, min_date.day))
+        self.end_date_input.setMaximumDate(QDate(max_date.year, max_date.month, max_date.day))
         
-        # Update tooltips with valid range
-        self.start_date.setToolTip(
+        self.start_date_input.setToolTip(
             f"Select a date between {min_date.date()} and {max_date.date()}"
         )
-        self.end_date.setToolTip(
+        self.end_date_input.setToolTip(
             f"Select a date after start date and before {max_date.date()}"
         )
-        
-        
+    
+    def update_end_date_minimum(self):
+        """Ensure end_date is after start_date."""
+        self.end_date_input.setMinimumDate(self.start_date_input.date())
+    
+    def show_message_box(self, icon, title, text, buttons):
+        """Display a message box with themed style."""
+        msg = QMessageBox(self)
+        msg.setIcon(icon)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(buttons)
+        msg.setStyleSheet(self.get_message_box_style())
+        return msg.exec_()
+    
+    def get_message_box_style(self):
+        """Return stylesheet for QMessageBox based on the current theme."""
+        if self.is_dark_mode:
+            return """
+                QMessageBox { background-color: #353535; color: #ffffff; }
+                QMessageBox QLabel { color: #ffffff; }
+                QMessageBox QPushButton { background-color: #444444; color: #ffffff; border: 1px solid #666666; }
+                QMessageBox QPushButton:hover { background-color: #555555; }
+                QMessageBox::item:selected { background-color: #2a82da; color: #ffffff; }
+            """
+        else:
+            return """
+                QMessageBox { background-color: #f0f0f0; color: black; }
+                QMessageBox QLabel { color: black; }
+                QMessageBox QPushButton { background-color: #e0e0e0; color: black; border: 1px solid #cccccc; }
+                QMessageBox QPushButton:hover { background-color: #d0d0d0; }
+                QMessageBox::item:selected { background-color: #2a82da; color: black; }
+            """
+    
     def set_theme(self, is_dark_mode):
         """Apply light or dark theme to the panel."""
         self.is_dark_mode = is_dark_mode
@@ -312,44 +344,68 @@ class InputPanel(QWidget):
         self.start_label.setStyleSheet(label_style)
         self.end_label.setStyleSheet(label_style)
         self.mode_label.setStyleSheet(label_style)
+        self.file_label.setStyleSheet(label_style)
         self.cash_label.setStyleSheet(f"font-weight: bold; {label_style}")
-        self.portfolio_value_label.setStyleSheet(f"font-weight: bold; {label_style}")
-        self.total_value_label.setStyleSheet(f"font-weight: bold; {label_style}")
+        self.portfolio_label.setStyleSheet(f"font-weight: bold; {label_style}")
+        self.total_label.setStyleSheet(f"font-weight: bold; {label_style}")
         self.investment_input.setStyleSheet(input_style)
         self.risk_input.setStyleSheet(input_style)
-        self.start_date.setStyleSheet(input_style)
-        self.end_date.setStyleSheet(input_style)
+        self.start_date_input.setStyleSheet(input_style)
+        self.end_date_input.setStyleSheet(input_style)
         self.mode_combo.setStyleSheet(combo_style)
+        self.file_input.setStyleSheet(input_style)
+        self.file_button.setStyleSheet(button_style_execute)
         self.execute_button.setStyleSheet(button_style_execute)
         self.reset_button.setStyleSheet(button_style_reset)
-        
-    def get_message_box_style(self):
-        """Return stylesheet for QMessageBox based on the current theme."""
-        if self.is_dark_mode:
-            return """
-                QMessageBox { background-color: #353535; color: #ffffff; }
-                QMessageBox QLabel { color: #ffffff; }
-                QMessageBox QPushButton { background-color: #444444; color: #ffffff; border: 1px solid #666666; }
-                QMessageBox QPushButton:hover { background-color: #555555; }
-                QMessageBox::item:selected { background-color: #2a82da; color: #ffffff; }
-            """
-        else:
-            return """
-                QMessageBox { background-color: #f0f0f0; color: black; }
-                QMessageBox QLabel { color: black; }
-                QMessageBox QPushButton { background-color: #e0e0e0; color: black; border: 1px solid #cccccc; }
-                QMessageBox QPushButton:hover { background-color: #d0d0d0; }
-                QMessageBox::item:selected { background-color: #2a82da; color: black; }
-            """
-        
-    def show_message_box(self, icon, title, text, buttons):
-        """Display a message box."""
-        msg = QMessageBox(self)
-        msg.setIcon(icon)
-        msg.setWindowTitle(title)
-        msg.setText(text)
-        msg.setStandardButtons(buttons)
-        return msg.exec_()
+    
+    def validate_inputs(self):
+        """Validate user inputs."""
+        try:
+            investment_amount = float(self.investment_input.text())
+            if investment_amount <= 0:
+                raise ValueError("Investment amount must be positive")
+        except ValueError as e:
+            self.show_message_box(
+                QMessageBox.Warning,
+                "Invalid Input",
+                f"Invalid investment amount: {e}",
+                QMessageBox.Ok
+            )
+            return None
+
+        try:
+            risk_level = self.risk_input.value()
+            if not 0 <= risk_level <= 10:
+                raise ValueError("Risk level must be between 0 and 10")
+        except ValueError as e:
+            self.show_message_box(
+                QMessageBox.Warning,
+                "Invalid Input",
+                f"Invalid risk level: {e}",
+                QMessageBox.Ok
+            )
+            return None
+
+        start_date = self.start_date_input.date().toPyDate()
+        end_date = self.end_date_input.date().toPyDate()
+
+        if self.data_manager.data is None or self.data_manager.data.empty:
+            self.show_message_box(
+                QMessageBox.Warning,
+                "No Data",
+                "Please select a valid CSV file",
+                QMessageBox.Ok
+            )
+            return None
+
+        return investment_amount, risk_level, start_date, end_date
+    
+    def update_financial_metrics(self, cash=0, portfolio_value=0):
+        """Update financial metrics display."""
+        self.cash_label.setText(f"Liquid Cash: ${cash:,.2f}")
+        self.portfolio_label.setText(f"Portfolio Value: ${portfolio_value:,.2f}")
+        self.total_label.setText(f"Total Value: ${(cash + portfolio_value):,.2f}")
+        logger.debug(f"Updated financial metrics: Cash=${cash:,.2f}, Portfolio=${portfolio_value:,.2f}")
     
     def execute_strategy(self):
         """Execute the trading strategy based on user inputs."""
@@ -432,6 +488,8 @@ class InputPanel(QWidget):
 
             self.update_financial_metrics(cash, portfolio_value)
             log_trading_orders()
+            if hasattr(self, 'main_window'):
+                self.main_window.update_dashboard()
             logger.info("Strategy execution completed successfully")
 
         except Exception as e:
@@ -443,48 +501,6 @@ class InputPanel(QWidget):
             )
             logger.error(f"Unexpected error in execute_strategy: {e}", exc_info=True)
     
-    def validate_inputs(self):
-        """Validate user inputs."""
-        try:
-            investment_amount = float(self.investment_input.text())
-            if investment_amount <= 0:
-                raise ValueError("Investment amount must be positive")
-        except ValueError as e:
-            self.show_message_box(
-                QMessageBox.Warning,
-                "Invalid Input",
-                f"Invalid investment amount: {e}",
-                QMessageBox.Ok
-            )
-            return None
-
-        try:
-            risk_level = int(self.risk_input.text())
-            if not 0 <= risk_level <= 10:
-                raise ValueError("Risk level must be between 0 and 10")
-        except ValueError as e:
-            self.show_message_box(
-                QMessageBox.Warning,
-                "Invalid Input",
-                f"Invalid risk level: {e}",
-                QMessageBox.Ok
-            )
-            return None
-
-        start_date = self.start_date_input.date().toPython()
-        end_date = self.end_date_input.date().toPython()
-
-        if self.data_manager.data is None or self.data_manager.data.empty:
-            self.show_message_box(
-                QMessageBox.Warning,
-                "No Data",
-                "Please select a valid CSV file",
-                QMessageBox.Ok
-            )
-            return None
-
-        return investment_amount, risk_level, start_date, end_date
-        
     def reset_portfolio(self):
         """Delete portfolio_state.json to reset portfolio state."""
         try:
@@ -505,7 +521,8 @@ class InputPanel(QWidget):
                     QMessageBox.Ok
                 )
             self.update_financial_metrics()
-            self.main_window.update_dashboard()
+            if hasattr(self, 'main_window'):
+                self.main_window.update_dashboard()
         except Exception as e:
             logger.error(f"Error resetting portfolio: {e}")
             self.show_message_box(
@@ -514,38 +531,15 @@ class InputPanel(QWidget):
                 f"Failed to reset portfolio: {e}",
                 QMessageBox.Ok
             )
-      
-    def update_date_constraints(self):
-        """Set minimum dates based on existing trades."""
-        orders = get_orders()
-        if orders:
-            order_dates = pd.to_datetime([order['date'] for order in orders], utc=True)
-            latest_trade_date = order_dates.max()
-            # Set minimum date to the day after the latest trade
-            min_date = latest_trade_date + pd.Timedelta(days=1)
-            self.start_date.setMinimumDate(min_date.date())
-            self.end_date.setMinimumDate(min_date.date())
-            # Ensure end_date is after start_date
-            self.start_date.dateChanged.connect(self.update_end_date_minimum)
-        else:
-            # No trades; use dataset start date if available
-            if self.data_manager.dataset_start_date:
-                min_date = self.data_manager.dataset_start_date.date()
-                self.start_date.setMinimumDate(min_date)
-                self.end_date.setMinimumDate(min_date)
     
-    def update_end_date_minimum(self):
-        """Ensure end_date is after start_date."""
-        self.end_date.setMinimumDate(self.start_date.date())
-            
     def update_portfolio(self):
+        """Execute trading strategy and update portfolio metrics."""
         try:
             investment_amount = float(self.investment_input.text())
-            risk_level = self.risk_input.value() * 10
-            start_date = pd.Timestamp(self.start_date.date().toPyDate(), tz='UTC')
-            end_date = pd.Timestamp(self.end_date.date().toPyDate(), tz='UTC')
+            risk_level = self.risk_input.value()
+            start_date = pd.Timestamp(self.start_date_input.date().toPyDate(), tz='UTC')
+            end_date = pd.Timestamp(self.end_date_input.date().toPyDate(), tz='UTC')
             
-            # Validate date range against existing trades and dataset
             orders = get_orders()
             dataset_start = self.data_manager.dataset_start_date
             dataset_end = self.data_manager.dataset_end_date
@@ -600,10 +594,10 @@ class InputPanel(QWidget):
             
             logger.debug(f"Executing with risk_level={risk_level}, mode={self.mode_combo.currentText().lower()}")
             success, result = execute_trading_strategy(
-                investment_amount,
-                risk_level,
-                start_date,
-                end_date,
+                investment_amount=investment_amount,
+                risk_level=risk_level,
+                start_date=start_date,
+                end_date=end_date,
                 data_manager=self.data_manager,
                 mode=self.mode_combo.currentText().lower(),
                 reset_state=True
@@ -640,22 +634,17 @@ class InputPanel(QWidget):
                     )
                 
                 if self.mode_combo.currentText().lower() == "semi-automatic" and orders:
-                    self.show_message_box(
-                        QMessageBox.Information,
-                        "Confirm Trades",
-                        f"{len(orders)} trade(s) suggested. Execute them?\n" +
-                        "\n".join([f"{order['action'].capitalize()} {order['shares_amount']} shares of {order['ticker']} at ${order['price']:.2f}" for order in orders]),
-                        QMessageBox.Yes | QMessageBox.No
-                    )
-                    if msg.exec_() == QMessageBox.Yes:
+                    dialog = TradeConfirmationDialog(orders, self)
+                    if dialog.exec_() == QDialog.Accepted and dialog.selected_orders:
                         success, result = execute_trading_strategy(
-                            investment_amount,
-                            risk_level,
-                            start_date,
-                            end_date,
+                            investment_amount=investment_amount,
+                            risk_level=risk_level,
+                            start_date=start_date,
+                            end_date=end_date,
                             data_manager=self.data_manager,
-                            mode="automatic",
-                            reset_state=False
+                            mode="semi-automatic",
+                            reset_state=False,
+                            selected_orders=dialog.selected_orders
                         )
                         if not success:
                             self.show_message_box(
@@ -679,8 +668,9 @@ class InputPanel(QWidget):
                         QMessageBox.Ok
                     )
                 
-                self.update_financial_metrics()
-                self.main_window.update_dashboard()
+                self.update_financial_metrics(cash, portfolio_value)
+                if hasattr(self, 'main_window'):
+                    self.main_window.update_dashboard()
             else:
                 error_message = result.get('warning_message', 'Unknown error')
                 self.show_message_box(
@@ -699,65 +689,3 @@ class InputPanel(QWidget):
                 QMessageBox.Ok
             )
             self.update_financial_metrics()
-            
-class TradeConfirmationDialog(QDialog):
-    """Dialog for confirming trades in semi-automatic mode."""
-    def __init__(self, orders, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Confirm Trades")
-        self.orders = orders
-        self.selected_orders = []
-        self.setup_ui()
-    
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        
-        self.table = QTableWidget()
-        self.table.setRowCount(len(self.orders))
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Select", "Date", "Ticker", "Action", "Shares", "Price"])
-        self.table.horizontalHeader().setStretchLastSection(True)
-        
-        for row, order in enumerate(self.orders):
-            checkbox = QCheckBox()
-            checkbox.setChecked(True)
-            self.table.setCellWidget(row, 0, checkbox)
-            
-            self.table.setItem(row, 1, QTableWidgetItem(str(order.get('date', ''))))
-            self.table.setItem(row, 2, QTableWidgetItem(order.get('ticker', '')))
-            self.table.setItem(row, 3, QTableWidgetItem(order.get('action', '')))
-            self.table.setItem(row, 4, QTableWidgetItem(str(order.get('shares_amount', 0))))
-            self.table.setItem(row, 5, QTableWidgetItem(f"${order.get('price', 0):,.2f}"))
-            
-            for col in range(1, 6):
-                if self.table.item(row, col):
-                    self.table.item(row, col).setTextAlignment(Qt.AlignCenter)
-        
-        self.table.resizeColumnsToContents()
-        layout.addWidget(self.table)
-        
-        button_layout = QHBoxLayout()
-        accept_button = QPushButton("Accept Selected")
-        accept_button.clicked.connect(self.accept_selected)
-        cancel_button = QPushButton("Cancel")
-        cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(accept_button)
-        button_layout.addWidget(cancel_button)
-        layout.addLayout(button_layout)
-        
-        self.setStyleSheet("""
-            QTableWidget { background-color: #3c3f41; color: #ffffff; }
-            QTableWidget::item { border: 1px solid #555555; }
-            QTableWidget::item:selected { background-color: #2a82da; }
-            QHeaderView::section { background-color: #353535; color: #ffffff; border: 1px solid #555555; }
-            QPushButton { background-color: #2a82da; color: #ffffff; padding: 5px; }
-            QPushButton:hover { background-color: #3a92ea; }
-        """)
-    
-    def accept_selected(self):
-        self.selected_orders = []
-        for row in range(self.table.rowCount()):
-            checkbox = self.table.cellWidget(row, 0)
-            if checkbox.isChecked():
-                self.selected_orders.append(self.orders[row])
-        self.accept()            

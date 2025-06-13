@@ -79,7 +79,7 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
         if portfolio_history:
             initial_value = investment_amount
             final_value = portfolio_value
-            total_return = ((final_value / initial_value) - 1) * 100
+            total_return = ((final_value - initial_value) / initial_value) * 100
             logger.info(f"Performance Summary:")
             logger.info(f"  Initial Value: ${initial_value:,.2f}")
             logger.info(f"  Final Value: ${final_value:,.2f}")
