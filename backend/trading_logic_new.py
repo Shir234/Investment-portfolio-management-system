@@ -549,7 +549,13 @@ def buy(order, holdings, cash):
     shares = order['shares_amount']
     price = order['price']
     total_cost = order['total_cost']
-    current_date = pd.Timestamp(order['date'], tz='UTC')
+    order_date = order['date']
+    if isinstance(order_date, str):
+        current_date = pd.to_datetime(order_date, utc=True)
+    elif isinstance(order_date, pd.Timestamp):
+        current_date = order_date if order_date.tz else order_date.tz_localize('UTC')
+    else:
+        current_date = pd.Timestamp(order_date).tz_localize('UTC')
 
     if total_cost > cash:
         logger.warning(f"Skipping {ticker} buy: Insufficient cash ${cash:.2f} < ${total_cost:.2f}")
@@ -661,8 +667,18 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
 
         # TODO -> the new logic for selected orders
         if selected_orders and mode == "semi-automatic":
+            if selected_orders:
+                order_date = selected_orders[0]['date']
+                if isinstance(order_date, str):
+                    current_date = pd.to_datetime(order_date, utc=True)
+                elif isinstance(order_date, pd.Timestamp):
+                    current_date = order_date if order_date.tz else order_date.tz_localize('UTC')
+                else:
+                    current_date = pd.Timestamp(order_date).tz_localize('UTC')
+            else:
+                current_date = pd.Timestamp.now(tz='UTC')
             # Execute only selected orders
-            current_date = pd.Timestamp(selected_orders[0]['date'], tz='UTC') if selected_orders else pd.Timestamp.now(tz='UTC')
+            #current_date = pd.Timestamp(selected_orders[0]['date'], tz='UTC') if selected_orders else pd.Timestamp.now(tz='UTC')
             cash, executed_count = execute_orders(selected_orders, holdings, cash, mode="semi-automatic")
             total_buy_orders = sum(1 for o in selected_orders if o['action'] == 'buy' and o in selected_orders)
             total_sell_orders = sum(1 for o in selected_orders if o['action'] == 'sell' and o in selected_orders)
