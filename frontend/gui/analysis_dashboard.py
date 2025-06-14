@@ -1,14 +1,16 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QComboBox, QGroupBox, QListWidget, QListWidgetItem)
+                             QComboBox, QGroupBox, QListWidget, QListWidgetItem,
+                             QPushButton, QMessageBox)
+from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import pandas as pd
-from backend.trading_logic_new import get_portfolio_history, get_orders
-import logging
-from logging_config import get_logger
 import numpy as np
 import seaborn as sns
+from backend.trading_logic_new import get_portfolio_history, get_orders
+from logging_config import get_logger
+import logging
 
 # Configure logging
 logger = get_logger(__name__)
@@ -18,73 +20,92 @@ class AnalysisDashboard(QWidget):
     def __init__(self, data_manager, parent=None):
         super().__init__(parent)
         self.data_manager = data_manager
-        self.is_dark_mode = True  # Default to dark mode
-        plt.style.use('dark_background' if self.is_dark_mode else 'seaborn-v0_8-white')
+        self.is_dark_mode = True
+        # Set matplotlib style
+        plt.rcParams.update({
+            'font.family': 'Roboto',
+            'font.size': 10,
+            'axes.titlesize': 12,
+            'axes.labelsize': 10,
+            'xtick.labelsize': 8,
+            'ytick.labelsize': 8,
+            'legend.fontsize': 8,
+            'axes.facecolor': '#2b2b2b' if self.is_dark_mode else '#ffffff',
+            'figure.facecolor': '#212121' if self.is_dark_mode else '#f5f5f5'
+        })
         self.setup_ui()
         logger.info("AnalysisDashboard initialized")
         
     def setup_ui(self):
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
         
-        # Controls layout (graph selection and ticker selection side-by-side)
+        # Controls layout
         controls_layout = QHBoxLayout()
+        controls_layout.setSpacing(10)
         
-        # Graph selection dropdown
-        self.selection_group = QGroupBox("Graph Selection")
-        self.selection_group.setObjectName("selection_group")
-        self.selection_group.setStyleSheet("color: #ffffff; background-color: #353535;")
+        # Graph selection
+        self.selection_group = QGroupBox("Graph Type")
         selection_layout = QVBoxLayout()
-        
         self.graph_combo = QComboBox()
         self.graph_combo.addItems([
-            "Portfolio Performance", 
-            "Daily vs Periodic Sharpe", 
-            "Sharpe Distribution", 
-            "Portfolio Composition",
-            "Scatter Plot with Regression Line",
-            "Time Series Comparison",
-            "Prediction Error Distribution",
-            "Performance by Stock",
-            "Heatmap of Ensemble Performance",
-            "Portfolio vs Max Possible Value",
-            "Sharpe Accuracy"
+            "Portfolio Performance",
+            "Sharpe Distribution",
+            "Predicted vs Actual Sharpe",
+            "Portfolio Drawdown",
+            "Cumulative Returns by Ticker",
+            "Trade Profit/Loss Distribution"
         ])
-        self.graph_combo.setStyleSheet("background-color: #3c3f41; color: #ffffff; selection-background-color: #2a82da;")
         self.graph_combo.currentIndexChanged.connect(self.change_graph_type)
-        
         selection_layout.addWidget(self.graph_combo)
         self.selection_group.setLayout(selection_layout)
-        controls_layout.addWidget(self.selection_group)
+        controls_layout.addWidget(self.selection_group, stretch=1)
         
-        # Ticker selection list
-        self.ticker_group = QGroupBox("Ticker Selection (Select up to 5)")
-        self.ticker_group.setObjectName("ticker_group")
-        self.ticker_group.setStyleSheet("color: #ffffff; background-color: #353535;")
+        # Ticker selection
+        self.ticker_group = QGroupBox("Tickers")
         ticker_layout = QVBoxLayout()
+        ticker_layout.setSpacing(5)
         
+        # Selected tickers display
+        self.selected_tickers_layout = QHBoxLayout()
+        self.selected_tickers_layout.setSpacing(5)
+        self.selected_tickers_label = QLabel("Selected:")
+        self.selected_tickers_layout.addWidget(self.selected_tickers_label)
+        self.selected_tickers_buttons = {}
+        self.selected_tickers_layout.addStretch()
+        
+        # Clear all button
+        self.clear_tickers_button = QPushButton("Clear All")
+        self.clear_tickers_button.clicked.connect(self.clear_all_tickers)
+        self.selected_tickers_layout.addWidget(self.clear_tickers_button)
+        
+        ticker_layout.addLayout(self.selected_tickers_layout)
+        
+        # Ticker list
         self.ticker_list = QListWidget()
         self.ticker_list.setSelectionMode(QListWidget.MultiSelection)
-        self.ticker_list.setMaximumWidth(150)  # Limit width to give more space to graph
+        self.ticker_list.setMaximumWidth(200)
         tickers = sorted(self.data_manager.data['Ticker'].unique()) if self.data_manager.data is not None else []
         for ticker in tickers:
             item = QListWidgetItem(ticker)
             self.ticker_list.addItem(item)
-        self.ticker_list.setStyleSheet("background-color: #3c3f41; color: #ffffff; selection-background-color: #2a82da;")
-        self.ticker_list.itemSelectionChanged.connect(self.update_visualizations)
+        self.ticker_list.itemSelectionChanged.connect(self.update_selected_tickers)
         
         ticker_layout.addWidget(self.ticker_list)
         self.ticker_group.setLayout(ticker_layout)
-        controls_layout.addWidget(self.ticker_group)
+        controls_layout.addWidget(self.ticker_group, stretch=1)
         
         layout.addLayout(controls_layout)
         
         # Chart area
         self.chart_fig = Figure(figsize=(10, 6))
         self.chart_canvas = FigureCanvas(self.chart_fig)
-        layout.addWidget(self.chart_canvas, stretch=1)  # Stretch to prioritize graph
+        layout.addWidget(self.chart_canvas, stretch=2)
         
         # Metrics display
         metrics_layout = QHBoxLayout()
+        metrics_layout.setSpacing(10)
         self.metrics_labels = {}
         for metric in ['Total Value', 'Sharpe Ratio', 'Volatility']:
             label = QLabel(f"{metric}: --")
@@ -92,13 +113,12 @@ class AnalysisDashboard(QWidget):
             self.metrics_labels[metric] = label
             metrics_layout.addWidget(label)
             
-        for label in self.metrics_labels.values():
-            label.setStyleSheet("color: #ffffff; font-weight: bold; padding: 8px; background-color: #3c3f41; border-radius: 4px;")
-            
         layout.addLayout(metrics_layout)
         
+        self.set_theme(self.is_dark_mode)
+        self.update_visualizations()
+        
     def set_initial_capital(self, initial_capital):
-        """Update the initial capital and refresh visualizations."""
         self.initial_capital = initial_capital
         self.update_visualizations()
         logger.debug(f"Set initial capital: ${initial_capital:,.2f}")
@@ -108,93 +128,142 @@ class AnalysisDashboard(QWidget):
         logger.debug(f"Changed graph type to: {self.graph_combo.currentText()}")
     
     def set_theme(self, is_dark_mode):
-        """Apply light or dark theme to the dashboard."""
         self.is_dark_mode = is_dark_mode
         plt.style.use('dark_background' if is_dark_mode else 'seaborn-v0_8-white')
+        plt.rcParams.update({
+            'axes.facecolor': '#2b2b2b' if is_dark_mode else '#ffffff',
+            'figure.facecolor': '#212121' if is_dark_mode else '#f5f5f5',
+            'axes.labelcolor': '#ffffff' if is_dark_mode else '#333333',
+            'xtick.color': '#ffffff' if is_dark_mode else '#333333',
+            'ytick.color': '#ffffff' if is_dark_mode else '#333333',
+            'grid.color': '#444444' if is_dark_mode else '#cccccc'
+        })
+        
         if is_dark_mode:
-            group_style = "color: #ffffff; background-color: #353535;"
-            combo_style = "background-color: #3c3f41; color: #ffffff; selection-background-color: #2a82da;"
-            list_style = "background-color: #3c3f41; color: #ffffff; selection-background-color: #2a82da;"
-            label_style = "color: #ffffff; font-weight: bold; padding: 8px; background-color: #3c3f41; border-radius: 4px;"
+            group_style = "color: #ffffff; background-color: #212121; border: 1px solid #333333; border-radius: 5px;"
+            combo_style = "background-color: #2b2b2b; color: #ffffff; selection-background-color: #2196F3; border-radius: 3px;"
+            list_style = "background-color: #2b2b2b; color: #ffffff; selection-background-color: #2196F3; border-radius: 3px;"
+            label_style = "color: #ffffff; background-color: #2b2b2b; padding: 8px; border-radius: 5px;"
+            button_style = "background-color: #2196F3; color: #ffffff; border: none; padding: 5px; border-radius: 3px;"
+            button_hover = "background-color: #1976D2;"
         else:
-            group_style = "color: black; background-color: #f0f0f0;"
-            combo_style = "background-color: #ffffff; color: black; selection-background-color: #2a82da;"
-            list_style = "background-color: #ffffff; color: black; selection-background-color: #2a82da;"
-            label_style = "color: black; font-weight: bold; padding: 8px; background-color: #f0f0f0; border-radius: 4px;"
+            group_style = "color: #333333; background-color: #f5f5f5; border: 1px solid #cccccc; border-radius: 5px;"
+            combo_style = "background-color: #ffffff; color: #333333; selection-background-color: #2196F3; border-radius: 3px;"
+            list_style = "background-color: #ffffff; color: #333333; selection-background-color: #2196F3; border-radius: 3px;"
+            label_style = "color: #333333; background-color: #f5f5f5; padding: 8px; border-radius: 5px;"
+            button_style = "background-color: #2196F3; color: #ffffff; border: none; padding: 5px; border-radius: 3px;"
+            button_hover = "background-color: #1976D2;"
         
         self.selection_group.setStyleSheet(group_style)
         self.ticker_group.setStyleSheet(group_style)
         self.graph_combo.setStyleSheet(combo_style)
         self.ticker_list.setStyleSheet(list_style)
+        self.clear_tickers_button.setStyleSheet(button_style)
+        self.selected_tickers_label.setStyleSheet("color: #ffffff;" if is_dark_mode else "color: #333333;")
+        for button in self.selected_tickers_buttons.values():
+            button.setStyleSheet(f"{button_style} QPushButton:hover {{{button_hover}}}")
         for label in self.metrics_labels.values():
             label.setStyleSheet(label_style)
         self.update_visualizations()
         logger.debug(f"Applied theme: {'dark' if is_dark_mode else 'light'}")
     
-    def update_visualizations(self):
-        graph_type = self.graph_combo.currentText()
+    def update_selected_tickers(self):
         selected_items = self.ticker_list.selectedItems()
         selected_tickers = [item.text() for item in selected_items]
         
+        if len(selected_tickers) > 5:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Selection Limit")
+            msg.setText("Please select up to 5 tickers only.")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setStyleSheet(self.get_message_box_style())
+            msg.exec_()
+            for item in selected_items[5:]:
+                item.setSelected(False)
+            selected_tickers = selected_tickers[:5]
+        
+        # Update selected tickers display
+        for ticker in list(self.selected_tickers_buttons.keys()):
+            if ticker not in selected_tickers:
+                button = self.selected_tickers_buttons.pop(ticker)
+                button.deleteLater()
+        
+        for ticker in selected_tickers:
+            if ticker not in self.selected_tickers_buttons:
+                button = QPushButton(ticker)
+                button.setFixedHeight(25)
+                button.clicked.connect(lambda _, t=ticker: self.remove_ticker(t))
+                button.setStyleSheet("background-color: #2196F3; color: #ffffff; border: none; padding: 5px; border-radius: 3px; QPushButton:hover {background-color: #1976D2;}")
+                self.selected_tickers_layout.insertWidget(self.selected_tickers_layout.count()-2, button)
+                self.selected_tickers_buttons[ticker] = button
+        
+        self.update_visualizations()
+        logger.debug(f"Selected tickers: {selected_tickers}")
+    
+    def remove_ticker(self, ticker):
+        for item in self.ticker_list.findItems(ticker, Qt.MatchExactly):
+            item.setSelected(False)
+        self.update_selected_tickers()
+    
+    def clear_all_tickers(self):
+        self.ticker_list.clearSelection()
+        self.update_selected_tickers()
+        logger.debug("Cleared all tickers")
+    
+    def get_message_box_style(self):
+        return f"""
+            QMessageBox {{ background-color: {'#212121' if self.is_dark_mode else '#f5f5f5'}; color: {'#ffffff' if self.is_dark_mode else '#333333'}; }}
+            QMessageBox QLabel {{ color: {'#ffffff' if self.is_dark_mode else '#333333'}; }}
+            QMessageBox QPushButton {{ background-color: {'#2196F3' if self.is_dark_mode else '#2196F3'}; color: #ffffff; border: none; padding: 5px; border-radius: 3px; }}
+            QMessageBox QPushButton:hover {{ background-color: #1976D2; }}
+        """
+    
+    def update_visualizations(self):
+        graph_type = self.graph_combo.currentText()
+        selected_tickers = [item.text() for item in self.ticker_list.selectedItems()]
+        
         self.chart_fig.clear()
         
-        # Initialize start_date and end_date
         try:
-            # Try data_manager dates
             start_date = pd.to_datetime(self.data_manager.start_date, utc=True) if self.data_manager.start_date else None
             end_date = pd.to_datetime(self.data_manager.end_date, utc=True) if self.data_manager.end_date else None
-            
-            # Fallback to dataset date range if available
             if (start_date is None or end_date is None) and self.data_manager.data is not None and not self.data_manager.data.empty:
                 dates = pd.to_datetime(self.data_manager.data['date'], utc=True)
                 start_date = start_date or dates.min()
                 end_date = end_date or dates.max()
-            
-            # Fallback to default dates
             if start_date is None:
                 start_date = pd.Timestamp('2000-01-01', tz='UTC')
             if end_date is None:
                 end_date = pd.Timestamp.now(tz='UTC')
-                
             self.start_date = start_date
             self.end_date = end_date
             logger.debug(f"Using date range: {self.start_date} to {self.end_date}")
         except Exception as e:
             logger.error(f"Error setting dates: {e}")
             self.chart_fig.add_subplot(111).text(0.5, 0.5, 'Error: Invalid date range', 
-                                                 horizontalalignment='center', 
-                                                 color='#ffffff' if self.is_dark_mode else 'black')
+                                                 horizontalalignment='center', verticalalignment='center',
+                                                 color='#ffffff' if self.is_dark_mode else '#333333')
             self.chart_canvas.draw()
             return
         
         if graph_type == "Portfolio Performance":
             self.plot_portfolio_performance()
-        elif graph_type == "Daily vs Periodic Sharpe":
-            self.plot_sharpe_comparison(selected_tickers)
         elif graph_type == "Sharpe Distribution":
             self.plot_sharpe_distribution(selected_tickers)
-        elif graph_type == "Portfolio Composition":
-            self.plot_portfolio_composition()
-        elif graph_type == "Scatter Plot with Regression Line":
-            self.plot_scatter_with_regression(selected_tickers)
-        elif graph_type == "Time Series Comparison":
+        elif graph_type == "Predicted vs Actual Sharpe":
             self.plot_time_series_comparison(selected_tickers)
-        elif graph_type == "Prediction Error Distribution":
-            self.plot_error_distribution(selected_tickers)
-        elif graph_type == "Performance by Stock":
-            self.plot_performance_by_stock(selected_tickers)
-        elif graph_type == "Heatmap of Ensemble Performance":
-            self.plot_ensemble_heatmap(selected_tickers)
-        elif graph_type == "Portfolio vs Max Possible Value":
-            self.plot_portfolio_vs_max_possible()
-        elif graph_type == "Sharpe Accuracy":
-            self.plot_sharpe_accuracy(selected_tickers)
+        elif graph_type == "Portfolio Drawdown":
+            self.plot_portfolio_drawdown()
+        elif graph_type == "Cumulative Returns by Ticker":
+            self.plot_cumulative_returns(selected_tickers)
+        elif graph_type == "Trade Profit/Loss Distribution":
+            self.plot_trade_profit_loss()
         
         self.update_metrics()
         self.chart_canvas.draw()
         
     def update_dashboard(self):
-        """Refresh the dashboard with the latest data."""
         self.update_visualizations()
         logger.info("Dashboard updated")
         
@@ -203,10 +272,7 @@ class AnalysisDashboard(QWidget):
         portfolio_history = get_portfolio_history()
         if not portfolio_history:
             ax.text(0.5, 0.5, 'No portfolio history available', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No portfolio history data")
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
             return
         
         df = pd.DataFrame(portfolio_history)
@@ -214,183 +280,212 @@ class AnalysisDashboard(QWidget):
         df = df[(df['date'] >= self.start_date) & (df['date'] <= self.end_date)]
         if df.empty:
             ax.text(0.5, 0.5, 'No portfolio history in date range', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("Portfolio history empty for date range")
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
             return
         
-        ax.plot(df['date'], df['value'], label='Portfolio Value', color='#2a82da')
-        ax.set_title('Portfolio Performance Over Time', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_xlabel('Date', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_ylabel('Value ($)', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.legend()
-        ax.grid(True, color='#444444' if self.is_dark_mode else '#cccccc')
-        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+        ax.plot(df['date'], df['value'], label='Portfolio Value', color='#2196F3', linewidth=2)
+        ax.set_title('Portfolio Performance', pad=10)
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Value ($)')
+        ax.legend(loc='best', frameon=True, facecolor='#2b2b2b' if self.is_dark_mode else '#ffffff')
+        ax.grid(True, linestyle='--', alpha=0.5)
+        self.chart_fig.tight_layout()
         
-    def plot_portfolio_composition(self):
+    def plot_sharpe_distribution(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
-        orders = get_orders()
-        if not orders:
-            ax.text(0.5, 0.5, 'No trade history available', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No trade history data")
+        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
+        if data is None or data.empty:
+            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
             return
-
-        orders_df = pd.DataFrame(orders)
-        orders_df['date'] = pd.to_datetime(orders_df['date'], utc=True)
-        orders_df = orders_df[(orders_df['date'] >= self.start_date) & (orders_df['date'] <= self.end_date)]
-
-        if orders_df.empty:
-            ax.text(0.5, 0.5, 'No trades in the selected date range', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No trades in date range")
-            return
-
-        buy_count = len(orders_df[orders_df['action'] == 'buy'])
-        sell_count = len(orders_df[orders_df['action'] == 'sell'])
-        total_actions = buy_count + sell_count
-        if total_actions == 0:
-            ax.text(0.5, 0.5, 'No buy or sell actions recorded', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No buy or sell actions")
-            return
-
-        trading_days = (self.end_date - self.start_date).days + 1
-        hold_count = trading_days - total_actions
-        if hold_count < 0:
-            hold_count = 0
-
-        labels = ['Buy', 'Sell', 'Hold']
-        sizes = [buy_count, sell_count, hold_count]
-        colors = ['#4CAF50', '#F44336', '#2196F3']
-        non_zero = [(l, s, c) for l, s, c in zip(labels, sizes, colors) if s > 0]
+            
+        data['date'] = pd.to_datetime(data['date'], utc=True)
+        data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
         
-        if non_zero:
-            labels, sizes, colors = zip(*non_zero)
-            ax.pie(sizes, labels=labels, autopct='%1.1f%%', colors=colors)
-            ax.set_title('Trade Action Distribution', color='#ffffff' if self.is_dark_mode else 'black')
-        else:
-            ax.text(0.5, 0.5, 'No trade actions to display', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+        if not selected_tickers:
+            ax.text(0.5, 0.5, 'Select at least one ticker', horizontalalignment='center', 
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+            return
         
-    def plot_portfolio_vs_max_possible(self):
+        data = data[data['Ticker'].isin(selected_tickers)]
+        if data.empty:
+            ax.text(0.5, 0.5, 'No data for selected tickers', horizontalalignment='center', 
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+            return
+        
+        colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
+        for idx, ticker in enumerate(selected_tickers):
+            ticker_data = data[data['Ticker'] == ticker]
+            sns.histplot(data=ticker_data, x='Best_Prediction', bins=30, ax=ax, 
+                         color=colors[idx], alpha=0.5, label=f'{ticker} Predicted')
+        
+        actual_data = data[data['Actual_Sharpe'] != -1.0]
+        if not actual_data.empty:
+            for idx, ticker in enumerate(selected_tickers):
+                ticker_data = actual_data[actual_data['Ticker'] == ticker]
+                sns.histplot(data=ticker_data, x='Actual_Sharpe', bins=15, ax=ax, 
+                             color=colors[idx], alpha=0.3, label=f'{ticker} Actual', linestyle='--')
+        
+        ax.set_title('Sharpe Ratio Distribution', pad=10)
+        ax.set_xlabel('Sharpe Ratio')
+        ax.set_ylabel('Count')
+        ax.legend(loc='best', frameon=True, facecolor='#2b2b2b' if self.is_dark_mode else '#ffffff')
+        ax.grid(True, linestyle='--', alpha=0.5)
+        self.chart_fig.tight_layout()
+        
+    def plot_time_series_comparison(self, selected_tickers):
+        ax = self.chart_fig.add_subplot(111)
+        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
+        if data is None or data.empty:
+            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+            return
+            
+        data['date'] = pd.to_datetime(data['date'], utc=True)
+        data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
+        
+        if not selected_tickers:
+            ax.text(0.5, 0.5, 'Select at least one ticker', horizontalalignment='center', 
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+            return
+        
+        data = data[data['Ticker'].isin(selected_tickers)]
+        if data.empty:
+            ax.text(0.5, 0.5, 'No data for selected tickers', horizontalalignment='center', 
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+            return
+        
+        colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
+        for idx, ticker in enumerate(selected_tickers):
+            ticker_data = data[data['Ticker'] == ticker]
+            ax.plot(ticker_data['date'], ticker_data['Best_Prediction'], 
+                    color=colors[idx], alpha=0.7, label=f'{ticker} Predicted', linewidth=1.5)
+        
+        actual_data = data[data['Actual_Sharpe'] != -1.0]
+        if not actual_data.empty:
+            for idx, ticker in enumerate(selected_tickers):
+                ticker_data = actual_data[actual_data['Ticker'] == ticker]
+                ax.scatter(ticker_data['date'], ticker_data['Actual_Sharpe'], 
+                           color=colors[idx], s=30, alpha=0.7, label=f'{ticker} Actual')
+        
+        ax.set_ylim(-5, 5)
+        ax.set_title('Predicted vs Actual Sharpe Ratios', pad=10)
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Sharpe Ratio')
+        ax.legend(loc='best', frameon=True, facecolor='#2b2b2b' if self.is_dark_mode else '#ffffff')
+        ax.grid(True, linestyle='--', alpha=0.5)
+        self.chart_fig.tight_layout()
+        
+    def plot_portfolio_drawdown(self):
         ax = self.chart_fig.add_subplot(111)
         portfolio_history = get_portfolio_history()
         if not portfolio_history:
             ax.text(0.5, 0.5, 'No portfolio history available', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No portfolio history data")
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
             return
-
+        
         df = pd.DataFrame(portfolio_history)
         df['date'] = pd.to_datetime(df['date'], utc=True)
         df = df[(df['date'] >= self.start_date) & (df['date'] <= self.end_date)]
-
         if df.empty:
-            ax.text(0.5, 0.5, 'No portfolio history in the selected date range', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("Portfolio history empty for date range")
+            ax.text(0.5, 0.5, 'No portfolio history in date range', horizontalalignment='center', 
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
             return
-
-        data = self.data_manager.data.copy()
+        
+        # Calculate drawdown
+        df['peak'] = df['value'].cummax()
+        df['drawdown'] = (df['value'] - df['peak']) / df['peak'] * 100
+        
+        ax.plot(df['date'], df['drawdown'], label='Drawdown (%)', color='#F44336', linewidth=2)
+        ax.fill_between(df['date'], df['drawdown'], 0, color='#F44336', alpha=0.2)
+        ax.set_title('Portfolio Drawdown', pad=10)
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Drawdown (%)')
+        ax.legend(loc='best', frameon=True, facecolor='#2b2b2b' if self.is_dark_mode else '#ffffff')
+        ax.grid(True, linestyle='--', alpha=0.5)
+        self.chart_fig.tight_layout()
+        
+    def plot_cumulative_returns(self, selected_tickers):
+        ax = self.chart_fig.add_subplot(111)
+        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
+        if data is None or data.empty:
+            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+            return
+            
         data['date'] = pd.to_datetime(data['date'], utc=True)
         data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
-
-        if data.empty:
-            ax.text(0.5, 0.5, 'No data available for the date range', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No market data in date range")
+        
+        if not selected_tickers:
+            ax.text(0.5, 0.5, 'Select at least one ticker', horizontalalignment='center', 
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
             return
-
-        initial_investment = df['value'].iloc[0] if not df.empty else 10000.0
-        max_portfolio_value = initial_investment
-        max_values = []
-        holdings = {}
-        cash = initial_investment
-        date_range = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
-
-        for current_date in date_range:
-            daily_data = data[data['date'].dt.date == current_date.date()].copy()
-            if daily_data.empty:
-                max_values.append(max_portfolio_value)
-                continue
-
-            daily_data.loc[:, 'Return'] = daily_data.groupby('Ticker')['Close'].pct_change().shift(-1)
-
-            for ticker in list(holdings.keys()):
-                holding = holdings[ticker]
-                days_held = (current_date - holding['purchase_date']).days
-                if days_held >= 5:
-                    ticker_data = daily_data[daily_data['Ticker'] == ticker]
-                    if not ticker_data.empty:
-                        sale_value = holding['shares'] * ticker_data.iloc[0]['Close']
-                        cash += sale_value
-                        del holdings[ticker]
-
-            if not daily_data.empty:
-                daily_data = daily_data.dropna(subset=['Return'])
-                if not daily_data.empty:
-                    top_stock = daily_data.loc[daily_data['Return'].idxmax()]
-                    price = top_stock['Close']
-                    shares = int((initial_investment * 0.1) / price)
-                    cost = shares * price
-                    if shares > 0 and cost <= cash:
-                        holdings[top_stock['Ticker']] = {
-                            'shares': shares,
-                            'purchase_date': current_date
-                        }
-                        cash -= cost
-
-            current_value = cash
-            for ticker, holding in holdings.items():
-                ticker_data = daily_data[daily_data['Ticker'] == ticker]
-                if not ticker_data.empty:
-                    current_value += holding['shares'] * ticker_data.iloc[0]['Close']
-            max_portfolio_value = current_value
-            max_values.append(max_portfolio_value)
-
-        ax.plot(df['date'], df['value'], label='Actual Portfolio Value', color='#2a82da')
-        ax.plot(date_range, max_values, label='Max Possible Value', color='#ff9900', linestyle='--')
-        ax.set_title('Portfolio Value vs Maximum Possible Value', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_xlabel('Date', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_ylabel('Value ($)', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.legend()
-        ax.grid(True, color='#444444' if self.is_dark_mode else '#cccccc')
-        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+        
+        data = data[data['Ticker'].isin(selected_tickers)]
+        if data.empty:
+            ax.text(0.5, 0.5, 'No data for selected tickers', horizontalalignment='center', 
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+            return
+        
+        colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
+        for idx, ticker in enumerate(selected_tickers):
+            ticker_data = data[data['Ticker'] == ticker].sort_values('date')
+            if not ticker_data.empty:
+                returns = ticker_data['Close'].pct_change().fillna(0)
+                cumulative = (1 + returns).cumprod() * 100 - 100
+                ax.plot(ticker_data['date'], cumulative, label=f'{ticker} Returns', 
+                        color=colors[idx], linewidth=1.5)
+        
+        ax.set_title('Cumulative Returns by Ticker', pad=10)
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Cumulative Return (%)')
+        ax.legend(loc='best', frameon=True, facecolor='#2b2b2b' if self.is_dark_mode else '#ffffff')
+        ax.grid(True, linestyle='--', alpha=0.5)
+        self.chart_fig.tight_layout()
+        
+    def plot_trade_profit_loss(self):
+        ax = self.chart_fig.add_subplot(111)
+        orders = get_orders()
+        if not orders:
+            ax.text(0.5, 0.5, 'No trade history available', horizontalalignment='center', 
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+            return
+        
+        orders_df = pd.DataFrame(orders)
+        orders_df['date'] = pd.to_datetime(orders_df['date'], utc=True)
+        orders_df = orders_df[(orders_df['date'] >= self.start_date) & (orders_df['date'] <= self.end_date)]
+        
+        if orders_df.empty:
+            ax.text(0.5, 0.5, 'No trades in date range', horizontalalignment='center', 
+                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+            return
+        
+        # Calculate profit/loss per trade
+        profits = []
+        for _, order in orders_df.iterrows():
+            if order['action'] == 'buy':
+                cost = order['investment_amount'] + order.get('transaction_cost', 0)
+                profits.append(-cost)
+            elif order['action'] == 'sell':
+                proceeds = order['investment_amount'] - order.get('transaction_cost', 0)
+                profits.append(proceeds)
+        
+        sns.histplot(profits, bins=30, ax=ax, color='#2196F3', alpha=0.7)
+        ax.axvline(0, color='#F44336', linestyle='--', label='Break-even')
+        ax.set_title('Trade Profit/Loss Distribution', pad=10)
+        ax.set_xlabel('Profit/Loss ($)')
+        ax.set_ylabel('Count')
+        ax.legend(loc='best', frameon=True, facecolor='#2b2b2b' if self.is_dark_mode else '#ffffff')
+        ax.grid(True, linestyle='--', alpha=0.5)
+        self.chart_fig.tight_layout()
         
     def update_metrics(self):
         data = self.data_manager.data
         try:
             portfolio_history = get_portfolio_history()
-            if portfolio_history:
-                total_value = portfolio_history[-1]['value']
-            else:
-                total_value = 10000.0  # Default if no history
+            total_value = portfolio_history[-1]['value'] if portfolio_history else 10000.0
             sharpe_ratio = data[data['Actual_Sharpe'] != -1.0]['Best_Prediction'].mean() if data is not None and not data.empty else 0.0
-            if portfolio_history:
-                df = pd.DataFrame(portfolio_history)
-                volatility = df['value'].pct_change().std()
-            else:
-                volatility = 0.0
+            volatility = pd.DataFrame(portfolio_history)['value'].pct_change().std() if portfolio_history else 0.0
             self.metrics_labels['Total Value'].setText(f"Total Value: ${total_value:,.2f}")
             self.metrics_labels['Sharpe Ratio'].setText(f"Avg Sharpe: {sharpe_ratio:.2f}")
             self.metrics_labels['Volatility'].setText(f"Volatility: {volatility:.2%}")
@@ -399,515 +494,3 @@ class AnalysisDashboard(QWidget):
             logger.error(f"Error updating metrics: {e}")
             for label in self.metrics_labels.values():
                 label.setText(f"Error: {str(e)}")
-                
-    def plot_sharpe_comparison(self, selected_tickers):
-        ax = self.chart_fig.add_subplot(111)
-        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
-        if data is None or data.empty:
-            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No market data")
-            return
-            
-        data['date'] = pd.to_datetime(data['date'], utc=True)
-        data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
-
-        if not selected_tickers:
-            ax.text(0.5, 0.5, 'Please select at least one ticker.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No tickers selected")
-            return
-
-        if len(selected_tickers) > 5:
-            ax.text(0.5, 0.5, 'Please select 5 or fewer tickers for clarity.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("Too many tickers selected")
-            return
-
-        data = data[data['Ticker'].isin(selected_tickers)]
-        if data.empty:
-            ax.text(0.5, 0.5, 'No data for the selected tickers.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No data for selected tickers")
-            return
-
-        colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
-
-        for idx, ticker in enumerate(selected_tickers):
-            ticker_data = data[data['Ticker'] == ticker]
-            ax.plot(ticker_data['date'], ticker_data['Best_Prediction'], 
-                    color=colors[idx], alpha=0.7, label=f'{ticker} Predicted')
-
-        periodic_data = data[data['Actual_Sharpe'] != -1.0]
-        if not periodic_data.empty:
-            for idx, ticker in enumerate(selected_tickers):
-                ticker_data = periodic_data[periodic_data['Ticker'] == ticker]
-                ax.scatter(ticker_data['date'], ticker_data['Actual_Sharpe'], 
-                           color=colors[idx], s=50, alpha=0.7, marker='o', 
-                           label=f'{ticker} Actual')
-
-        ax.set_title('Daily Predicted vs Periodic Actual Sharpe Ratios', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_xlabel('Date', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_ylabel('Sharpe Ratio', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        ax.grid(True, color='#444444' if self.is_dark_mode else '#cccccc')
-        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-        self.chart_fig.tight_layout()
-        
-    def plot_sharpe_distribution(self, selected_tickers):
-        ax = self.chart_fig.add_subplot(111)
-        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
-        if data is None or data.empty:
-            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No market data")
-            return
-            
-        data['date'] = pd.to_datetime(data['date'], utc=True)
-        data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
-        
-        if not selected_tickers:
-            ax.text(0.5, 0.5, 'Please select at least one ticker.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No tickers selected")
-            return
-
-        if len(selected_tickers) > 5:
-            ax.text(0.5, 0.5, 'Please select 5 or fewer tickers for clarity.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("Too many tickers selected")
-            return
-
-        data = data[data['Ticker'].isin(selected_tickers)]
-        if data.empty:
-            ax.text(0.5, 0.5, 'No data for the selected tickers.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No data for selected tickers")
-            return
-
-        colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
-
-        for idx, ticker in enumerate(selected_tickers):
-            ticker_data = data[data['Ticker'] == ticker]
-            sns.histplot(data=ticker_data, x='Best_Prediction', bins=30, ax=ax, 
-                         color=colors[idx], alpha=0.5, label=f'{ticker} Predicted')
-
-        actual_data = data[data['Actual_Sharpe'] != -1.0]
-        if not actual_data.empty:
-            for idx, ticker in enumerate(selected_tickers):
-                ticker_data = actual_data[actual_data['Ticker'] == ticker]
-                sns.histplot(data=ticker_data, x='Actual_Sharpe', bins=15, ax=ax, 
-                             color=colors[idx], alpha=0.3, label=f'{ticker} Actual', linestyle='--')
-
-        ax.set_title('Distribution of Sharpe Ratios', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_xlabel('Sharpe Ratio', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_ylabel('Count', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        ax.grid(True, color='#444444' if self.is_dark_mode else '#cccccc')
-        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-        self.chart_fig.tight_layout()
-        
-    def plot_scatter_with_regression(self, selected_tickers):
-        ax = self.chart_fig.add_subplot(111)
-        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy() if self.data_manager.data is not None else None
-        if filtered_data is None or filtered_data.empty:
-            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No market data")
-            return
-            
-        filtered_data['date'] = pd.to_datetime(filtered_data['date'], utc=True)
-        filtered_data = filtered_data[(filtered_data['date'] >= self.start_date) & (filtered_data['date'] <= self.end_date)]
-        
-        if not selected_tickers:
-            ax.text(0.5, 0.5, 'Please select at least one ticker.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No tickers selected")
-            return
-
-        if len(selected_tickers) > 5:
-            ax.text(0.5, 0.5, 'Please select 5 or fewer tickers for clarity.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("Too many tickers selected")
-            return
-
-        filtered_data = filtered_data[filtered_data['Ticker'].isin(selected_tickers)]
-        if filtered_data.empty:
-            ax.text(0.5, 0.5, 'No data for the selected tickers.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No data for selected tickers")
-            return
-
-        filtered_data = filtered_data.dropna(subset=['Best_Prediction', 'Actual_Sharpe'])
-
-        if filtered_data.empty:
-            ax.text(0.5, 0.5, 'No data with Actual Sharpe != -1.0', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No data with valid Actual Sharpe")
-            return
-
-        colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
-
-        overall_data = []
-        for idx, ticker in enumerate(selected_tickers):
-            ticker_data = filtered_data[filtered_data['Ticker'] == ticker]
-            overall_data.append(ticker_data)
-            sns.scatterplot(x='Best_Prediction', y='Actual_Sharpe', data=ticker_data, ax=ax, 
-                            color=colors[idx], alpha=0.7, label=f'{ticker} Data')
-
-        combined_data = pd.concat(overall_data)
-        sns.regplot(x='Best_Prediction', y='Actual_Sharpe', data=combined_data, ax=ax, 
-                    scatter=False, color='#ffffff' if self.is_dark_mode else '#2a82da', label='Regression Line')
-
-        correlation = combined_data['Actual_Sharpe'].corr(combined_data['Best_Prediction'])
-
-        min_val = min(filtered_data['Best_Prediction'].min(), filtered_data['Actual_Sharpe'].min())
-        max_val = max(filtered_data['Best_Prediction'].max(), filtered_data['Actual_Sharpe'].max())
-        ax.plot([min_val, max_val], [min_val, max_val], 'k--', label='y=x Line')
-
-        ax.text(0.05, 0.95, f'Correlation: {correlation:.4f}', transform=ax.transAxes, 
-                color='#ffffff' if self.is_dark_mode else 'black', fontsize=10, verticalalignment='top', 
-                bbox=dict(boxstyle='round', facecolor='#353535' if self.is_dark_mode else '#f0f0f0', alpha=0.8))
-
-        ax.set_title('Actual Sharpe vs Predicted Sharpe', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_xlabel('Predicted Sharpe Ratio', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_ylabel('Actual Sharpe Ratio', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        ax.grid(True, color='#444444' if self.is_dark_mode else '#cccccc')
-        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-        self.chart_fig.tight_layout()
-        
-    def plot_time_series_comparison(self, selected_tickers):
-        ax = self.chart_fig.add_subplot(111)
-        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
-        if data is None or data.empty:
-            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No market data")
-            return
-            
-        data['date'] = pd.to_datetime(data['date'], utc=True)
-        data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
-
-        if not selected_tickers:
-            ax.text(0.5, 0.5, 'Please select at least one ticker.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No tickers selected")
-            return
-
-        if len(selected_tickers) > 5:
-            ax.text(0.5, 0.5, 'Please select 5 or fewer tickers for clarity.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("Too many tickers selected")
-            return
-
-        data = data[data['Ticker'].isin(selected_tickers)]
-        if data.empty:
-            ax.text(0.5, 0.5, 'No data for the selected tickers.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No data for selected tickers")
-            return
-
-        colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
-
-        for idx, ticker in enumerate(selected_tickers):
-            ticker_data = data[data['Ticker'] == ticker]
-            ax.plot(ticker_data['date'], ticker_data['Best_Prediction'], 
-                    color=colors[idx], alpha=0.7, label=f'{ticker} Predicted')
-
-        actual_data = data[data['Actual_Sharpe'] != -1.0]
-        if not actual_data.empty:
-            for idx, ticker in enumerate(selected_tickers):
-                ticker_data = actual_data[actual_data['Ticker'] == ticker]
-                ax.scatter(ticker_data['date'], ticker_data['Actual_Sharpe'], 
-                           color=colors[idx], s=50, alpha=0.7, 
-                           label=f'{ticker} Actual')
-
-        ax.set_ylim(-5, 5)
-        ax.set_title('Time Series Comparison of Sharpe Ratios', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_xlabel('Date', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_ylabel('Sharpe Ratio', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        ax.grid(True, color='#444444' if self.is_dark_mode else '#cccccc')
-        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-        self.chart_fig.tight_layout()
-        
-    def plot_error_distribution(self, selected_tickers):
-        ax = self.chart_fig.add_subplot(111)
-        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy() if self.data_manager.data is not None else None
-        if filtered_data is None or filtered_data.empty:
-            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No market data")
-            return
-            
-        filtered_data['date'] = pd.to_datetime(filtered_data['date'], utc=True)
-        filtered_data = filtered_data[(filtered_data['date'] >= self.start_date) & (filtered_data['date'] <= self.end_date)]
-        
-        if not selected_tickers:
-            ax.text(0.5, 0.5, 'Please select at least one ticker.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No tickers selected")
-            return
-
-        if len(selected_tickers) > 5:
-            ax.text(0.5, 0.5, 'Please select 5 or fewer tickers for clarity.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("Too many tickers selected")
-            return
-
-        filtered_data = filtered_data[filtered_data['Ticker'].isin(selected_tickers)]
-        if filtered_data.empty:
-            ax.text(0.5, 0.5, 'No data for the selected tickers.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No data for selected tickers")
-            return
-
-        colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
-
-        for idx, ticker in enumerate(selected_tickers):
-            ticker_data = filtered_data[filtered_data['Ticker'] == ticker]
-            errors = ticker_data['Best_Prediction'] - ticker_data['Actual_Sharpe']
-            ax.hist(errors, bins=30, color=colors[idx], alpha=0.5, label=f'{ticker} Errors')
-
-        ax.axvline(0, color='#ff9900', linestyle='--', label='Zero Error')
-        ax.set_title('Distribution of Prediction Errors', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_xlabel('Prediction Error', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_ylabel('Frequency', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        ax.grid(True, color='#444444' if self.is_dark_mode else '#cccccc')
-        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-        self.chart_fig.tight_layout()
-        
-    def plot_performance_by_stock(self, selected_tickers):
-        ax = self.chart_fig.add_subplot(111)
-        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy() if self.data_manager.data is not None else None
-        if filtered_data is None or filtered_data.empty:
-            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No market data")
-            return
-            
-        filtered_data['date'] = pd.to_datetime(filtered_data['date'], utc=True)
-        filtered_data = filtered_data[(filtered_data['date'] >= self.start_date) & (filtered_data['date'] <= self.end_date)]
-        
-        if not selected_tickers:
-            ax.text(0.5, 0.5, 'Please select at least one ticker.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No tickers selected")
-            return
-
-        if len(selected_tickers) > 5:
-            ax.text(0.5, 0.5, 'Please select 5 or fewer tickers for clarity.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("Too many tickers selected")
-            return
-
-        filtered_data = filtered_data[filtered_data['Ticker'].isin(selected_tickers)]
-        if filtered_data.empty:
-            ax.text(0.5, 0.5, 'No data for the selected tickers.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No data for selected tickers")
-            return
-
-        performance = filtered_data.groupby('Ticker').apply(
-            lambda x: np.mean(np.abs(x['Best_Prediction'] - x['Actual_Sharpe']))
-        ).sort_values(ascending=False)
-
-        performance.plot(kind='bar', ax=ax, color='#2a82da')
-        ax.set_title('Average Prediction Error by Stock', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_xlabel('Stock Ticker', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_ylabel('Mean Absolute Error', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.grid(True, color='#444444' if self.is_dark_mode else '#cccccc')
-        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-        self.chart_fig.tight_layout()
-        
-    def plot_ensemble_heatmap(self, selected_tickers):
-        ax = self.chart_fig.add_subplot(111)
-        data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy() if self.data_manager.data is not None else None
-        if data is None or data.empty:
-            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No market data")
-            return
-            
-        data['date'] = pd.to_datetime(data['date'], utc=True)
-        data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
-        
-        if not selected_tickers:
-            ax.text(0.5, 0.5, 'Please select at least one ticker.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No tickers selected")
-            return
-
-        if len(selected_tickers) > 5:
-            ax.text(0.5, 0.5, 'Please select 5 or fewer tickers for clarity.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("Too many tickers selected")
-            return
-
-        data = data[data['Ticker'].isin(selected_tickers)]
-        if data.empty:
-            ax.text(0.5, 0.5, 'No data for the selected tickers.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No data for selected tickers")
-            return
-
-        pred_cols = [col for col in data.columns if col.startswith('Prediction_') or col == 'Best_Prediction']
-        if len(pred_cols) < 2:
-            errors = data.groupby('Ticker').apply(
-                lambda x: np.mean(np.abs(x['Best_Prediction'] - x['Actual_Sharpe']))
-            ).sort_values(ascending=False).to_frame(name='Error')
-            if errors.empty:
-                ax.text(0.5, 0.5, 'No error data to plot', horizontalalignment='center', 
-                        color='#ffffff' if self.is_dark_mode else 'black')
-                logger.warning("No error data for heatmap")
-            else:
-                sns.heatmap(errors, ax=ax, cmap='viridis', annot=True, fmt='.2f')
-                ax.set_title('Prediction Error by Stock', color='#ffffff' if self.is_dark_mode else 'black')
-        else:
-            performance = {}
-            for method in pred_cols:
-                errors = np.mean(np.abs(data[method] - data['Actual_Sharpe']))
-                performance[method] = [errors]
-            performance_matrix = pd.DataFrame(performance, index=['Mean Error'])
-            sns.heatmap(performance_matrix, ax=ax, cmap='viridis', annot=True, fmt='.2f')
-            ax.set_title('Ensemble Method Performance', color='#ffffff' if self.is_dark_mode else 'black')
-
-        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-        self.chart_fig.tight_layout()
-        
-    def plot_sharpe_accuracy(self, selected_tickers):
-        ax = self.chart_fig.add_subplot(111)
-        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
-        if data is None or data.empty:
-            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
-                    color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No market data")
-            return
-            
-        data['date'] = pd.to_datetime(data['date'], utc=True)
-        data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
-
-        if not selected_tickers:
-            ax.text(0.5, 0.5, 'Please select at least one ticker.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No tickers selected")
-            return
-
-        if len(selected_tickers) > 5:
-            ax.text(0.5, 0.5, 'Please select 5 or fewer tickers for clarity.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("Too many tickers selected")
-            return
-
-        data = data[data['Ticker'].isin(selected_tickers)]
-        if data.empty:
-            ax.text(0.5, 0.5, 'No data for the selected tickers.', 
-                    horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
-            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-            logger.warning("No data for selected tickers")
-            return
-
-        colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
-
-        actual_data = data[data['Actual_Sharpe'] != -1.0]
-        if not actual_data.empty:
-            for idx, ticker in enumerate(selected_tickers):
-                ticker_data = actual_data[actual_data['Ticker'] == ticker]
-                ax.plot(ticker_data['date'], ticker_data['Actual_Sharpe'], 
-                        color=colors[idx], alpha=0.7, label=f'{ticker} Actual')
-
-        for idx, ticker in enumerate(selected_tickers):
-            ticker_data = data[data['Ticker'] == ticker]
-            ax.scatter(ticker_data['date'], ticker_data['Best_Prediction'], 
-                       color=colors[idx], s=50, alpha=0.7, label=f'{ticker} Predicted')
-
-        ax.set_title('Predicted vs Actual Sharpe Ratios Over Time', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_xlabel('Date', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.set_ylabel('Sharpe Ratio', color='#ffffff' if self.is_dark_mode else 'black')
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        ax.grid(True, color='#444444' if self.is_dark_mode else '#cccccc')
-        ax.tick_params(colors='#ffffff' if self.is_dark_mode else 'black')
-        self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
-        ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
-        self.chart_fig.tight_layout()
