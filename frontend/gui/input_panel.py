@@ -3,8 +3,8 @@ import pandas as pd
 from datetime import datetime, date
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit, 
                              QDateEdit, QPushButton, QComboBox, QMessageBox, 
-                             QDoubleSpinBox, QDialog, QFileDialog, QTableWidget, 
-                             QTableWidgetItem, QCheckBox)
+                             QDoubleSpinBox, QDialog, QTableWidget, QTableWidgetItem, 
+                             QCheckBox)
 from PyQt5.QtCore import QDate, Qt
 import logging
 from logging_config import get_logger
@@ -105,6 +105,14 @@ class InputPanel(QWidget):
         self.data_manager = data_manager
         self.portfolio_state_file = 'data/portfolio_state.json'
         self.is_dark_mode = True
+        # Load the default dataset
+        default_data_file = 'data/market_data.csv'  # Replace with your actual file path
+        try:
+            self.data_manager.load_data(default_data_file)
+            logger.info(f"Loaded default data file: {default_data_file}")
+        except Exception as e:
+            logger.error(f"Failed to load default data file {default_data_file}: {e}")
+            # Optionally show a message box or exit
         self.init_ui()
         self.update_date_tooltips()
         logger.info("InputPanel initialized")
@@ -164,19 +172,6 @@ class InputPanel(QWidget):
         mode_layout.addWidget(self.mode_combo)
         layout.addLayout(mode_layout)
 
-        # CSV File Selection
-        file_layout = QHBoxLayout()
-        self.file_label = QLabel("Data File:")
-        self.file_label.setObjectName("file_label")
-        self.file_input = QLineEdit()
-        self.file_input.setReadOnly(True)
-        self.file_button = QPushButton("Browse")
-        self.file_button.clicked.connect(self.browse_file)
-        file_layout.addWidget(self.file_label)
-        file_layout.addWidget(self.file_input)
-        file_layout.addWidget(self.file_button)
-        layout.addLayout(file_layout)
-
         # Buttons
         button_layout = QHBoxLayout()
         self.execute_button = QPushButton("Execute Trading Strategy")
@@ -205,24 +200,6 @@ class InputPanel(QWidget):
         self.setLayout(layout)
         self.set_theme(self.is_dark_mode)
         self.update_financial_metrics(0, 0)
-    
-    def browse_file(self):
-        """Open file dialog to select CSV file."""
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select CSV File", "", "CSV Files (*.csv)")
-        if file_path:
-            try:
-                self.data_manager.load_data(file_path)
-                self.file_input.setText(file_path)
-                self.update_date_tooltips()
-                logger.info(f"Loaded data file: {file_path}")
-            except Exception as e:
-                self.show_message_box(
-                    QMessageBox.Critical,
-                    "Error",
-                    f"Failed to load file: {e}",
-                    QMessageBox.Ok
-                )
-                logger.error(f"Error loading file {file_path}: {e}")
     
     def update_date_tooltips(self):
         """Update date input tooltips based on data and order history."""
@@ -344,7 +321,6 @@ class InputPanel(QWidget):
         self.start_label.setStyleSheet(label_style)
         self.end_label.setStyleSheet(label_style)
         self.mode_label.setStyleSheet(label_style)
-        self.file_label.setStyleSheet(label_style)
         self.cash_label.setStyleSheet(f"font-weight: bold; {label_style}")
         self.portfolio_label.setStyleSheet(f"font-weight: bold; {label_style}")
         self.total_label.setStyleSheet(f"font-weight: bold; {label_style}")
@@ -353,8 +329,6 @@ class InputPanel(QWidget):
         self.start_date_input.setStyleSheet(input_style)
         self.end_date_input.setStyleSheet(input_style)
         self.mode_combo.setStyleSheet(combo_style)
-        self.file_input.setStyleSheet(input_style)
-        self.file_button.setStyleSheet(button_style_execute)
         self.execute_button.setStyleSheet(button_style_execute)
         self.reset_button.setStyleSheet(button_style_reset)
     
@@ -393,7 +367,7 @@ class InputPanel(QWidget):
             self.show_message_box(
                 QMessageBox.Warning,
                 "No Data",
-                "Please select a valid CSV file",
+                "Failed to load the dataset. Please ensure the data file exists.",
                 QMessageBox.Ok
             )
             return None

@@ -4,12 +4,14 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import pandas as pd
-from backend.trading_logic import get_portfolio_history, get_orders
+from backend.trading_logic_new import get_portfolio_history, get_orders
 import logging
+from logging_config import get_logger
 import numpy as np
 import seaborn as sns
 
-# Suppress matplotlib font logs
+# Configure logging
+logger = get_logger(__name__)
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 
 class AnalysisDashboard(QWidget):
@@ -17,8 +19,9 @@ class AnalysisDashboard(QWidget):
         super().__init__(parent)
         self.data_manager = data_manager
         self.is_dark_mode = True  # Default to dark mode
-        plt.style.use('dark_background' if self.is_dark_mode else 'seaborn-white')
+        plt.style.use('dark_background' if self.is_dark_mode else 'seaborn-v0_8-white')
         self.setup_ui()
+        logger.info("AnalysisDashboard initialized")
         
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -62,7 +65,7 @@ class AnalysisDashboard(QWidget):
         self.ticker_list = QListWidget()
         self.ticker_list.setSelectionMode(QListWidget.MultiSelection)
         self.ticker_list.setMaximumWidth(150)  # Limit width to give more space to graph
-        tickers = sorted(self.data_manager.data['Ticker'].unique())
+        tickers = sorted(self.data_manager.data['Ticker'].unique()) if self.data_manager.data is not None else []
         for ticker in tickers:
             item = QListWidgetItem(ticker)
             self.ticker_list.addItem(item)
@@ -98,9 +101,11 @@ class AnalysisDashboard(QWidget):
         """Update the initial capital and refresh visualizations."""
         self.initial_capital = initial_capital
         self.update_visualizations()
+        logger.debug(f"Set initial capital: ${initial_capital:,.2f}")
         
     def change_graph_type(self, index):
         self.update_visualizations()
+        logger.debug(f"Changed graph type to: {self.graph_combo.currentText()}")
     
     def set_theme(self, is_dark_mode):
         """Apply light or dark theme to the dashboard."""
@@ -124,6 +129,7 @@ class AnalysisDashboard(QWidget):
         for label in self.metrics_labels.values():
             label.setStyleSheet(label_style)
         self.update_visualizations()
+        logger.debug(f"Applied theme: {'dark' if is_dark_mode else 'light'}")
     
     def update_visualizations(self):
         graph_type = self.graph_combo.currentText()
@@ -132,14 +138,32 @@ class AnalysisDashboard(QWidget):
         
         self.chart_fig.clear()
         
+        # Initialize start_date and end_date
         try:
-            self.start_date = pd.to_datetime(self.data_manager.start_date, utc=True)
-            self.end_date = pd.to_datetime(self.data_manager.end_date, utc=True)
-            logging.debug(f"Using date range: {self.start_date} to {self.end_date}")
+            # Try data_manager dates
+            start_date = pd.to_datetime(self.data_manager.start_date, utc=True) if self.data_manager.start_date else None
+            end_date = pd.to_datetime(self.data_manager.end_date, utc=True) if self.data_manager.end_date else None
+            
+            # Fallback to dataset date range if available
+            if (start_date is None or end_date is None) and self.data_manager.data is not None and not self.data_manager.data.empty:
+                dates = pd.to_datetime(self.data_manager.data['date'], utc=True)
+                start_date = start_date or dates.min()
+                end_date = end_date or dates.max()
+            
+            # Fallback to default dates
+            if start_date is None:
+                start_date = pd.Timestamp('2000-01-01', tz='UTC')
+            if end_date is None:
+                end_date = pd.Timestamp.now(tz='UTC')
+                
+            self.start_date = start_date
+            self.end_date = end_date
+            logger.debug(f"Using date range: {self.start_date} to {self.end_date}")
         except Exception as e:
-            logging.error(f"Error accessing dates: {str(e)}")
+            logger.error(f"Error setting dates: {e}")
             self.chart_fig.add_subplot(111).text(0.5, 0.5, 'Error: Invalid date range', 
-                                                 horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+                                                 horizontalalignment='center', 
+                                                 color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_canvas.draw()
             return
         
@@ -172,19 +196,30 @@ class AnalysisDashboard(QWidget):
     def update_dashboard(self):
         """Refresh the dashboard with the latest data."""
         self.update_visualizations()
+        logger.info("Dashboard updated")
         
     def plot_portfolio_performance(self):
         ax = self.chart_fig.add_subplot(111)
         portfolio_history = get_portfolio_history()
         if not portfolio_history:
-            ax.text(0.5, 0.5, 'No portfolio history available', horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+            ax.text(0.5, 0.5, 'No portfolio history available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No portfolio history data")
             return
         
         df = pd.DataFrame(portfolio_history)
         df['date'] = pd.to_datetime(df['date'], utc=True)
         df = df[(df['date'] >= self.start_date) & (df['date'] <= self.end_date)]
+        if df.empty:
+            ax.text(0.5, 0.5, 'No portfolio history in date range', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("Portfolio history empty for date range")
+            return
+        
         ax.plot(df['date'], df['value'], label='Portfolio Value', color='#2a82da')
         ax.set_title('Portfolio Performance Over Time', color='#ffffff' if self.is_dark_mode else 'black')
         ax.set_xlabel('Date', color='#ffffff' if self.is_dark_mode else 'black')
@@ -199,9 +234,11 @@ class AnalysisDashboard(QWidget):
         ax = self.chart_fig.add_subplot(111)
         orders = get_orders()
         if not orders:
-            ax.text(0.5, 0.5, 'No trade history available', horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+            ax.text(0.5, 0.5, 'No trade history available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No trade history data")
             return
 
         orders_df = pd.DataFrame(orders)
@@ -209,18 +246,22 @@ class AnalysisDashboard(QWidget):
         orders_df = orders_df[(orders_df['date'] >= self.start_date) & (orders_df['date'] <= self.end_date)]
 
         if orders_df.empty:
-            ax.text(0.5, 0.5, 'No trades in the selected date range', horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+            ax.text(0.5, 0.5, 'No trades in the selected date range', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No trades in date range")
             return
 
         buy_count = len(orders_df[orders_df['action'] == 'buy'])
         sell_count = len(orders_df[orders_df['action'] == 'sell'])
         total_actions = buy_count + sell_count
         if total_actions == 0:
-            ax.text(0.5, 0.5, 'No buy or sell actions recorded', horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+            ax.text(0.5, 0.5, 'No buy or sell actions recorded', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No buy or sell actions")
             return
 
         trading_days = (self.end_date - self.start_date).days + 1
@@ -238,7 +279,8 @@ class AnalysisDashboard(QWidget):
             ax.pie(sizes, labels=labels, autopct='%1.1f%%', colors=colors)
             ax.set_title('Trade Action Distribution', color='#ffffff' if self.is_dark_mode else 'black')
         else:
-            ax.text(0.5, 0.5, 'No trade actions to display', horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+            ax.text(0.5, 0.5, 'No trade actions to display', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
         self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
         ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
         
@@ -246,9 +288,11 @@ class AnalysisDashboard(QWidget):
         ax = self.chart_fig.add_subplot(111)
         portfolio_history = get_portfolio_history()
         if not portfolio_history:
-            ax.text(0.5, 0.5, 'No portfolio history available', horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+            ax.text(0.5, 0.5, 'No portfolio history available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No portfolio history data")
             return
 
         df = pd.DataFrame(portfolio_history)
@@ -256,9 +300,11 @@ class AnalysisDashboard(QWidget):
         df = df[(df['date'] >= self.start_date) & (df['date'] <= self.end_date)]
 
         if df.empty:
-            ax.text(0.5, 0.5, 'No portfolio history in the selected date range', horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+            ax.text(0.5, 0.5, 'No portfolio history in the selected date range', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("Portfolio history empty for date range")
             return
 
         data = self.data_manager.data.copy()
@@ -266,9 +312,11 @@ class AnalysisDashboard(QWidget):
         data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
 
         if data.empty:
-            ax.text(0.5, 0.5, 'No data available for the date range', horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+            ax.text(0.5, 0.5, 'No data available for the date range', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No market data in date range")
             return
 
         initial_investment = df['value'].iloc[0] if not df.empty else 10000.0
@@ -336,23 +384,33 @@ class AnalysisDashboard(QWidget):
             if portfolio_history:
                 total_value = portfolio_history[-1]['value']
             else:
-                total_value = data['Close'].iloc[-1]
-            sharpe_ratio = data[data['Actual_Sharpe'] != -1.0]['Best_Prediction'].mean()
+                total_value = 10000.0  # Default if no history
+            sharpe_ratio = data[data['Actual_Sharpe'] != -1.0]['Best_Prediction'].mean() if data is not None and not data.empty else 0.0
             if portfolio_history:
                 df = pd.DataFrame(portfolio_history)
                 volatility = df['value'].pct_change().std()
             else:
-                volatility = data['Close'].pct_change().std()
+                volatility = 0.0
             self.metrics_labels['Total Value'].setText(f"Total Value: ${total_value:,.2f}")
             self.metrics_labels['Sharpe Ratio'].setText(f"Avg Sharpe: {sharpe_ratio:.2f}")
             self.metrics_labels['Volatility'].setText(f"Volatility: {volatility:.2%}")
+            logger.debug(f"Updated metrics: Total=${total_value:,.2f}, Sharpe={sharpe_ratio:.2f}, Volatility={volatility:.2%}")
         except Exception as e:
+            logger.error(f"Error updating metrics: {e}")
             for label in self.metrics_labels.values():
                 label.setText(f"Error: {str(e)}")
                 
     def plot_sharpe_comparison(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
-        data = self.data_manager.data.copy()
+        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
+        if data is None or data.empty:
+            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No market data")
+            return
+            
         data['date'] = pd.to_datetime(data['date'], utc=True)
         data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
 
@@ -361,6 +419,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No tickers selected")
             return
 
         if len(selected_tickers) > 5:
@@ -368,6 +427,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("Too many tickers selected")
             return
 
         data = data[data['Ticker'].isin(selected_tickers)]
@@ -376,6 +436,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No data for selected tickers")
             return
 
         colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
@@ -405,7 +466,15 @@ class AnalysisDashboard(QWidget):
         
     def plot_sharpe_distribution(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
-        data = self.data_manager.data.copy()
+        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
+        if data is None or data.empty:
+            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No market data")
+            return
+            
         data['date'] = pd.to_datetime(data['date'], utc=True)
         data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
         
@@ -414,6 +483,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No tickers selected")
             return
 
         if len(selected_tickers) > 5:
@@ -421,6 +491,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("Too many tickers selected")
             return
 
         data = data[data['Ticker'].isin(selected_tickers)]
@@ -429,6 +500,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No data for selected tickers")
             return
 
         colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
@@ -457,7 +529,15 @@ class AnalysisDashboard(QWidget):
         
     def plot_scatter_with_regression(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
-        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy()
+        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy() if self.data_manager.data is not None else None
+        if filtered_data is None or filtered_data.empty:
+            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No market data")
+            return
+            
         filtered_data['date'] = pd.to_datetime(filtered_data['date'], utc=True)
         filtered_data = filtered_data[(filtered_data['date'] >= self.start_date) & (filtered_data['date'] <= self.end_date)]
         
@@ -466,6 +546,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No tickers selected")
             return
 
         if len(selected_tickers) > 5:
@@ -473,6 +554,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("Too many tickers selected")
             return
 
         filtered_data = filtered_data[filtered_data['Ticker'].isin(selected_tickers)]
@@ -481,14 +563,17 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No data for selected tickers")
             return
 
         filtered_data = filtered_data.dropna(subset=['Best_Prediction', 'Actual_Sharpe'])
 
         if filtered_data.empty:
-            ax.text(0.5, 0.5, 'No data with Actual Sharpe != -1.0', horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+            ax.text(0.5, 0.5, 'No data with Actual Sharpe != -1.0', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No data with valid Actual Sharpe")
             return
 
         colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
@@ -526,7 +611,15 @@ class AnalysisDashboard(QWidget):
         
     def plot_time_series_comparison(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
-        data = self.data_manager.data.copy()
+        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
+        if data is None or data.empty:
+            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No market data")
+            return
+            
         data['date'] = pd.to_datetime(data['date'], utc=True)
         data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
 
@@ -535,6 +628,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No tickers selected")
             return
 
         if len(selected_tickers) > 5:
@@ -542,6 +636,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("Too many tickers selected")
             return
 
         data = data[data['Ticker'].isin(selected_tickers)]
@@ -550,6 +645,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No data for selected tickers")
             return
 
         colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
@@ -580,7 +676,15 @@ class AnalysisDashboard(QWidget):
         
     def plot_error_distribution(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
-        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy()
+        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy() if self.data_manager.data is not None else None
+        if filtered_data is None or filtered_data.empty:
+            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No market data")
+            return
+            
         filtered_data['date'] = pd.to_datetime(filtered_data['date'], utc=True)
         filtered_data = filtered_data[(filtered_data['date'] >= self.start_date) & (filtered_data['date'] <= self.end_date)]
         
@@ -589,6 +693,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No tickers selected")
             return
 
         if len(selected_tickers) > 5:
@@ -596,6 +701,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("Too many tickers selected")
             return
 
         filtered_data = filtered_data[filtered_data['Ticker'].isin(selected_tickers)]
@@ -604,6 +710,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No data for selected tickers")
             return
 
         colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
@@ -626,7 +733,15 @@ class AnalysisDashboard(QWidget):
         
     def plot_performance_by_stock(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
-        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy()
+        filtered_data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy() if self.data_manager.data is not None else None
+        if filtered_data is None or filtered_data.empty:
+            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No market data")
+            return
+            
         filtered_data['date'] = pd.to_datetime(filtered_data['date'], utc=True)
         filtered_data = filtered_data[(filtered_data['date'] >= self.start_date) & (filtered_data['date'] <= self.end_date)]
         
@@ -635,6 +750,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No tickers selected")
             return
 
         if len(selected_tickers) > 5:
@@ -642,6 +758,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("Too many tickers selected")
             return
 
         filtered_data = filtered_data[filtered_data['Ticker'].isin(selected_tickers)]
@@ -650,6 +767,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No data for selected tickers")
             return
 
         performance = filtered_data.groupby('Ticker').apply(
@@ -668,7 +786,15 @@ class AnalysisDashboard(QWidget):
         
     def plot_ensemble_heatmap(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
-        data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy()
+        data = self.data_manager.data[self.data_manager.data['Actual_Sharpe'] != -1.0].copy() if self.data_manager.data is not None else None
+        if data is None or data.empty:
+            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No market data")
+            return
+            
         data['date'] = pd.to_datetime(data['date'], utc=True)
         data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
         
@@ -677,6 +803,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No tickers selected")
             return
 
         if len(selected_tickers) > 5:
@@ -684,6 +811,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("Too many tickers selected")
             return
 
         data = data[data['Ticker'].isin(selected_tickers)]
@@ -692,6 +820,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No data for selected tickers")
             return
 
         pred_cols = [col for col in data.columns if col.startswith('Prediction_') or col == 'Best_Prediction']
@@ -700,7 +829,9 @@ class AnalysisDashboard(QWidget):
                 lambda x: np.mean(np.abs(x['Best_Prediction'] - x['Actual_Sharpe']))
             ).sort_values(ascending=False).to_frame(name='Error')
             if errors.empty:
-                ax.text(0.5, 0.5, 'No error data to plot', horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
+                ax.text(0.5, 0.5, 'No error data to plot', horizontalalignment='center', 
+                        color='#ffffff' if self.is_dark_mode else 'black')
+                logger.warning("No error data for heatmap")
             else:
                 sns.heatmap(errors, ax=ax, cmap='viridis', annot=True, fmt='.2f')
                 ax.set_title('Prediction Error by Stock', color='#ffffff' if self.is_dark_mode else 'black')
@@ -720,7 +851,15 @@ class AnalysisDashboard(QWidget):
         
     def plot_sharpe_accuracy(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
-        data = self.data_manager.data.copy()
+        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
+        if data is None or data.empty:
+            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center', 
+                    color='#ffffff' if self.is_dark_mode else 'black')
+            self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
+            ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No market data")
+            return
+            
         data['date'] = pd.to_datetime(data['date'], utc=True)
         data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
 
@@ -729,6 +868,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No tickers selected")
             return
 
         if len(selected_tickers) > 5:
@@ -736,6 +876,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("Too many tickers selected")
             return
 
         data = data[data['Ticker'].isin(selected_tickers)]
@@ -744,6 +885,7 @@ class AnalysisDashboard(QWidget):
                     horizontalalignment='center', color='#ffffff' if self.is_dark_mode else 'black')
             self.chart_fig.patch.set_facecolor('#353535' if self.is_dark_mode else '#ffffff')
             ax.set_facecolor('#2b2b2b' if self.is_dark_mode else '#ffffff')
+            logger.warning("No data for selected tickers")
             return
 
         colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
