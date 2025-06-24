@@ -1,13 +1,13 @@
 # trading_logic_new.py
+
 import os
-import sys
 import pandas as pd
 import json
 import logging
 
 from frontend.logging_config import get_isolated_logger
 
-# Create isolated trading logger - ONLY trading logic will appear in this log file
+# Create isolated trading logger
 logger = get_isolated_logger("trading_logic", "trading_only", logging.INFO)
 
 # Test the isolated logger
@@ -24,7 +24,7 @@ portfolio_state_file = 'data/portfolio_state.json'
 def map_risk_to_sharpe_thresholds(risk_level, sharpe_min, sharpe_max):
     """
     Calculate dynamic buy/sell thresholds based on sharpe range in data and user chosen risk level.
-    
+
     Args:
     - risk_level: 0-10 (0=conservative, 10=aggressive)
     - sharpe_min, sharpe_max: sharpe ratio limits in data
@@ -38,6 +38,7 @@ def map_risk_to_sharpe_thresholds(risk_level, sharpe_min, sharpe_max):
     buy_percentile = 85 - (risk_level * 7)  # Risk 0: 85%, Risk 10: 15%
     sell_percentile = 15 + (risk_level * 7)  # Risk 0: 15%, Risk 10: 85%
     
+   
     # Get buy & sell threshold in sharpe range      
     buy_threshold = sharpe_max - (sharpe_range * (100 - buy_percentile) / 100)
     sell_threshold = sharpe_min + (sharpe_range * sell_percentile / 100)
@@ -47,6 +48,7 @@ def map_risk_to_sharpe_thresholds(risk_level, sharpe_min, sharpe_max):
     sell_threshold = min(max(sell_threshold, sharpe_min), sharpe_max)
     
     logger.info(f"Risk Level {risk_level}: Buy threshold = {buy_threshold:.3f}, Sell threshold = {sell_threshold:.3f}")
+    
     return buy_threshold, sell_threshold
 
 
@@ -69,7 +71,7 @@ def get_portfolio_history():
 def load_ticker_weights(weights_file='final_tickers_score.csv'):
     """
     Load and normalize ticker weights from a CSV file.
-    Preserve relative ordering - Highest score still becomes highest normalized value 
+    Preserve relative ordering - highest score still becomes highest normalized value 
     """
 
     try:
@@ -84,7 +86,6 @@ def load_ticker_weights(weights_file='final_tickers_score.csv'):
             logger.error(f"Invalid weights file format.")
             return {}
         
-        # Clean but KEEP negative values
         df[weight_col] = pd.to_numeric(df[weight_col], errors='coerce')
         df = df[df[weight_col].notnull()]
 
@@ -122,7 +123,9 @@ def load_portfolio_state():
 
 
 def save_portfolio_state():
-    """Save orders and portfolio history to portfolio_state.json."""
+    """
+    Save orders and portfolio history to portfolio_state.json.
+    """
     try:
         state = {
             'orders': orders,
@@ -151,59 +154,36 @@ def calculate_position_size(sharpe_value, ticker_weight, available_cash, signal_
     - position_size: Dollar amount to invest in this stock
     """
 
-    # 1 Normalize ticker weight to usable range
-    # Convert from (-1, +1) to (0.2, 1.0) so even negative weights get some allocation
+    # Step 1: Normalize ticker weight -> convert from (-1, +1) to (0.2, 1.0) so even negative weights get some allocation
     normalized_weight = 0.6 + (ticker_weight * 0.4)
-
     # Ensure weight is in valid range
     normalized_weight = max(0.2, min(normalized_weight, 1.0))
 
-    # 2 Combine factors to get allocation percentage
-    # Base allocation: 3% to 12% of available cash
-    # base_pct = 0.03  # 3% minimum
-    # variable_pct = 0.09  # Up to 9% additional (total max 12%)
-    
-    # Combined score
+    # Step 2: Combine score
     combined_score = signal_strength * normalized_weight
-    # allocation_pct = base_pct + (combined_score * variable_pct)
-    
-    # # 4. Apply maximum position limit
-    # allocation_pct = min(allocation_pct, max_position_pct)
-    
-    # 5. Calculate dollar amount
+
+    # Step 3: Calculate dollar amount
     position_size = available_cash * combined_score
     
-    # # 6. Apply minimum position size
-    # min_position = 300  # Minimum $300 position
-    # position_size = max(position_size, min_position)
-    
-    # 7. Don't exceed available cash (safety check)
+    # Step 4: Don't exceed available cash (safety check)
     position_size = min(position_size, available_cash * 0.95)  # Leave 5% buffer
     
     return position_size 
 
 
-# def process_sell_signals(daily_data, holdings, current_date, risk_level, mode="automatic", orders=None, suggested_orders=None):
-#def sell_logic(daily_data, sell_threshold, holdings, current_date, mode="automatic", orders=None, suggested_orders=None):
 def sell_logic(daily_data, sell_threshold, holdings, current_date):
     """
     Process sell signals for existing LONG and SHORT positions.
     
     Args:
     - daily_data: DataFrame with current day's data
+    - sell_threshold: Threshold for when to sell
     - holdings: Dict of current holdings
     - current_date: Current trading date
-    - mode: "automatic" or "semi-automatic"
-    - orders: List to append executed orders (for automatic mode)
-    - suggested_orders: List to append suggested orders (for semi-automatic mode)
     
     Returns:
-        tuple: (updated_cash, sell_orders_count)
+    - sell_orders
     """
-
-    # cash_from_sales = 0
-    # sell_orders_count = 0
-
     sell_orders = []
     transaction_cost_bps = 5  # 0.05% transaction cost (bps=basis point)
 
@@ -235,12 +215,9 @@ def sell_logic(daily_data, sell_threshold, holdings, current_date):
             if profit_pct >= PROFIT_TARGET:
                 should_sell = True
                 sell_reason = f"Profit target hit: {profit_pct:.1%}"
-            elif current_sharpe < sell_threshold:  # Same threshold you used to buy
+            elif current_sharpe < sell_threshold:
                 should_sell = True
                 sell_reason = f"Signal weakened: Sharpe={current_sharpe:.3f} < {sell_threshold:.3f}"
-            # elif profit_pct <= STOP_LOSS:
-            #     should_sell = True
-            #     sell_reason = f"Stop loss hit: {profit_pct:.1%}"
         
         if should_sell:
             # Execute the sell
@@ -266,21 +243,7 @@ def sell_logic(daily_data, sell_threshold, holdings, current_date):
                 'purchase_price': purchase_price
             }
             sell_orders.append(order)
-            
-    #         if mode == "automatic":
-    #             cash_from_sales += net_proceeds
-    #             del holdings[ticker]  # Remove from holdings
-    #             if orders is not None:
-    #                 orders.append(order)
-    #             sell_orders_count += 1
-                
-    #             logger.info(f"SELL {ticker}: {sell_reason}, Days={days_held}, "
-    #                        f"Profit=${profit_loss:.2f} ({profit_pct:.1%})")
-    #         else:
-    #             if suggested_orders is not None:
-    #                 suggested_orders.append(order)
-    
-    # return cash_from_sales, sell_orders_count
+
     return sell_orders
 
 
@@ -304,11 +267,10 @@ def sell(order, holdings, cash):
     cash += net_proceeds
     orders.append(order)
     logger.info(f"EXECUTED SELL {ticker}: {shares} shares @ ${price:.2f}")
+
     return cash, True
 
-  
-# def process_buy_signals(daily_data, buy_threshold, sell_threshold, holdings, cash, current_date, risk_level, ticker_weights, default_weight, max_positions, max_daily_deployment, mode="automatic", orders=None, suggested_orders=None):
-#def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_weights, default_weight, max_positions, mode="automatic", orders=None, suggested_orders=None, use_weights=True, use_signal_strength=True):
+
 def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_weights, default_weight, max_positions, use_weights=True, use_signal_strength=True):
     """
     Process buy signals - buy when predicted sharpe > threshold.
@@ -323,25 +285,10 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
     - ticker_weights: Dict of ticker weights
     - default_weight: Default weight for tickers not in weights
     - max_positions: Maximum number of positions
-    - mode: "automatic" or "semi-automatic"
-    - orders: List to append executed orders (for automatic mode)
-    - suggested_orders: List to append suggested orders (for semi-automatic mode)
     
     Returns:
-    - tuple: (cash_used, buy_orders_count)
-
-    TODO: when do we buy?
-    1 find buying options according to the sharpe threshold (risk) 
-    - only buy the upper half options using the weights 
-
+    - buy_orders
     """
-
-    """
-    Determine buy opportunities based on Sharpe thresholds and weights.
-    """
-
-    # cash_used = 0
-    # buy_orders_count = 0
     buy_orders = []
     transaction_cost_bps = 5  # 0.05% transaction cost
 
@@ -378,7 +325,7 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
         )
     else:
         # Set uniform signal strength for all candidates
-        buy_candidates['signal_strength'] = 0.0  # Neutral value
+        buy_candidates['signal_strength'] = 1.0  # Neutral value
         logger.info("NOT using signal strength - all candidates have equal signal strength")
 
     # STEP 3: Sort by weight (highest first), then by signal strength
@@ -409,7 +356,9 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
     # STEP 4: Take only TOP HALF of candidates
     top_half_count = max(1, len(buy_candidates) // 2)
     top_candidates = buy_candidates.head(top_half_count)
+
     logger.info(f"Taking top {top_half_count} candidates from {len(buy_candidates)} total")
+
     available_positions = max_positions - len(holdings)
     candidates_to_process = min(len(top_candidates), available_positions)
     
@@ -419,7 +368,7 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
     
     logger.info(f"Will process up to {candidates_to_process} candidates")
 
-    # STEP 5: Process candidates in weight order
+    # STEP 5: Process candidates 
     for idx, row in top_candidates.head(candidates_to_process).iterrows():
         ticker = row['Ticker']
         price = row['Close']
@@ -432,13 +381,12 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
             logger.warning(f"Skipping {ticker}: Invalid price ${price:.2f}")
             continue
 
-        # Calculate position size using your function
+        # Calculate position size
         if use_weights or use_signal_strength:
             position_size = calculate_position_size(
                 sharpe_value = sharpe,
                 ticker_weight = ticker_weight, 
                 available_cash = cash,
-                #sharpe_threshold=buy_threshold
                 signal_strength = signal_strength
             )
         else:
@@ -485,58 +433,9 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
             'is_additional_purchase': ticker in holdings
         }
         buy_orders.append(order)
-
-        """
-        if mode == "automatic":
-            # Update holdings
-            if ticker in holdings:
-                # EXISTING STOCK - Update weighted average price
-                old_shares = holdings[ticker]['shares']
-                old_avg_price = holdings[ticker]['purchase_price']
-                
-                # Calculate new weighted average price
-                total_old_cost = old_shares * old_avg_price
-                total_new_cost = shares * price
-                new_avg_price = (total_old_cost + total_new_cost) / (old_shares + shares)
-                
-                # Update holdings
-                holdings[ticker]['shares'] = new_total_shares
-                holdings[ticker]['purchase_price'] = new_avg_price
-                holdings[ticker]['last_purchase_date'] = pd.Timestamp(current_date)
-                
-                logger.info(f"ADDING to {ticker}: {old_shares}→{new_total_shares} shares, "
-                           f"Avg price: ${old_avg_price:.2f}→${new_avg_price:.2f}")
-            else:
-                # NEW STOCK - Create new position
-                holdings[ticker] = {
-                    'shares': shares,
-                    'purchase_date': pd.Timestamp(current_date),
-                    'purchase_price': price,
-                    'position_type': 'LONG',
-                    'last_purchase_date': pd.Timestamp(current_date)
-                }
-                
-                logger.info(f"NEW BUY {ticker}: Weight={ticker_weight:.3f}, "
-                           f"Sharpe={sharpe:.3f}, {shares} shares @ ${price:.2f}")
-            
-            # Update cash and add order
-            cash_used += total_cost
-            cash -= total_cost
-            
-            if orders is not None:
-                orders.append(order)
-            buy_orders_count += 1
-            
-        else:  # semi-automatic mode
-            if suggested_orders is not None:
-                suggested_orders.append(order)
-                logger.info(f"SUGGEST BUY {ticker}: {shares} shares @ ${price:.2f}")
-    
-    logger.info(f"Buy logic completed: Used ${cash_used:.2f}, {buy_orders_count} orders")
-    return cash_used, buy_orders_count
-    """
     
     logger.info(f"Buy logic completed: Generated {len(buy_orders)} orders")
+
     return buy_orders
 
 
@@ -544,12 +443,12 @@ def buy(order, holdings, cash):
     """
     Execute a buy orders, updating holdings and cash.
     """
-
     ticker = order['ticker']
     shares = order['shares_amount']
     price = order['price']
     total_cost = order['total_cost']
     order_date = order['date']
+
     if isinstance(order_date, str):
         current_date = pd.to_datetime(order_date, utc=True)
     elif isinstance(order_date, pd.Timestamp):
@@ -560,7 +459,7 @@ def buy(order, holdings, cash):
     if total_cost > cash:
         logger.warning(f"Skipping {ticker} buy: Insufficient cash ${cash:.2f} < ${total_cost:.2f}")
         return cash, False
-
+    
     current_shares = holdings.get(ticker, {}).get('shares', 0)
     new_total_shares = current_shares + shares
 
@@ -582,7 +481,6 @@ def buy(order, holdings, cash):
             'shares': shares,
             'purchase_date': current_date,
             'purchase_price': price,
-            'position_type': 'LONG',
             'last_purchase_date': current_date
         }
         
@@ -597,10 +495,13 @@ def execute_orders(orders_to_execute, holdings, cash, mode="automatic"):
     """
     Execute a list of orders, updating holdings and cash.
     """
+
     executed_count = 0
+
     for order in orders_to_execute:
-        if mode == "semi-automatic" and order not in orders_to_execute:  # Ensure only selected orders
+        if mode == "semi-automatic" and order not in orders_to_execute:
             continue
+
         if order['action'] == 'buy':
             cash, success = buy(order, holdings, cash)
             if success:
@@ -609,13 +510,35 @@ def execute_orders(orders_to_execute, holdings, cash, mode="automatic"):
             cash, success = sell(order, holdings, cash)
             if success:
                 executed_count += 1
+
     logger.info(f"Executed {executed_count} orders")
+    
     return cash, executed_count
 
+    """
 
-#def run_integrated_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False):
+    executed_count = 0
+
+    for order in orders_to_execute:
+        if mode == "semi-automatic" and order not in orders_to_execute:  # Ensure only selected orders
+            continue
+
+        if order['action'] == 'buy':
+            cash, success = buy(order, holdings, cash)
+            if success:
+                executed_count += 1
+        elif order['action'] == 'sell':
+            cash, success = sell(order, holdings, cash)
+            if success:
+                executed_count += 1
+
+    logger.info(f"Executed {executed_count} orders")
+
+    return cash, executed_count
+    """
+
+
 def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False, use_weights=True, use_signal_strength=True, selected_orders=None):
-
     """
     Execute trading strategy combining Buy/Sell functions with LONG/SHORT support.
     
@@ -632,14 +555,11 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
     - tuple: (orders, portfolio_history, final_value, warning_message) or 
                 (suggested_orders, warning_message) for semi-automatic
 
+                
     orders - Transaction History : a list of dictionaries where each order represents a single transaction (buy/sell)
     portfolio_history - Daily Portfolio Snapshots:  tracks the portfolio value over time
     holdings - Current Stock Positions: tracks what we currently own
     
-    """
-
-    """
-    Execute trading strategy combining Buy/Sell functions with LONG/SHORT support.
     """
 
     logger.info(f"Starting integrated trading strategy - Risk Level: {risk_level}")
@@ -659,13 +579,10 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
         # Initialize portfolio variables
         cash = investment_amount
         holdings = {}
-        #suggested_orders = [] if mode == "semi-automatic" else orders
         warning_message = ""
-
         total_buy_orders = 0
         total_sell_orders = 0
 
-        # TODO -> the new logic for selected orders
         if selected_orders and mode == "semi-automatic":
             if selected_orders:
                 order_date = selected_orders[0]['date']
@@ -677,8 +594,8 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
                     current_date = pd.Timestamp(order_date).tz_localize('UTC')
             else:
                 current_date = pd.Timestamp.now(tz='UTC')
+            
             # Execute only selected orders
-            #current_date = pd.Timestamp(selected_orders[0]['date'], tz='UTC') if selected_orders else pd.Timestamp.now(tz='UTC')
             cash, executed_count = execute_orders(selected_orders, holdings, cash, mode="semi-automatic")
             total_buy_orders = sum(1 for o in selected_orders if o['action'] == 'buy' and o in selected_orders)
             total_sell_orders = sum(1 for o in selected_orders if o['action'] == 'sell' and o in selected_orders)
@@ -704,7 +621,6 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
             save_portfolio_state()
             return selected_orders, warning_message
 
-        # Standard trading logic
         # Date processing
         merged_data['date'] = pd.to_datetime(merged_data['date'], utc=True)
         date_range = pd.date_range(start=start_date, end=end_date, freq='D', tz='UTC')
@@ -718,12 +634,12 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
 
         sharpe_min = merged_data['Best_Prediction'].min()
         sharpe_max = merged_data['Best_Prediction'].max()
+        
         # Get the risk threshold as a sharpe ratio value - to match the predictions scale
         buy_threshold, sell_threshold = map_risk_to_sharpe_thresholds(risk_level, sharpe_min, sharpe_max)
-        # Portfolio parameters
         max_positions = 70  # Maximum number of different stocks
 
-        # Get Buy / Sell transaction for each dat - based on trading logic 
+        # Get Buy / Sell transaction for each date - based on trading logic 
         for current_date in date_range:
             # Get daily data
             daily_data = merged_data[
@@ -759,9 +675,6 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
                 sell_threshold = sell_threshold,
                 holdings = holdings,
                 current_date = current_date
-                # mode = mode,
-                # orders = orders if mode == "automatic" else None,
-                # suggested_orders = suggested_orders
             )
             cash, sell_count = execute_orders(sell_orders, holdings, cash, mode=mode)
             total_sell_orders += sell_count
@@ -786,8 +699,12 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
             current_value = cash
             for ticker, holding in holdings.items():
                 ticker_data = daily_data[daily_data['Ticker'] == ticker]
+                # if not ticker_data.empty:
+                #     current_value += holding['shares'] * ticker_data.iloc[0]['Close']
                 if not ticker_data.empty:
-                    current_value += holding['shares'] * ticker_data.iloc[0]['Close']
+                    current_price = ticker_data.iloc[0]['Close']
+                    shares = holding['shares']
+                    purchase_price = holding['purchase_price']
 
             # STEP 4: Record daily portfolio snapshot
             portfolio_history.append({

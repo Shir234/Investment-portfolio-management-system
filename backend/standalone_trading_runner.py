@@ -325,10 +325,10 @@ class TradingRunner:
             orders_df = pd.DataFrame(orders)
             
             # Separate buy and sell orders
-            buy_orders = orders_df[orders_df['action'] == 'buy'].copy()
-            sell_orders = orders_df[orders_df['action'] == 'sell'].copy()
-            
-            # Get current holdings and latest prices
+            buy_orders = orders_df[orders_df['action'] == 'buy'].copy().sort_values('date')
+            sell_orders = orders_df[orders_df['action'] == 'sell'].copy().sort_values('date')
+
+            # Get current holdings and latest prices for open positions
             current_holdings = {}
             latest_prices = {}
             
@@ -340,6 +340,11 @@ class TradingRunner:
                 latest_data = self.data[self.data['date'] == latest_date]
                 for _, row in latest_data.iterrows():
                     latest_prices[row['Ticker']] = row['Close']
+            
+            # DEBUG: Print holdings information
+            self.logger.info(f"DEBUG: Current holdings count: {len(current_holdings)}")
+            self.logger.info(f"DEBUG: Current holdings keys: {list(current_holdings.keys())}")
+            self.logger.info(f"DEBUG: Latest prices available for: {len(latest_prices)} tickers")
             
             # ===========================================
             # CASE 1: COMPLETED TRADES (buy -> sell)
@@ -407,13 +412,28 @@ class TradingRunner:
             # ===========================================
             open_positions = []
             
+            # FIXED: Iterate through ALL current holdings, not just some
             for ticker, holding in current_holdings.items():
                 shares = holding.get('shares', 0)
                 purchase_price = holding.get('purchase_price', 0)
                 purchase_date = holding.get('purchase_date')
                 
+                # Skip if no shares (shouldn't happen, but safety check)
+                if shares <= 0:
+                    self.logger.warning(f"Skipping {ticker}: No shares ({shares})")
+                    continue
+                
                 # Get current price
                 current_price = latest_prices.get(ticker, purchase_price)  # Fallback to purchase price
+                
+                # If no current price found, try to get it from the most recent data for this ticker
+                if current_price == purchase_price and ticker not in latest_prices:
+                    ticker_data = self.data[self.data['Ticker'] == ticker].tail(1)
+                    if not ticker_data.empty:
+                        current_price = ticker_data.iloc[0]['Close']
+                        self.logger.debug(f"Found current price for {ticker}: ${current_price:.2f}")
+                    else:
+                        self.logger.warning(f"No current price data found for {ticker}, using purchase price")
                 
                 # Calculate current profit/loss
                 current_value = shares * current_price
@@ -423,39 +443,43 @@ class TradingRunner:
                 
                 # Calculate days held
                 days_held = 0
-            if purchase_date:
-                try:
-                    # Convert purchase_date to timezone-aware if needed
-                    if isinstance(purchase_date, str):
-                        purchase_date = pd.to_datetime(purchase_date, utc=True)
-                    elif isinstance(purchase_date, pd.Timestamp) and purchase_date.tz is None:
-                        purchase_date = purchase_date.tz_localize('UTC')
-                    
-                    # Get current time with UTC timezone
-                    current_time = pd.Timestamp.now(tz='UTC')
-                    
-                    # Calculate days held
-                    days_held = (current_time - purchase_date).days
-                    
-                except Exception as e:
-                    self.logger.warning(f"Could not calculate days held for {ticker}: {e}")
-                    days_held = 0
-            
-            position_result = {
-                'ticker': ticker,
-                'trade_type': 'OPEN',
-                'shares': shares,
-                'buy_price': purchase_price,
-                'sell_price': None,  # Not sold yet
-                'current_price': current_price,
-                'trade_date': purchase_date,
-                'days_held': days_held,
-                'profit_loss_dollar': profit_loss,
-                'profit_loss_pct': profit_pct,
-                'trade_value': current_value,
-                'is_profitable': profit_loss > 0
-            }
-            open_positions.append(position_result)
+                if purchase_date:
+                    try:
+                        # Convert purchase_date to timezone-aware if needed
+                        if isinstance(purchase_date, str):
+                            purchase_date = pd.to_datetime(purchase_date, utc=True)
+                        elif isinstance(purchase_date, pd.Timestamp) and purchase_date.tz is None:
+                            purchase_date = purchase_date.tz_localize('UTC')
+                        
+                        # Get current time with UTC timezone
+                        current_time = pd.Timestamp.now(tz='UTC')
+                        
+                        # Calculate days held
+                        days_held = (current_time - purchase_date).days
+                        
+                    except Exception as e:
+                        self.logger.warning(f"Could not calculate days held for {ticker}: {e}")
+                        days_held = 0
+                
+                position_result = {
+                    'ticker': ticker,
+                    'trade_type': 'OPEN',
+                    'shares': shares,
+                    'buy_price': purchase_price,
+                    'sell_price': None,  # Not sold yet
+                    'current_price': current_price,
+                    'trade_date': purchase_date,
+                    'days_held': days_held,
+                    'profit_loss_dollar': profit_loss,
+                    'profit_loss_pct': profit_pct,
+                    'trade_value': current_value,
+                    'is_profitable': profit_loss > 0
+                }
+                open_positions.append(position_result)
+                
+                # DEBUG: Log each open position
+                self.logger.debug(f"Open position {ticker}: {shares} shares @ ${purchase_price:.2f}, "
+                                f"current ${current_price:.2f}, P&L: ${profit_loss:.2f} ({profit_pct:.1f}%)")
 
             # ===========================================
             # COMBINE ALL TRADES
@@ -554,6 +578,15 @@ class TradingRunner:
                 self.logger.info(f"  Current Win Rate: {open_win_rate:.1f}%")
                 self.logger.info(f"  Unrealized P&L: ${open_profit_loss:,.2f}")
                 self.logger.info(f"  Average Unrealized Return: {open_avg_return:.2f}%")
+                
+                # DETAILED BREAKDOWN OF EACH OPEN POSITION
+                self.logger.info("")
+                self.logger.info("DETAILED OPEN POSITIONS:")
+                for _, position in open_df.iterrows():
+                    status = "PROFIT" if position['is_profitable'] else "LOSS"
+                    self.logger.info(f"  {position['ticker']}: {position['shares']} shares @ "
+                                f"${position['buy_price']:.2f} → ${position['current_price']:.2f} "
+                                f"= ${position['profit_loss_dollar']:.2f} ({position['profit_loss_pct']:.1f}%) [{status}]")
             else:
                 self.logger.info("  No open positions")
             
@@ -588,8 +621,9 @@ class TradingRunner:
         except Exception as e:
             self.logger.error(f"Error in enhanced trade profitability analysis: {e}", exc_info=True)
             return pd.DataFrame()
+            
     
-    def save_results(self, filename_prefix="trading_results"):
+    def save_results(self, filename_prefix="trading_results", trades_df=None):
         """Save all results to files."""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -615,12 +649,19 @@ class TradingRunner:
                 portfolio_df.to_csv(portfolio_file, index=False)
                 self.logger.info(f"Portfolio history saved to: {portfolio_file}")
             
-            # Save trade profitability analysis
-            trades_df = self.analyze_trade_profitability()
-            if not trades_df.empty:
+            # Save trade profitability analysis (use passed DataFrame to avoid duplicate analysis)
+            if trades_df is not None and not trades_df.empty:
                 trades_file = f"{self.output_dir}/{filename_prefix}_trades_{timestamp}.csv"
                 trades_df.to_csv(trades_file, index=False)
                 self.logger.info(f"Trade analysis saved to: {trades_file}")
+            elif self.results.get('orders'):
+                # Fallback: analyze if no DataFrame provided
+                self.logger.debug("No trades DataFrame provided, running analysis...")
+                trades_df = self.analyze_trade_profitability()
+                if not trades_df.empty:
+                    trades_file = f"{self.output_dir}/{filename_prefix}_trades_{timestamp}.csv"
+                    trades_df.to_csv(trades_file, index=False)
+                    self.logger.info(f"Trade analysis saved to: {trades_file}")
             
             # Save summary
             summary_file = f"{self.output_dir}/{filename_prefix}_summary_{timestamp}.json"
@@ -766,7 +807,6 @@ class TradingRunner:
             return self.results
 
 
-
 def cleanup_temp_files():
     """Clean up any temporary files created during execution."""
     temp_files = ['trading_logic_fixed.py']
@@ -790,10 +830,9 @@ def main():
     RISK_LEVEL = 0  # 0-10
 
     # Trading mode selection
-    #TRADING_MODE = "automatic"
-    TRADING_MODE = "semi-automatic"
+    TRADING_MODE = "automatic"
+    # TRADING_MODE = "semi-automatic"
     
-    # # Optional: specify date range
     # START_DATE = "2022-01-01"
     # END_DATE = "2022-04-01"   
 
@@ -879,7 +918,7 @@ def main():
         
         # Save all results
         print(f"Saving results...")
-        saved_files = runner.save_results()
+        saved_files = runner.save_results(trades_df=trades_df)
         
         print("\n" + "="*80)
         print("EXECUTION COMPLETED SUCCESSFULLY")
