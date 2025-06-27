@@ -2,9 +2,9 @@ import os
 import sys
 from PyQt5.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QApplication
 from PyQt5.QtCore import Qt
-from gui.input_panel import InputPanel
-from gui.analysis_dashboard import AnalysisDashboard
-from gui.recommendation_panel import RecommendationPanel
+from frontend.gui.input_panel import InputPanel
+from frontend.gui.analysis_dashboard import AnalysisDashboard
+from frontend.gui.recommendation_panel import RecommendationPanel
 
 class MainWindow(QMainWindow):
     def __init__(self, data_manager, parent=None):

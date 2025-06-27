@@ -5,12 +5,13 @@ from PyQt5.QtCore import Qt
 from backend.trading_logic_new import get_orders, get_portfolio_history
 import pandas as pd
 import logging
-from logging_config import get_logger
+from frontend.logging_config import get_logger
+
 import os
 
 # Configure logging
 logger = get_logger(__name__)
-logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+
 
 class RecommendationPanel(QWidget):
     def __init__(self, data_manager, parent=None):

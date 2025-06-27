@@ -1,21 +1,18 @@
 import sys
 import os
 import logging
-import pandas as pd
 from logging_config import setup_logging, get_logger
 # Configure logging with FileHandler
 log_dir = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')), 'logs')
 os.makedirs(log_dir, exist_ok=True)  # Ensure logs directory exists
 log_file = os.path.join(log_dir, 'app.log')
-from logging_config import setup_logging
 setup_logging()
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 logger.info("Logging initialized")
 
 # Suppress matplotlib and NumExpr logs
 os.environ["NUMEXPR_MAX_THREADS"] = "8"
-logging.getLogger('matplotlib').setLevel(logging.WARNING)
-logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+
 
 # Add parent and backend directories to sys.path
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -25,9 +22,9 @@ sys.path.append(os.path.join(base_dir, 'backend'))
 from PyQt5.QtWidgets import QApplication, QFileDialog, QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QToolButton, QMessageBox
 from PyQt5.QtGui import QPalette, QColor, QIcon
 from PyQt5.QtCore import Qt
-from gui.main_window import MainWindow
-from gui.splash_screen import SplashScreen
-from data.data_manager import DataManager
+from frontend.gui.main_window import MainWindow
+from frontend.gui.splash_screen import SplashScreen
+from frontend.data.data_manager import DataManager
 
 def resource_path(relative_path):
     """Get absolute path to resources, works for dev and PyInstaller."""
@@ -182,10 +179,10 @@ def main():
         sys.exit(1)
     logger.info("StarterDialog accepted")
     csv_path, _ = QFileDialog.getOpenFileName(
-        None, 
-        "Select all_tickers_results.csv", 
-        "", 
-        "CSV Files (*.csv)", 
+        None,
+        "Select all_tickers_results.csv",
+        "",
+        "CSV Files (*.csv)",
         options=QFileDialog.DontUseNativeDialog
     )
     logger.info(f"Selected CSV: {csv_path}")
@@ -195,13 +192,12 @@ def main():
 
     data_manager = DataManager(csv_path=csv_path)
     logger.info("DataManager initialized")
-    success, error_msg = data_manager.load_data(csv_path)
-    logger.info(f"Data loading result: success={success}, error={error_msg}")
-    if not success:
+    if data_manager.data is None or data_manager.data.empty:
+        error_msg = f"Failed to load CSV: {data_manager.csv_path}"
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Critical)
         msg.setWindowTitle("Error")
-        msg.setText(f"Failed to load CSV: {error_msg}")
+        msg.setText(error_msg)
         msg.setStandardButtons(QMessageBox.Ok)
         msg.setStyleSheet("""
             QMessageBox { background-color: #353535; color: white; }
@@ -209,7 +205,7 @@ def main():
             QMessageBox QPushButton { background-color: #444444; color: white; }
         """)
         msg.exec_()
-        logger.error(f"CSV loading failed: {error_msg}")
+        logger.error(error_msg)
         sys.exit(1)
 
     splash = SplashScreen()

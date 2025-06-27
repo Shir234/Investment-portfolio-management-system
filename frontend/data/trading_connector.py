@@ -7,7 +7,8 @@ import pandas as pd
 import logging
 
 from backend.trading_logic_new import run_trading_strategy, get_orders, get_portfolio_history, validate_prediction_quality
-from logging_config import get_logger
+from frontend.logging_config import get_logger
+logger = get_logger(__name__)
 
 # Use centralized logger
 logger = get_logger('trading_logic')  # Align with logging_config.py logger name
