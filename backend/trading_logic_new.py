@@ -699,12 +699,22 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
             current_value = cash
             for ticker, holding in holdings.items():
                 ticker_data = daily_data[daily_data['Ticker'] == ticker]
+                shares = holding['shares']
                 # if not ticker_data.empty:
                 #     current_value += holding['shares'] * ticker_data.iloc[0]['Close']
                 if not ticker_data.empty:
                     current_price = ticker_data.iloc[0]['Close']
-                    shares = holding['shares']
+                    position_value = shares * current_price
+                    current_value += position_value
+                    logger.debug(f"Position {ticker}: {shares} shares @ ${current_price:.2f} = ${position_value:.2f}")
+
+                else:
+                    # Fallback: use purchase price if current price not available
                     purchase_price = holding['purchase_price']
+                    position_value = shares * purchase_price
+                    current_value += position_value
+                    logger.debug(f"Position {ticker}: {shares} shares @ ${purchase_price:.2f} (purchase price) = ${position_value:.2f}")
+
 
             # STEP 4: Record daily portfolio snapshot
             portfolio_history.append({
