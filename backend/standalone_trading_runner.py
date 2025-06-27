@@ -134,6 +134,39 @@ except ImportError:
         print(f"Could not find trading_logic_new.py at {trading_logic_path}")
         sys.exit(1)
 
+
+def force_reset_state():
+    """
+    Force a complete reset of all trading state.
+    Call this before running strategy to ensure clean start.
+    """
+    global orders, portfolio_history
+    
+    # Clear global variables
+    orders = []
+    portfolio_history = []
+    
+    # Remove state file
+    state_file = 'data/portfolio_state.json'
+    if os.path.exists(state_file):
+        os.remove(state_file)
+        print(f"Removed state file: {state_file}")
+    
+    # Clear any other potential state files
+    other_files = [
+        'data/holdings.json',
+        'data/cash.json', 
+        'portfolio_state.json'  # In case it's in root
+    ]
+    
+    for file_path in other_files:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            print(f"Removed: {file_path}")
+    
+    print("State completely reset")
+
+
 class TradingRunner:
     def __init__(self, csv_path, output_dir="trading_results"):
         """
@@ -841,6 +874,9 @@ def main():
 
     START_DATE = "2022-01-01" 
     END_DATE = "2023-01-01" 
+
+    # START_DATE = "2021-10-18" 
+    # END_DATE = "2023-12-22" 
     
     try:
         print("="*80)
@@ -852,6 +888,8 @@ def main():
             print(f"  ERROR: Data file not found: {CSV_PATH}")
             print("Please update the CSV_PATH variable in the main() function")
             return
+        
+        force_reset_state()
         
         # Create runner
         print(f"Initializing with data file: {CSV_PATH}")
