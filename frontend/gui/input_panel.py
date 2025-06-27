@@ -382,8 +382,8 @@ class InputPanel(QWidget):
         investment_amount, risk_level, start_date, end_date = inputs
         mode = self.mode_combo.currentText().lower()
 
-        logger.info(f"Executing strategy: Mode={mode}, Investment=${investment_amount}, "
-                    f"Risk={risk_level}, Dates={start_date} to {end_date}")
+        # Log risk_level for debugging
+        logger.info(f"Executing strategy with risk_level={risk_level}, type={type(risk_level)}")
 
         try:
             success, result = execute_trading_strategy(

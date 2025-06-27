@@ -27,16 +27,22 @@ class MainWindow(QMainWindow):
         self.theme_button = QPushButton("🌙")
         self.theme_button.setFixedSize(24, 24)
         self.theme_button.clicked.connect(self.toggle_theme)
-        self.theme_button.setStyleSheet("...")
+        self.theme_button.setStyleSheet(
+            "background-color: #2a82da; color: #ffffff; border-radius: 12px;"
+        )  # Fixed stylesheet
         theme_layout.addWidget(self.theme_button)
         main_layout.addLayout(theme_layout)
 
         # Create tab widget
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet(
-            "QTabWidget::pane { background-color: #2b2b2b; } QTabBar::tab { background-color: #3c3f41; color: #ffffff; } QTabBar::tab:selected { background-color: #2a82da; }" 
-            if self.is_dark_mode else 
-            "QTabWidget::pane { background-color: #ffffff; } QTabBar::tab { background-color: #e0e0e0; color: black; } QTabBar::tab:selected { background-color: #2a82da; }"
+            "QTabWidget::pane { background-color: #2b2b2b; } "
+            "QTabBar::tab { background-color: #3c3f41; color: #ffffff; padding: 8px; } "
+            "QTabBar::tab:selected { background-color: #2a82da; }"
+            if self.is_dark_mode else
+            "QTabWidget::pane { background-color: #ffffff; } "
+            "QTabBar::tab { background-color: #e0e0e0; color: black; padding: 8px; } "
+            "QTabBar::tab:selected { background-color: #2a82da; }"
         )
         main_layout.addWidget(self.tabs)
 
@@ -53,35 +59,31 @@ class MainWindow(QMainWindow):
     def toggle_theme(self):
         """Toggle between light and dark mode."""
         self.is_dark_mode = not self.is_dark_mode
-
-        # Update theme button
         self.theme_button.setText("🌙" if self.is_dark_mode else "☀")
         self.theme_button.setStyleSheet(
-            "background-color: #2a82da; color: #ffffff; border-radius: 12px;" 
-            if self.is_dark_mode else 
+            "background-color: #2a82da; color: #ffffff; border-radius: 12px;"
+            if self.is_dark_mode else
             "background-color: #2a82da; color: black; border-radius: 12px;"
         )
-
-        # Update main window and tabs
         self.setStyleSheet(
-            "background-color: #353535; color: #ffffff;" 
-            if self.is_dark_mode else 
+            "background-color: #353535; color: #ffffff;"
+            if self.is_dark_mode else
             "background-color: #f0f0f0; color: black;"
         )
         self.tabs.setStyleSheet(
-            "QTabWidget::pane { background-color: #2b2b2b; } QTabBar::tab { background-color: #3c3f41; color: #ffffff; } QTabBar::tab:selected { background-color: #2a82da; }" 
-            if self.is_dark_mode else 
-            "QTabWidget::pane { background-color: #ffffff; } QTabBar::tab { background-color: #e0e0e0; color: black; } QTabBar::tab:selected { background-color: #2a82da; }"
+            "QTabWidget::pane { background-color: #2b2b2b; } "
+            "QTabBar::tab { background-color: #3c3f41; color: #ffffff; padding: 8px; } "
+            "QTabBar::tab:selected { background-color: #2a82da; }"
+            if self.is_dark_mode else
+            "QTabWidget::pane { background-color: #ffffff; } "
+            "QTabBar::tab { background-color: #e0e0e0; color: black; padding: 8px; } "
+            "QTabBar::tab:selected { background-color: #2a82da; }"
         )
-
-        # Propagate theme to panels
         self.input_panel.set_theme(self.is_dark_mode)
         self.dashboard_panel.set_theme(self.is_dark_mode)
         self.recommendation_panel.set_theme(self.is_dark_mode)
-
-        # Force a full repaint and update all widgets
         self.update_style_recursive(self)
-        QApplication.instance().processEvents()  # Ensure all widgets refresh
+        QApplication.instance().processEvents()
 
     def update_style_recursive(self, widget):
         """Recursively update the style of all child widgets."""
