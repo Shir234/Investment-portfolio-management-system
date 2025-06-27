@@ -68,40 +68,61 @@ def get_portfolio_history():
     return portfolio_history.copy()
 
 
-def load_ticker_weights(weights_file='final_tickers_score.csv'):
+def load_ticker_weights(weights_file=None):
     """
     Load and normalize ticker weights from a CSV file.
     Preserve relative ordering - highest score still becomes highest normalized value 
     """
-
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+    if weights_file is None:
+        weights_file = os.path.join(project_root, 'Investment-portfolio-management-system', 'backend', 'resources', 'final_tickers_score.csv')
+        
     try:
+        logger.info(f"Attempting to load weights file: {weights_file}")
+        logger.info(f"Current working directory: {os.getcwd()}")
+        logger.info(f"Project root: {project_root}")
+        
+        # Create default weights file if missing
         if not os.path.exists(weights_file):
-            logger.warning(f"Weights file {weights_file} not found. Using default weight of 1.0.")
-            return {}
+            tickers = ['ABBV', 'CTSH', 'FICO', 'ATO', 'LLY', 'TPL', 'MCK', 'MPC', 'CBOE', 'KEYS', 'LW', 'UAL', 'AXON', 'LDOS', 'PSX', 'ERIE', 'APD', 'PG']
+            weights = pd.DataFrame({'Ticker': tickers, 'Transaction_Score': [0.02] * len(tickers)})
+            try:
+                os.makedirs(os.path.dirname(weights_file), exist_ok=True)
+                weights.to_csv(weights_file, index=False)
+                logger.info(f"Created default weights file at {weights_file}")
+                logger.info(f"File exists after creation: {os.path.exists(weights_file)}")
+            except Exception as e:
+                logger.error(f"Failed to create weights file {weights_file}: {e}")
+                return {}
+        
+        logger.info(f"File exists: {os.path.exists(weights_file)}")
         
         df = pd.read_csv(weights_file)
         weight_col = 'Transaction_Score'
 
         if 'Ticker' not in df.columns or weight_col not in df.columns:
-            logger.error(f"Invalid weights file format.")
+            logger.error(f"Invalid weights file format. Columns found: {list(df.columns)}")
             return {}
         
         df[weight_col] = pd.to_numeric(df[weight_col], errors='coerce')
         df = df[df[weight_col].notnull()]
 
-        # Normalize to -1 to +1 range (preserves meaning)
+        # Normalize to -1 to +1 range
         min_score = df[weight_col].min()
         max_score = df[weight_col].max()
-        df['Trading_Signal'] = 2 * (df[weight_col] - min_score) / (max_score - min_score) - 1
+        if max_score == min_score:
+            logger.info(f"All Transaction_Score values are identical ({min_score}). Assigning Trading_Signal = 0.0")
+            df['Trading_Signal'] = 0.0
+        else:
+            df['Trading_Signal'] = 2 * (df[weight_col] - min_score) / (max_score - min_score) - 1
         
         weights = dict(zip(df['Ticker'], df['Trading_Signal']))
-
+        logger.info(f"Loaded weights: {list(weights.items())[:5]}")
         return weights
     
     except Exception as e:
         logger.error(f"Error loading ticker weights: {e}")
         return {}
-
 
 def load_portfolio_state():
     """

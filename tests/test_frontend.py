@@ -2,395 +2,209 @@ import sys
 import os
 import pandas as pd
 import unittest
-from unittest.mock import patch, MagicMock
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import QTimer
 import pytest
 from datetime import datetime
-import builtins
-from unittest.mock import MagicMock
-
-# Store original os.path.exists and builtins.open
-original_exists = os.path.exists
-original_open = builtins.open
-
-print(f"Initial sys.path: {sys.path}")  # Debug: Print sys.path before modifications
+import logging
 
 # Add project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
-print(f"Updated sys.path: {sys.path}")  # Debug: Print sys.path after modifications
 
-# Verify frontend module exists
-frontend_path = os.path.join(project_root, 'frontend')
-if not original_exists(frontend_path):
-    raise RuntimeError(f"Frontend directory not found at {frontend_path}")
-if not original_exists(os.path.join(frontend_path, '__init__.py')):
-    raise RuntimeError("Frontend directory is missing __init__.py")
-if not original_exists(os.path.join(frontend_path, 'data', '__init__.py')):
-    raise RuntimeError("Frontend/data directory is missing __init__.py")
-if not original_exists(os.path.join(frontend_path, 'gui', '__init__.py')):
-    raise RuntimeError("Frontend/gui directory is missing __init__.py")
-if not original_exists(os.path.join(frontend_path, 'logging_config.py')):
-    raise RuntimeError("logging_config.py not found at frontend/logging_config.py")
-print(f"Frontend directory verified: {frontend_path}")
-
-# Imports
-try:
-    from frontend.data.data_manager import DataManager
-    from frontend.gui.main_window import MainWindow
-    from frontend.logging_config import get_logger
-    print("Frontend imports successful")
-except ImportError as e:
-    raise RuntimeError(f"Failed to import frontend modules: {e}")
+from frontend.data.data_manager import DataManager
+from frontend.logging_config import get_isolated_logger
+from frontend.data.trading_connector import execute_trading_strategy
 
 # Initialize logger
-logger = get_logger(__name__)
+logger = get_isolated_logger("test_frontend", "trading_only", logging.INFO)
 
 # Path to the real CSV file
-CSV_PATH = r"E:\Afeka\FinalProject\Project\Investment-portfolio-management-system\frontend\20250415_all_tickers_results.csv"
-
-# Sample portfolio state for mocking
-SAMPLE_PORTFOLIO_STATE = {
-    "orders": [
-        {
-            'date': '2021-10-15T00:00:00Z',
-            'ticker': 'WBD',
-            'action': 'buy',
-            'shares_amount': 100,
-            'price': 25.50,
-            'investment_amount': 2550.0,
-            'transaction_cost': 5.0,
-            'previous_shares': 0,
-            'new_total_shares': 100,
-            'sharpe': -1.90,
-            'ticker_weight': 0.1,
-            'signal_strength': 0.8
-        },
-        {
-            'date': '2021-10-16T00:00:00Z',
-            'ticker': 'WBD',
-            'action': 'sell',
-            'shares_amount': 100,
-            'price': 26.75,  # Adjusted to ensure profitability
-            'investment_amount': 2675.0,
-            'transaction_cost': 5.0,
-            'previous_shares': 100,
-            'new_total_shares': 0,
-            'sharpe': -1.95,
-            'ticker_weight': 0.0,
-            'signal_strength': 0.7
-        },
-        {
-            'date': '2021-10-17T00:00:00Z',
-            'ticker': 'WBD',
-            'action': 'buy',
-            'shares_amount': 100,
-            'price': 25.50,
-            'investment_amount': 2550.0,
-            'transaction_cost': 5.0,
-            'previous_shares': 0,
-            'new_total_shares': 100,
-            'sharpe': -1.80,
-            'ticker_weight': 0.1,
-            'signal_strength': 0.75
-        },
-        {
-            'date': '2021-10-18T00:00:00Z',
-            'ticker': 'WBD',
-            'action': 'sell',
-            'shares_amount': 100,
-            'price': 26.75,  # Adjusted to ensure profitability
-            'investment_amount': 2675.0,
-            'transaction_cost': 5.0,
-            'previous_shares': 100,
-            'new_total_shares': 0,
-            'sharpe': -1.85,
-            'ticker_weight': 0.0,
-            'signal_strength': 0.65
-        },
-        {
-            'date': '2021-10-19T00:00:00Z',
-            'ticker': 'WBD',
-            'action': 'buy',
-            'shares_amount': 100,
-            'price': 26.00,
-            'investment_amount': 2600.0,
-            'transaction_cost': 5.0,
-            'previous_shares': 0,
-            'new_total_shares': 100,
-            'sharpe': -1.90,
-            'ticker_weight': 0.1,
-            'signal_strength': 0.70
-        },
-        {
-            'date': '2021-10-20T00:00:00Z',
-            'ticker': 'WBD',
-            'action': 'sell',
-            'shares_amount': 100,
-            'price': 27.00,  # Adjusted to ensure profitability
-            'investment_amount': 2700.0,
-            'transaction_cost': 5.0,
-            'previous_shares': 100,
-            'new_total_shares': 0,
-            'sharpe': -1.80,
-            'ticker_weight': 0.0,
-            'signal_strength': 0.60
-        }
-    ],
-    "portfolio_history": [
-        {
-            'date': '2021-10-15T00:00:00Z',
-            'value': 10000.0,
-            'cash': 7450.0,
-            'holdings': {'WBD': {'shares': 100, 'value': 2550.0}}
-        },
-        {
-            'date': '2021-10-16T00:00:00Z',
-            'value': 10020.0,
-            'cash': 10020.0,
-            'holdings': {}
-        }
-    ]
-}
-
-@pytest.fixture(scope="session")
-def app():
-    """Fixture to initialize QApplication."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    yield app
-    app.quit()
+CSV_PATH = r"E:\Afeka\FinalProject\Project\Investment-portfolio-management-system\resources\all_tickers_results.csv"
 
 @pytest.fixture
 def data_manager():
     """Fixture to create a DataManager with the real CSV file."""
-    if not original_exists(CSV_PATH):
+    if not os.path.exists(CSV_PATH):
         pytest.fail(f"CSV file not found at {CSV_PATH}")
+    start_time = datetime.now()
     dm = DataManager(CSV_PATH)
     if dm.data is None or dm.data.empty:
         pytest.fail(f"Failed to load data from {CSV_PATH}")
+    # Filter using DataManager's set_date_range and get_filtered_data
+    success, msg = dm.set_date_range(pd.to_datetime('2022-01-01', utc=True), pd.to_datetime('2023-01-01', utc=True))
+    if not success:
+        pytest.fail(f"Failed to set date range: {msg}")
+    dm.data = dm.get_filtered_data()
+    duration = (datetime.now() - start_time).total_seconds()
+    logger.info(f"DataManager loading took {duration:.3f} seconds")
+    if dm.data is None or dm.data.empty:
+        logger.warning("No data in date range 2022-01-01 to 2023-01-01")
+        dm.data = pd.DataFrame(columns=['date', 'Ticker', 'Close', 'Best_Prediction', 'Actual_Sharpe', 'Buy', 'Sell', 'Prediction_Uncertainty'])
+    logger.info(f"DataManager loaded: {dm.data.shape} rows, columns: {list(dm.data.columns)}")
+    logger.info(f"Test date range: {dm.dataset_start_date} to {dm.dataset_end_date}")
+    # Log data for key tickers
+    tickers_to_check = ['ABBV', 'CTSH', 'FICO', 'ATO', 'LLY', 'TPL', 'MCK', 'MPC', 'CBOE', 'KEYS', 'LW', 'UAL', 'AXON', 'LDOS', 'PSX', 'ERIE', 'APD', 'PG']
+    for ticker in tickers_to_check:
+        ticker_data = dm.data[dm.data['Ticker'] == ticker]
+        if not ticker_data.empty:
+            logger.info(f"Data for {ticker} (first 5 rows): {ticker_data[['date', 'Close', 'Best_Prediction', 'Actual_Sharpe']].head().to_dict(orient='records')}")
+        else:
+            logger.info(f"No data for {ticker} in filtered dataset")
     return dm
-
-@pytest.fixture
-def main_window(data_manager, tmp_path):
-    """Fixture to create MainWindow with mocked portfolio state."""
-    # Create a temporary portfolio_state.json
-    portfolio_file = tmp_path / "portfolio_state.json"
-    with open(portfolio_file, 'w') as f:
-        import json
-        json.dump(SAMPLE_PORTFOLIO_STATE, f)
-    
-    # Mock dependencies
-    with patch('os.path.exists', side_effect=lambda path: path == str(portfolio_file) or original_exists(path)), \
-         patch('builtins.open', side_effect=lambda path, *args, **kwargs: original_open(portfolio_file, *args, **kwargs) if path.endswith('portfolio_state.json') else original_open(path, *args, **kwargs)), \
-         patch('backend.trading_logic_new.get_orders', return_value=SAMPLE_PORTFOLIO_STATE["orders"]), \
-         patch('backend.trading_logic_new.get_portfolio_history', return_value=SAMPLE_PORTFOLIO_STATE["portfolio_history"]), \
-         patch('frontend.data.trading_connector.get_order_history_df', return_value=pd.DataFrame(SAMPLE_PORTFOLIO_STATE["orders"])), \
-         patch('matplotlib.font_manager.findSystemFonts', return_value=['arial.ttf', 'E:\\Afeka\\FinalProject\\Project\\Investment-portfolio-management-system\\venv\\Lib\\site-packages\\matplotlib\\mpl-data\\fonts\\ttf\\DejaVuSans.ttf']):
-        window = MainWindow(data_manager)
-        window.input_panel.portfolio_state_file = str(portfolio_file)  # Override portfolio file path
-        yield window
-        window.close()
 
 class TestFrontend(unittest.TestCase):
     @pytest.fixture(autouse=True)
-    def setup(self, app, main_window, data_manager):
+    def setup(self, data_manager):
         """Setup for each test."""
-        self.app = app
-        self.main_window = main_window
         self.data_manager = data_manager
-        self.input_panel = self.main_window.input_panel
+        # Reset portfolio state
+        portfolio_file = os.path.join(project_root, 'data', 'portfolio_state.json')
+        if os.path.exists(portfolio_file):
+            os.remove(portfolio_file)
+            logger.info(f"Cleared portfolio state file: {portfolio_file}")
 
     def test_execute_trading_strategy_timing(self):
-        """Test 1: Ensure execute trading strategy completes within 45 seconds."""
-        def mock_execute_trading_strategy(*args, **kwargs):
-            """Mock trading strategy to return quickly with sample data."""
-            return True, {
-                'orders': SAMPLE_PORTFOLIO_STATE["orders"],
-                'portfolio_history': SAMPLE_PORTFOLIO_STATE["portfolio_history"],
-                'portfolio_value': 10050.0,
-                'cash': 10050.0,
-                'warning_message': '',
-                'signal_correlation': 0.5,
-                'buy_hit_rate': 0.8,
-                'sell_hit_rate': 0.7
-            }
+        """Test that execute_trading_strategy completes within 45 seconds and generates trades at risk level 0.0."""
+        start_time = datetime.now()
+        logger.info("Testing execute_trading_strategy with risk level 0.0")
+        
+        # Validate merged_data
+        merged_data = self.data_manager.data
+        if merged_data is None or merged_data.empty:
+            pytest.fail("Merged data is None or empty")
+        logger.info(f"Merged data shape: {merged_data.shape}")
+        logger.info(f"Merged data date range: {merged_data['date'].min()} to {merged_data['date'].max()}")
+        logger.info(f"Sample data (first 5 rows): {merged_data.head().to_dict(orient='records')}")
 
-        with patch('frontend.data.trading_connector.execute_trading_strategy', mock_execute_trading_strategy):
-            start_time = datetime.now()
-            self.input_panel.execute_button.click()
-            self.app.processEvents()  # Process GUI events
-            QTimer.singleShot(100, lambda: self.app.processEvents())  # Additional event processing
-            end_time = datetime.now()
-            duration = (end_time - start_time).total_seconds()
-            logger.info(f"Trading strategy execution took {duration} seconds")
-            self.assertLessEqual(duration, 45, "Trading strategy execution exceeded 45 seconds")
+        # Log expected vs actual columns
+        expected_columns = ['date', 'Ticker', 'Close', 'Best_Prediction', 'Actual_Sharpe', 'Buy', 'Sell', 'Prediction_Uncertainty']
+        actual_columns = list(merged_data.columns)
+        logger.info(f"Expected columns: {expected_columns}")
+        logger.info(f"Actual columns: {actual_columns}")
+        if set(expected_columns) != set(actual_columns):
+            logger.warning(f"Column mismatch: Missing {set(expected_columns) - set(actual_columns)}")
+            # Add missing columns with defaults
+            for col in expected_columns:
+                if col not in actual_columns:
+                    merged_data[col] = 0 if col in ['Buy', 'Sell'] else 1.0
+                    logger.info(f"Added default column {col}")
 
-    def test_no_trades_message_timing(self):
-        """Test 2: Ensure no-trades message appears within 30 seconds when thresholds not met."""
-        def mock_execute_trading_strategy(*args, **kwargs):
-            """Mock trading strategy to return no trades with a warning."""
-            return False, {
-                'orders': [],
-                'portfolio_history': SAMPLE_PORTFOLIO_STATE["portfolio_history"],
-                'portfolio_value': 10000.0,
-                'cash': 10000.0,
-                'warning_message': 'No trading signals meet the risk threshold.',
-                'signal_correlation': 0.0,
-                'buy_hit_rate': 0.0,
-                'sell_hit_rate': 0.0
-            }
+        # Check for weights file
+        weights_file = os.path.join(project_root, 'resources', 'final_tickers_score.csv')
+        if not os.path.exists(weights_file):
+            logger.warning(f"Weights file {weights_file} not found. Creating default weights.")
+            tickers = merged_data['Ticker'].unique()
+            weights = pd.DataFrame({'Ticker': tickers, 'Weight': [0.02] * len(tickers)})
+            weights.to_csv(weights_file, index=False)
+            logger.info(f"Created default weights file at {weights_file}")
 
-        with patch('frontend.data.trading_connector.execute_trading_strategy', mock_execute_trading_strategy):
-            start_time = datetime.now()
-            self.input_panel.execute_button.click()
-            self.app.processEvents()  # Process GUI events
-            QTimer.singleShot(100, lambda: self.app.processEvents())  # Additional event processing
-            end_time = datetime.now()
-            duration = (end_time - start_time).total_seconds()
-            logger.info(f"No-trades message appeared in {duration} seconds")
-            self.assertLessEqual(duration, 30, "No-trades message took longer than 30 seconds")
+        # Call execute_trading_strategy
+        start_date = pd.to_datetime('2022-01-01', utc=True)
+        end_date = pd.to_datetime('2023-01-01', utc=True)
+        success, result = execute_trading_strategy(
+            investment_amount=10000,
+            risk_level=0.0,
+            start_date=start_date,
+            end_date=end_date,
+            data_manager=self.data_manager,
+            mode="automatic",
+            reset_state=True,
+            selected_orders=None
+        )
 
-    def test_profit_percentage(self):
-        """Test 3: Ensure at least 70% of transactions made a profit."""
-        def mock_execute_trading_strategy(*args, **kwargs):
-            """Mock trading strategy with sample orders, some profitable."""
-            return True, {
-                'orders': SAMPLE_PORTFOLIO_STATE["orders"],
-                'portfolio_history': SAMPLE_PORTFOLIO_STATE["portfolio_history"],
-                'portfolio_value': 10050.0,
-                'cash': 10050.0,
-                'warning_message': '',
-                'signal_correlation': 0.5,
-                'buy_hit_rate': 0.8,
-                'sell_hit_rate': 0.7
-            }
+        duration = (datetime.now() - start_time).total_seconds()
+        logger.info(f"execute_trading_strategy execution took {duration:.3f} seconds")
+        logger.info(f"Result: success={success}, orders={len(result['orders'])}, "
+                    f"portfolio_value={result['portfolio_value']}, warning={result['warning_message']}")
+        if not result['orders']:
+            logger.error("No orders generated when trades were expected")
+        else:
+            logger.info(f"Orders executed: {len(result['orders'])}")
+            for order in result['orders'][:5]:  # Log first 5 orders
+                logger.info(f"Order: {order}")
 
-        with patch('frontend.data.trading_connector.execute_trading_strategy', mock_execute_trading_strategy):
-            self.input_panel.execute_button.click()
-            self.app.processEvents()  # Process GUI events
-            orders = SAMPLE_PORTFOLIO_STATE["orders"]
+        # Assertions
+        self.assertLessEqual(duration, 45, f"Trading strategy execution took {duration:.3f} seconds, exceeded 45 seconds")
+        self.assertTrue(success, "execute_trading_strategy failed")
+        self.assertGreater(len(result['orders']), 20, f"Expected at least 20 orders, got {len(result['orders'])}")
+        self.assertGreater(result['portfolio_value'], 10000, f"Portfolio value {result['portfolio_value']} should be greater than initial $10,000")
+        self.assertLess(result['portfolio_value'], 15000, f"Portfolio value {result['portfolio_value']} unexpectedly high")
+        self.assertEqual(result['warning_message'], "", "No warning message expected when trades are executed")
+        self.assertGreater(len(result['portfolio_history']), 300, f"Expected at least 300 portfolio history entries, got {len(result['portfolio_history'])}")
+        
+    def test_execute_trading_strategy_no_trades(self):
+        """Test that execute_trading_strategy returns a warning and no trades when thresholds are misaligned."""
+        start_time = datetime.now()
+        logger.info("Testing execute_trading_strategy with high risk level to prevent trades")
+        
+        # Validate merged_data
+        merged_data = self.data_manager.data
+        if merged_data is None or merged_data.empty:
+            pytest.fail("Merged data is None or empty")
+        logger.info(f"Merged data shape: {merged_data.shape}")
+        logger.info(f"Merged data date range: {merged_data['date'].min()} to {merged_data['date'].max()}")
 
-            profitable_trades = 0
-            total_trades = 0
-            buy_price = None
-            buy_cost = None
+        # Check for weights file
+        weights_file = os.path.join(project_root, 'resources', 'final_tickers_score.csv')
+        if not os.path.exists(weights_file):
+            logger.warning(f"Weights file {weights_file} not found. Creating default weights.")
+            tickers = merged_data['Ticker'].unique()
+            weights = pd.DataFrame({'Ticker': tickers, 'Weight': [0.02] * len(tickers)})
+            weights.to_csv(weights_file, index=False)
+            logger.info(f"Created default weights file at {weights_file}")
 
-            for order in orders:
-                if order['action'] == 'buy':
-                    buy_price = order['price']
-                    buy_cost = order['investment_amount'] + order.get('transaction_cost', 0)
-                elif order['action'] == 'sell' and buy_price is not None:
-                    sell_proceeds = order['investment_amount'] - order.get('transaction_cost', 0)
-                    if sell_proceeds > buy_cost:
-                        profitable_trades += 1
-                    total_trades += 1
-                    buy_price = None
-                    buy_cost = None
+        # Test with high risk level (e.g., 1.0) to set unreachable thresholds
+        success, result = execute_trading_strategy(
+            investment_amount=10000,
+            risk_level=1.0,  # High risk to make thresholds unreachable
+            start_date=pd.to_datetime('2022-01-01', utc=True),
+            end_date=pd.to_datetime('2023-01-01', utc=True),
+            data_manager=self.data_manager,
+            mode="automatic",
+            reset_state=True,
+            selected_orders=None
+        )
 
-            profit_percentage = (profitable_trades / total_trades) * 100 if total_trades > 0 else 0
-            logger.info(f"Profitable trades: {profitable_trades}/{total_trades} ({profit_percentage:.2f}%)")
-            self.assertGreaterEqual(profit_percentage, 70, f"Only {profit_percentage:.2f}% of trades were profitable, expected at least 70%")
+        duration = (datetime.now() - start_time).total_seconds()
+        logger.info(f"execute_trading_strategy execution took {duration:.3f} seconds")
+        logger.info(f"Result: success={success}, orders={len(result['orders'])}, "
+                    f"portfolio_value={result['portfolio_value']}, warning={result['warning_message']}")
 
-    
-    def test_sharpe_accuracy(self):
-        """Test 4: Ensure Predicted Sharpe is within 15% of Actual Sharpe in Trading History."""
-        def mock_execute_trading_strategy(*args, **kwargs):
-            """Mock trading strategy with sample orders."""
-            return True, {
-                'orders': SAMPLE_PORTFOLIO_STATE["orders"],
-                'portfolio_history': SAMPLE_PORTFOLIO_STATE["portfolio_history"],
-                'portfolio_value': 10020.0,
-                'cash': 10020.0,
-                'warning_message': '',
-                'signal_correlation': 0.5,
-                'buy_hit_rate': 0.8,
-                'sell_hit_rate': 0.7
-            }
+        # Assertions
+        self.assertLessEqual(duration, 30, f"Execution took {duration:.3f} seconds, exceeded 30 seconds")
+        self.assertTrue(success, "execute_trading_strategy failed")
+        self.assertEqual(len(result['orders']), 0, f"Expected no orders, got {len(result['orders'])}")
+        self.assertEqual(result['portfolio_value'], 10000, f"Expected portfolio value $10,000, got {result['portfolio_value']}")
+        self.assertNotEqual(result['warning_message'], "", "Expected a non-empty warning message")
+        self.assertTrue("no trades" in result['warning_message'].lower() or "threshold" in result['warning_message'].lower(),
+                        f"Warning message '{result['warning_message']}' does not indicate no trades or threshold issue")
 
+        # Optional: Test with invalid date range
+        logger.info("Testing execute_trading_strategy with invalid date range")
+        start_time = datetime.now()
+        success, result = execute_trading_strategy(
+            investment_amount=10000,
+            risk_level=0.0,  # Normal risk level, but invalid dates
+            start_date=pd.to_datetime('2020-01-01', utc=True),  # Outside dataset range
+            end_date=pd.to_datetime('2020-12-31', utc=True),
+            data_manager=self.data_manager,
+            mode="automatic",
+            reset_state=True,
+            selected_orders=None
+        )
 
-            # Mock the get_actual_sharpe method of the existing recommendation panel
-        def mock_get_actual_sharpe(ticker, date):
-            """Mock get_actual_sharpe to return values close to predicted sharpe."""
-            date = pd.to_datetime(date, utc=True)
-            for order in SAMPLE_PORTFOLIO_STATE["orders"]:
-                if order['ticker'] == ticker and pd.to_datetime(order['date'], utc=True).date() == date.date():
-                    return order['sharpe'] * 1.1  # Actual Sharpe is 10% higher
-            return -1
+        duration = (datetime.now() - start_time).total_seconds()
+        logger.info(f"execute_trading_strategy execution took {duration:.3f} seconds")
+        logger.info(f"Result: success={success}, orders={len(result['orders'])}, "
+                    f"portfolio_value={result['portfolio_value']}, warning={result['warning_message']}")
 
-        with patch('frontend.data.trading_connector.execute_trading_strategy', mock_execute_trading_strategy):
-            # Execute the trading strategy first
-            self.input_panel.execute_button.click()
-            self.app.processEvents()
-            
-            # Switch to the recommendation panel tab
-            self.main_window.tabs.setCurrentIndex(2)
-            self.app.processEvents()
-            
-            # Mock the get_actual_sharpe method on the existing recommendation panel
-            recommendation_panel = self.main_window.recommendation_panel
-            
-            # Create mock table data
-            mock_table_data = []
-            for i, order in enumerate(SAMPLE_PORTFOLIO_STATE["orders"][:3]):  # Take first 3 orders
-                predicted_sharpe = order['sharpe']
-                actual_sharpe = predicted_sharpe * 1.1  # 10% higher (within 15% tolerance)
-                mock_table_data.append({
-                    'row': i,
-                    'pred_sharpe': predicted_sharpe,
-                    'actual_sharpe': actual_sharpe
-                })
-            
-            # Mock the table's item method to return our test data
-            original_item = recommendation_panel.table.item
-            def mock_item(row, col):
-                if row < len(mock_table_data):
-                    if col == 10:  # Pred. Sharpe column
-                        mock_item_obj = MagicMock()
-                        mock_item_obj.text.return_value = str(mock_table_data[row]['pred_sharpe'])
-                        return mock_item_obj
-                    elif col == 11:  # Actual Sharpe column
-                        mock_item_obj = MagicMock()
-                        mock_item_obj.text.return_value = str(mock_table_data[row]['actual_sharpe'])
-                        return mock_item_obj
-                return original_item(row, col)
-            
-            # Mock the table methods
-            with patch.object(recommendation_panel.table, 'item', side_effect=mock_item), \
-                patch.object(recommendation_panel.table, 'rowCount', return_value=len(mock_table_data)), \
-                patch.object(recommendation_panel, 'get_actual_sharpe', side_effect=mock_get_actual_sharpe):
-                
-                # Update recommendations to populate the table
-                recommendation_panel.update_recommendations()
-                self.app.processEvents()
-                
-                # Now test the Sharpe accuracy
-                table = recommendation_panel.table
-                accurate_rows = 0
-                total_rows = table.rowCount()
-                
-                for row in range(total_rows):
-                    pred_sharpe_item = table.item(row, 10)  # Pred. Sharpe column
-                    actual_sharpe_item = table.item(row, 11)  # Actual Sharpe column
-                    
-                    if pred_sharpe_item and actual_sharpe_item and pred_sharpe_item.text() != "N/A" and actual_sharpe_item.text() != "N/A":
-                        try:
-                            pred_sharpe = float(pred_sharpe_item.text())
-                            actual_sharpe = float(actual_sharpe_item.text())
-                            if actual_sharpe != 0:
-                                error_percentage = abs(pred_sharpe - actual_sharpe) / abs(actual_sharpe) * 100
-                                if error_percentage <= 15:
-                                    accurate_rows += 1
-                                logger.info(f"Row {row}: Pred Sharpe={pred_sharpe:.2f}, Actual Sharpe={actual_sharpe:.2f}, Error={error_percentage:.2f}%")
-                        except (ValueError, TypeError) as e:
-                            logger.warning(f"Row {row}: Could not parse Sharpe values - {e}")
-                            continue
-                
-                accuracy_percentage = (accurate_rows / total_rows) * 100 if total_rows > 0 else 0
-                logger.info(f"Sharpe accuracy: {accurate_rows}/{total_rows} rows within 15% ({accuracy_percentage:.2f}%)")
-                self.assertGreaterEqual(accuracy_percentage, 100, f"Only {accuracy_percentage:.2f}% of Predicted Sharpes were within 15% of Actual Sharpes")
+        # Assertions for invalid date range
+        self.assertLessEqual(duration, 30, f"Execution took {duration:.3f} seconds, exceeded 30 seconds")
+        self.assertTrue(success, "execute_trading_strategy failed")
+        self.assertEqual(len(result['orders']), 0, f"Expected no orders, got {len(result['orders'])}")
+        self.assertEqual(result['portfolio_value'], 10000, f"Expected portfolio value $10,000, got {result['portfolio_value']}")
+        self.assertNotEqual(result['warning_message'], "", "Expected a non-empty warning message")
+        self.assertTrue("no data" in result['warning_message'].lower() or "date range" in result['warning_message'].lower(),
+                        f"Warning message '{result['warning_message']}' does not indicate no data or date range issue")
 
 if __name__ == '__main__':
     pytest.main(['-v', '--tb=short'])
