@@ -1,10 +1,12 @@
 import matplotlib
 import os
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QComboBox, QGroupBox, QListWidget, QListWidgetItem,
                              QPushButton, QMessageBox)
-from PyQt5.QtCore import Qt
+from PyQt6.QtCore import Qt
+#from matplotlib.backends.backend_qt6agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -92,7 +94,7 @@ class AnalysisDashboard(QWidget):
 
         # Ticker list
         self.ticker_list = QListWidget()
-        self.ticker_list.setSelectionMode(QListWidget.MultiSelection)
+        self.ticker_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
         self.ticker_list.setMaximumWidth(200)
         if self.data_manager.data is not None and not self.data_manager.data.empty:
             tickers = sorted(self.data_manager.data['Ticker'].unique())
@@ -182,10 +184,10 @@ class AnalysisDashboard(QWidget):
 
         if len(selected_tickers) > 5:
             msg = QMessageBox()
-            msg.setIcon(QMessageBox.Warning)
+            msg.setIcon(QMessageBox.Icon.Warning)
             msg.setWindowTitle("Selection Limit")
             msg.setText("Please select up to 5 tickers only.")
-            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.setStyleSheet(self.get_message_box_style())
             msg.exec_()
             for item in selected_items[5:]:
@@ -211,7 +213,7 @@ class AnalysisDashboard(QWidget):
         logger.debug(f"Selected tickers: {selected_tickers}")
 
     def remove_ticker(self, ticker):
-        for item in self.ticker_list.findItems(ticker, Qt.MatchExactly):
+        for item in self.ticker_list.findItems(ticker, Qt.MatchFlag.MatchExactly):
             item.setSelected(False)
         self.update_selected_tickers()
 

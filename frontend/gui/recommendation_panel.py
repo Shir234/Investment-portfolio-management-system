@@ -1,7 +1,7 @@
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QTableWidget, QTableWidgetItem, QPushButton, 
                              QMessageBox, QComboBox)
-from PyQt5.QtCore import Qt
+from PyQt6.QtCore import Qt
 from backend.trading_logic_new import get_orders, get_portfolio_history
 import pandas as pd
 import logging
@@ -54,12 +54,6 @@ class RecommendationPanel(QWidget):
         # Table for trade history
         self.table = QTableWidget()
         self.table.setColumnCount(14)
-        # self.table.setHorizontalHeaderLabels([
-        #     "Date", "Ticker", "Action", "Portfolio Value", "Shares", "Price", 
-        #     "Investment Amount", "Transaction Cost", "Previous Shares", 
-        #     "Total Shares", "Pred. Sharpe", "Actual Sharpe", 
-        #     "Ticker Weight", "Signal Strength"
-        # ])
         self.table.setHorizontalHeaderLabels([
                 "Date",           # When the trade happened
                 "Ticker",         # Stock symbol  
@@ -256,29 +250,10 @@ class RecommendationPanel(QWidget):
                     else:
                         signal_display = f"{signal_strength:.3f}"
                 self.table.setItem(row, 10, QTableWidgetItem(signal_display))
-                ###self.table.setItem(row, 13, QTableWidgetItem(f"{order.get('signal_strength', 0):.2f}"))
-               
-                # self.table.setItem(row, 0, QTableWidgetItem(str(order.get('date', ''))))
-                # self.table.setItem(row, 1, QTableWidgetItem(order.get('ticker', '')))
-                # self.table.setItem(row, 2, QTableWidgetItem(order.get('action', '')))
-                # portfolio_value = order.get('total_proceeds', order.get('total_cost', 0))  # Approximate
-                # self.table.setItem(row, 3, QTableWidgetItem(f"${portfolio_value:,.2f}"))
-                # self.table.setItem(row, 4, QTableWidgetItem(str(order.get('shares_amount', 0))))
-                # self.table.setItem(row, 5, QTableWidgetItem(f"${order.get('price', 0):,.2f}"))
-                # self.table.setItem(row, 6, QTableWidgetItem(f"${order.get('investment_amount', 0):,.2f}"))
-                # self.table.setItem(row, 7, QTableWidgetItem(f"${order.get('transaction_cost', 0):,.2f}"))
-                # self.table.setItem(row, 8, QTableWidgetItem(str(order.get('previous_shares', 0))))
-                # self.table.setItem(row, 9, QTableWidgetItem(str(order.get('new_total_shares', 0))))
-                # sharpe = order.get('sharpe', 0)
-                # self.table.setItem(row, 10, QTableWidgetItem(f"{sharpe:.2f}" if sharpe != -1 else "N/A"))
-                # actual_sharpe = self.get_actual_sharpe(order.get('ticker', ''), order.get('date', ''))
-                # self.table.setItem(row, 11, QTableWidgetItem(f"{actual_sharpe:.2f}" if actual_sharpe != -1 else "N/A"))
-                # self.table.setItem(row, 12, QTableWidgetItem(f"{order.get('ticker_weight', 0):.2%}"))
-                # self.table.setItem(row, 13, QTableWidgetItem(f"{order.get('signal_strength', 0):.2f}"))
-                
+
                 for col in range(14):
                     if self.table.item(row, col):
-                        self.table.item(row, col).setTextAlignment(Qt.AlignCenter)
+                        self.table.item(row, col).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             
             self.table.resizeColumnsToContents()
             logger.info(f"Updated recommendations with {len(orders_df)} orders")
@@ -288,9 +263,9 @@ class RecommendationPanel(QWidget):
             msg.setIcon(QMessageBox.Critical)
             msg.setWindowTitle("Error")
             msg.setText(f"Failed to update trade history: {e}")
-            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.setStyleSheet(self.get_message_box_style())
-            msg.exec_()
+            msg.exec()
             
     def get_actual_sharpe(self, ticker, date):
         """Retrieve actual Sharpe ratio for a given ticker and date."""
@@ -317,9 +292,9 @@ class RecommendationPanel(QWidget):
             msg = QMessageBox()
             msg.setWindowTitle("Confirm Clear")
             msg.setText("Are you sure you want to clear the trade history?")
-            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             msg.setStyleSheet(self.get_message_box_style())
-            if msg.exec_() == QMessageBox.Yes:
+            if msg.exec() == QMessageBox.StandardButton.Yes:
                 if os.path.exists(self.portfolio_state_file):
                     with open(self.portfolio_state_file, 'w') as f:
                         f.write('{"orders": [], "portfolio_history": []}')
@@ -328,18 +303,18 @@ class RecommendationPanel(QWidget):
                     logger.info(f"No portfolio state file found at {self.portfolio_state_file}")
                 self.update_recommendations()
                 msg = QMessageBox()
-                msg.setIcon(QMessageBox.Information)
+                msg.setIcon(QMessageBox.Icon.Information)
                 msg.setWindowTitle("Success")
                 msg.setText("Trade history cleared successfully.")
-                msg.setStandardButtons(QMessageBox.Ok)
+                msg.setStandardButtons(QMessageBox.StandardButton.Ok)                
                 msg.setStyleSheet(self.get_message_box_style())
-                msg.exec_()
+                msg.exec()
         except Exception as e:
             logger.error(f"Error clearing trade history: {e}", exc_info=True)
             msg = QMessageBox()
-            msg.setIcon(QMessageBox.Critical)
+            msg.setIcon(QMessageBox.Icon.Critical)
             msg.setWindowTitle("Error")
             msg.setText(f"Failed to clear trade history: {e}")
-            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)            
             msg.setStyleSheet(self.get_message_box_style())
-            msg.exec_()
+            msg.exec()

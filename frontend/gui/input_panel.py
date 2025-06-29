@@ -1,11 +1,11 @@
 import os
 import pandas as pd
 from datetime import datetime, date
-from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit,
+from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit,
                              QDateEdit, QPushButton, QComboBox, QMessageBox,
                              QDoubleSpinBox, QDialog, QTableWidget, QTableWidgetItem,
                              QCheckBox)
-from PyQt5.QtCore import QDate, Qt, QThread, QObject, pyqtSignal
+from PyQt6.QtCore import QDate, Qt, QThread, QObject, pyqtSignal
 from frontend.logging_config import get_logger
 from frontend.data.trading_connector import execute_trading_strategy, get_order_history_df, log_trading_orders
 from backend.trading_logic_new import get_orders, get_portfolio_history
@@ -79,7 +79,7 @@ class TradeConfirmationDialog(QDialog):
 
             for col in range(1, 6):
                 if self.table.item(row, col):
-                    self.table.item(row, col).setTextAlignment(Qt.AlignCenter)
+                    self.table.item(row, col).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.table.resizeColumnsToContents()
         layout.addWidget(self.table)
@@ -304,7 +304,7 @@ class InputPanel(QWidget):
         """Ensure end_date is after start_date."""
         self.end_date_input.setMinimumDate(self.start_date_input.date())
 
-    def show_message_box(self, icon, title, text, buttons=QMessageBox.Ok | QMessageBox.Cancel):
+    def show_message_box(self, icon, title, text, buttons=QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel):
         """Show a message box with the specified icon, title, text, and buttons."""
         msg = QMessageBox()
         msg.setIcon(icon)
@@ -372,10 +372,10 @@ class InputPanel(QWidget):
                 raise ValueError("Investment amount must be positive")
         except ValueError as e:
             self.show_message_box(
-                QMessageBox.Warning,
+                QMessageBox.Icon.Warning,
                 "Invalid Input",
                 f"Invalid investment amount: {e}",
-                QMessageBox.Ok
+                QMessageBox.StandardButton.Ok
             )
             return None
 
@@ -385,10 +385,10 @@ class InputPanel(QWidget):
                 raise ValueError("Risk level must be between 0 and 10")
         except ValueError as e:
             self.show_message_box(
-                QMessageBox.Warning,
+                QMessageBox.Icon.Warning,
                 "Invalid Input",
                 f"Invalid risk level: {e}",
-                QMessageBox.Ok
+                QMessageBox.StandardButton.Ok
             )
             return None
 
@@ -397,10 +397,10 @@ class InputPanel(QWidget):
 
         if self.data_manager.data is None or self.data_manager.data.empty:
             self.show_message_box(
-                QMessageBox.Warning,
+                QMessageBox.Icon.Warning,
                 "No Data",
                 "Failed to load the dataset. Please ensure the data file exists.",
-                QMessageBox.Ok
+                QMessageBox.StandardButton.Ok
             )
             return None
 
@@ -428,11 +428,11 @@ class InputPanel(QWidget):
         date_diff = (end_date - start_date).days
         if date_diff < 7:
             result = self.show_message_box(
-                QMessageBox.Warning,
+                QMessageBox.Icon.Warning,
                 "Short Date Range",
                 "The selected date range is less than 7 days. For better trading results, a minimum one-week period is recommended. Proceed anyway?"
             )
-            if result == QMessageBox.Cancel:
+            if result == QMessageBox.StandardButton.Cancel:
                 logger.info("User cancelled execution due to short date range")
                 return
 
@@ -473,10 +473,10 @@ class InputPanel(QWidget):
 
         if not success:
             self.show_message_box(
-                QMessageBox.Critical,
+                QMessageBox.Icon.Critical,
                 "Error",
                 f"Strategy failed: {result.get('warning_message', 'Unknown error')}",
-                QMessageBox.Ok
+                QMessageBox.StandardButton.Ok
             )
             logger.error(f"Strategy failed: {result.get('warning_message')}")
             return
@@ -489,15 +489,15 @@ class InputPanel(QWidget):
 
         if warning_message:
             self.show_message_box(
-                QMessageBox.Warning,
+                QMessageBox.Icon.Warning,
                 "Warning",
                 warning_message,
-                QMessageBox.Ok
+                QMessageBox.StandardButton.Ok
             )
 
         if mode == "semi-automatic" and orders:
             dialog = TradeConfirmationDialog(orders, self)
-            if dialog.exec_() == QDialog.Accepted and dialog.selected_orders:
+            if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_orders:
                 # Run semi-automatic execution in a new thread
                 self.thread = QThread()
                 self.worker = Worker(
@@ -538,10 +538,10 @@ class InputPanel(QWidget):
         investment_amount = float(self.investment_input.text())
         if not success:
             self.show_message_box(
-                QMessageBox.Critical,
+                QMessageBox.Icon.Critical,
                 "Error",
                 f"Failed to execute trades: {result.get('warning_message', 'Unknown error')}",
-                QMessageBox.Ok
+                QMessageBox.StandardButton.Ok
             )
             logger.error(f"Trade execution failed: {result.get('warning_message')}")
             return
@@ -563,10 +563,10 @@ class InputPanel(QWidget):
         self.execute_button.setEnabled(True)
         self.status_label.setText("Ready")
         self.show_message_box(
-            QMessageBox.Critical,
+            QMessageBox.Icon.Critical,
             "Error",
             f"Unexpected error: {error_message}",
-            QMessageBox.Ok
+            QMessageBox.StandardButton.Ok
         )
         logger.error(f"Unexpected error in worker thread: {error_message}")
 
@@ -577,17 +577,17 @@ class InputPanel(QWidget):
                 os.remove(self.portfolio_state_file)
                 logger.debug(f"Deleted {self.portfolio_state_file}")
                 self.show_message_box(
-                    QMessageBox.Information,
+                    QMessageBox.Icon.Information,
                     "Success",
                     "Portfolio state reset successfully.",
-                    QMessageBox.Ok
+                    QMessageBox.StandardButton.Ok
                 )
             else:
                 self.show_message_box(
-                    QMessageBox.Information,
+                    QMessageBox.Icon.Information,
                     "Info",
                     "No portfolio state file to reset.",
-                    QMessageBox.Ok
+                    QMessageBox.StandardButton.Ok
                 )
             self.update_financial_metrics()
             if hasattr(self, 'main_window'):
@@ -595,10 +595,10 @@ class InputPanel(QWidget):
         except Exception as e:
             logger.error(f"Error resetting portfolio: {e}")
             self.show_message_box(
-                QMessageBox.Critical,
+                QMessageBox.Icon.Critical,
                 "Error",
                 f"Failed to reset portfolio: {e}",
-                QMessageBox.Ok
+                QMessageBox.StandardButton.Ok
             )
 
     def update_portfolio(self):
@@ -618,47 +618,47 @@ class InputPanel(QWidget):
                 latest_trade_date = order_dates.max()
                 if start_date <= latest_trade_date:
                     self.show_message_box(
-                        QMessageBox.Critical,
+                        QMessageBox.Icon.Critical,
                         "Invalid Date Range",
                         f"Start date must be after {latest_trade_date.date()} due to existing trades.\n"
                         f"Valid range: {latest_trade_date.date() + pd.Timedelta(days=1)} to {dataset_end.date() if dataset_end else 'today'}.",
-                        QMessageBox.Ok
+                        QMessageBox.StandardButton.Ok
                     )
                     return
 
             if dataset_start and start_date < dataset_start:
                 self.show_message_box(
-                    QMessageBox.Critical,
+                    QMessageBox.Icon.Critical,
                     "Invalid Date Range",
                     f"Start date cannot be before dataset start ({dataset_start.date()}).",
-                    QMessageBox.Ok
+                    QMessageBox.StandardButton.Ok
                 )
                 return
 
             if dataset_end and end_date > dataset_end:
                 self.show_message_box(
-                    QMessageBox.Critical,
+                    QMessageBox.Icon.Critical,
                     "Invalid Date Range",
                     f"End date cannot be after dataset end ({dataset_end.date()}).",
-                    QMessageBox.Ok
+                    QMessageBox.StandardButton.Ok
                 )
                 return
 
             success, message = self.data_manager.set_date_range(start_date, end_date)
             if not success:
                 self.show_message_box(
-                    QMessageBox.Critical,
+                    QMessageBox.Icon.Critical,
                     "Invalid Date Range",
                     message,
-                    QMessageBox.Ok
+                    QMessageBox.StandardButton.Ok
                 )
                 return
             if message:
                 self.show_message_box(
-                    QMessageBox.Information,
+                    QMessageBox.Icon.Information,
                     "Date Range Adjusted",
                     message,
-                    QMessageBox.Ok
+                    QMessageBox.StandardButton.Ok
                 )
 
             logger.debug(f"Executing with risk_level={risk_level}, mode={self.mode_combo.currentText().lower()}")
@@ -688,18 +688,18 @@ class InputPanel(QWidget):
                     f"Sell Hit Rate: {sell_hit_rate:.1%}"
                 )
                 self.show_message_box(
-                    QMessageBox.Information,
+                    QMessageBox.Icon.Information,
                     "Signal Quality",
                     signal_quality_message,
-                    QMessageBox.Ok
+                    QMessageBox.StandardButton.Ok
                 )
 
                 if correlation < 0.1:
                     self.show_message_box(
-                        QMessageBox.Warning,
+                        QMessageBox.Icon.Warning,
                         "Low Signal Quality",
                         "Signal-return correlation is low. Strategy may be unreliable.",
-                        QMessageBox.Ok
+                        QMessageBox.StandardButton.Ok
                     )
 
                 if self.mode_combo.currentText().lower() == "semi-automatic" and orders:
@@ -717,10 +717,10 @@ class InputPanel(QWidget):
                         )
                         if not success:
                             self.show_message_box(
-                                QMessageBox.Critical,
+                                QMessageBox.Icon.Critical,
                                 "Error",
                                 f"Failed to execute trades: {result.get('warning_message', 'Unknown error')}",
-                                QMessageBox.Ok
+                                QMessageBox.StandardButton.Ok
                             )
                             return
                         portfolio_history = result.get('portfolio_history', [])
@@ -731,10 +731,10 @@ class InputPanel(QWidget):
 
                 if not orders and warning_message:
                     self.show_message_box(
-                        QMessageBox.Warning,
+                        QMessageBox.Icon.Warning,
                         "No Signals Detected",
                         warning_message,
-                        QMessageBox.Ok
+                        QMessageBox.StandardButton.Ok
                     )
 
                 self.update_financial_metrics(cash, portfolio_value)
@@ -743,18 +743,18 @@ class InputPanel(QWidget):
             else:
                 error_message = result.get('warning_message', 'Unknown error')
                 self.show_message_box(
-                    QMessageBox.Critical,
+                    QMessageBox.Icon.Critical,
                     "Error",
                     f"Failed to execute strategy: {error_message}",
-                    QMessageBox.Ok
+                    QMessageBox.StandardButton.Ok
                 )
                 self.update_financial_metrics()
         except Exception as e:
             logger.error(f"Error in update_portfolio: {e}", exc_info=True)
             self.show_message_box(
-                QMessageBox.Critical,
+                QMessageBox.Icon.Critical,
                 "Error",
                 f"Failed to run strategy: {e}",
-                QMessageBox.Ok
+                QMessageBox.StandardButton.Ok
             )
             self.update_financial_metrics()

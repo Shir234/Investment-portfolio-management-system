@@ -1,14 +1,14 @@
-from PyQt5.QtWidgets import QSplashScreen, QLabel, QVBoxLayout, QWidget, QFrame
-from PyQt5.QtGui import QPixmap, QFont, QColor
-from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QPoint
-from PyQt5.QtWidgets import QApplication, QGraphicsOpacityEffect
+from PyQt6.QtWidgets import QSplashScreen, QLabel, QVBoxLayout, QWidget, QFrame
+from PyQt6.QtGui import QPixmap, QFont, QColor
+from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QPoint
+from PyQt6.QtWidgets import QApplication, QGraphicsOpacityEffect
 
 class SplashScreen(QWidget):  # Changed from QSplashScreen to QWidget
     def __init__(self):
         super().__init__()
         # Remove window frame and stay on top
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
         # Create main layout
         main_layout = QVBoxLayout(self)
@@ -33,9 +33,9 @@ class SplashScreen(QWidget):  # Changed from QSplashScreen to QWidget
         # Load and scale the logo
         logo_label = QLabel()
         pixmap = QPixmap("logo.JPG")
-        scaled_pixmap = pixmap.scaled(300, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled_pixmap = pixmap.scaled(300, 300, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         logo_label.setPixmap(scaled_pixmap)
-        logo_label.setAlignment(Qt.AlignCenter)
+        logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # Create welcome message
         self.label = QLabel("Welcome to SharpSight")
@@ -46,7 +46,7 @@ class SplashScreen(QWidget):  # Changed from QSplashScreen to QWidget
                 font-weight: bold;
             }
         """)
-        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # Add widgets to layouts
         container_layout.addWidget(logo_label)

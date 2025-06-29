@@ -19,9 +19,9 @@ base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(base_dir)
 sys.path.append(os.path.join(base_dir, 'backend'))
 
-from PyQt5.QtWidgets import QApplication, QFileDialog, QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QToolButton, QMessageBox
-from PyQt5.QtGui import QPalette, QColor, QIcon
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QFileDialog, QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QToolButton, QMessageBox
+from PyQt6.QtGui import QPalette, QColor, QIcon
+from PyQt6.QtCore import Qt
 from frontend.gui.main_window import MainWindow
 from frontend.gui.splash_screen import SplashScreen
 from frontend.data.data_manager import DataManager
@@ -38,19 +38,19 @@ def set_dark_mode(app):
     """Apply dark mode styling to the application."""
     logger.info("Setting dark mode")
     dark_palette = QPalette()
-    dark_palette.setColor(QPalette.Window, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.WindowText, Qt.white)
-    dark_palette.setColor(QPalette.Base, QColor(25, 25, 25))
-    dark_palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.ToolTipBase, Qt.white)
-    dark_palette.setColor(QPalette.ToolTipText, Qt.black)
-    dark_palette.setColor(QPalette.Text, Qt.white)
-    dark_palette.setColor(QPalette.Button, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.ButtonText, Qt.white)
-    dark_palette.setColor(QPalette.BrightText, Qt.red)
-    dark_palette.setColor(QPalette.Link, QColor(42, 130, 218))
-    dark_palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
-    dark_palette.setColor(QPalette.HighlightedText, Qt.black)
+    dark_palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
+    dark_palette.setColor(QPalette.ColorRole.Base, QColor(25, 25, 25))
+    dark_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
+    dark_palette.setColor(QPalette.ColorRole.ToolTipText, Qt.GlobalColor.black)
+    dark_palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
+    dark_palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
+    dark_palette.setColor(QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
+    dark_palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
+    dark_palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
+    dark_palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
     app.setPalette(dark_palette)
     app.setStyleSheet("""
         QWidget { background-color: #353535; color: #ffffff; }
@@ -75,7 +75,7 @@ class HelpDialog(QDialog):
         super().__init__()
         self.setWindowTitle("CSV File Help")
         self.setFixedSize(450, 300)
-        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
         self.setup_ui()
 
     def setup_ui(self):
@@ -85,7 +85,7 @@ class HelpDialog(QDialog):
 
         title = QLabel("CSV File Requirements")
         title.setStyleSheet("font-size: 14px; font-weight: bold; color: #ffffff;")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         instructions = QLabel(
@@ -97,7 +97,7 @@ class HelpDialog(QDialog):
             "A sample file is available in the 'data/' folder."
         )
         instructions.setStyleSheet("color: #ffffff; font-size: 12px;")
-        instructions.setAlignment(Qt.AlignLeft)
+        instructions.setAlignment(Qt.AlignmentFlag.AlignLeft)
         instructions.setWordWrap(True)
         layout.addWidget(instructions)
 
@@ -114,7 +114,7 @@ class StarterDialog(QDialog):
         super().__init__()
         self.setWindowTitle("Welcome to SharpSight")
         self.setFixedSize(400, 200)
-        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
         self.setup_ui()
 
     def setup_ui(self):
@@ -125,12 +125,12 @@ class StarterDialog(QDialog):
 
         title = QLabel("Welcome to SharpSight Investment System")
         title.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         prompt = QLabel("Please select 'all_tickers_results.csv' to begin.")
         prompt.setStyleSheet("color: #ffffff; font-size: 12px;")
-        prompt.setAlignment(Qt.AlignCenter)
+        prompt.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(prompt)
 
         button_layout = QHBoxLayout()
@@ -174,7 +174,7 @@ def main():
     logger.info("Dark mode set")
     starter = StarterDialog()
     logger.info("StarterDialog created")
-    if starter.exec_() != QDialog.Accepted:
+    if starter.exec() != QDialog.DialogCode.Accepted:
         logger.info("User cancelled file selection")
         sys.exit(1)
     logger.info("StarterDialog accepted")
@@ -183,7 +183,7 @@ def main():
         "Select all_tickers_results.csv",
         "",
         "CSV Files (*.csv)",
-        options=QFileDialog.DontUseNativeDialog
+        options=QFileDialog.Option.DontUseNativeDialog
     )
     logger.info(f"Selected CSV: {csv_path}")
     if not csv_path:
@@ -195,16 +195,16 @@ def main():
     if data_manager.data is None or data_manager.data.empty:
         error_msg = f"Failed to load CSV: {data_manager.csv_path}"
         msg = QMessageBox()
-        msg.setIcon(QMessageBox.Critical)
+        msg.setIcon(QMessageBox.Icon.Critical)
         msg.setWindowTitle("Error")
         msg.setText(error_msg)
-        msg.setStandardButtons(QMessageBox.Ok)
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
         msg.setStyleSheet("""
             QMessageBox { background-color: #353535; color: white; }
             QMessageBox QLabel { color: white; }
             QMessageBox QPushButton { background-color: #444444; color: white; }
         """)
-        msg.exec_()
+        msg.exec()
         logger.error(error_msg)
         sys.exit(1)
 
@@ -215,7 +215,7 @@ def main():
     logger.info("MainWindow created")
     splash.finish(window)
     logger.info("Application fully loaded")
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == '__main__':
     main()

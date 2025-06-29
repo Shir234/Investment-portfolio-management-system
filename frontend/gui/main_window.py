@@ -1,7 +1,7 @@
 import os
 import sys
-from PyQt5.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QApplication
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QApplication
+from PyQt6.QtCore import Qt
 from frontend.gui.input_panel import InputPanel
 from frontend.gui.analysis_dashboard import AnalysisDashboard
 from frontend.gui.recommendation_panel import RecommendationPanel
@@ -42,7 +42,8 @@ class MainWindow(QMainWindow):
         self.apply_button_style()
 
         # Set the button as a corner widget of the tab widget
-        self.tabs.setCornerWidget(self.theme_button, Qt.TopRightCorner)
+        self.tabs.setCornerWidget(self.theme_button, Qt.Corner.TopRightCorner)
+
         
         # Add tabs directly to main layout
         main_layout.addWidget(self.tabs)
