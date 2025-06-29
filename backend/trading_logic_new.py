@@ -77,11 +77,23 @@ def load_ticker_weights(weights_file=None):
     # Define possible file locations
     if weights_file is None:
         filename = 'final_tickers_score.csv'
+
+        # Get the current file's directory
+        current_file_dir = os.path.dirname(os.path.abspath(__file__))
+
         possible_paths = [
-            filename,  # Current directory
-            os.path.join('backend', 'data', filename),  # From frontend
-            os.path.join('data', filename),  # From backend
-            os.path.join('..', '..', '..', 'Investment-portfolio-management-system', 'backend', 'data', filename),  # Relative path
+            # Direct filename (current directory)
+            filename,
+            os.path.join('data', filename), # when run from backend
+            os.path.join('backend', 'data', filename),
+            os.path.join('..', 'backend', 'data', filename), # when run from frontend
+            os.path.join('backend', 'data', filename),
+            # Absolute path construction based on current file location
+            os.path.join(current_file_dir, 'data', filename),  # Same directory as trading_logic_new.py
+            os.path.join(current_file_dir, '..', 'backend', 'data', filename),  # Navigate to backend
+            # Alternative relative paths
+            os.path.join('..', '..', 'backend', 'data', filename),
+            os.path.join('Investment-portfolio-management-system', 'backend', 'data', filename)
         ]
     else:
         possible_paths = [weights_file]
@@ -89,10 +101,15 @@ def load_ticker_weights(weights_file=None):
     try:
         # Try to find the file in possible locations
         weights_file_path = None
+        logger.info(f"Current working directory: {os.getcwd()}")
+        logger.info(f"Trading logic file location: {os.path.abspath(__file__)}")
+
         for path in possible_paths:
             if os.path.exists(path):
                 weights_file_path = path
+                abs_path = os.path.abspath(path)
                 logger.info(f"Found weights file at: {path}")
+                logger.info(f"  Absolute path: {abs_path}")
                 break
         
         if weights_file_path is None:
