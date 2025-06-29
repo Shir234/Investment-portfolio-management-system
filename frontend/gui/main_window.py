@@ -21,18 +21,6 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Theme toggle button layout
-        theme_layout = QHBoxLayout()
-        theme_layout.addStretch()  # Push button to the right
-        self.theme_button = QPushButton("🌙")
-        self.theme_button.setFixedSize(24, 24)
-        self.theme_button.clicked.connect(self.toggle_theme)
-        self.theme_button.setStyleSheet(
-            "background-color: #2a82da; color: #ffffff; border-radius: 12px;"
-        )  # Fixed stylesheet
-        theme_layout.addWidget(self.theme_button)
-        main_layout.addLayout(theme_layout)
-
         # Create tab widget
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet(
@@ -40,10 +28,23 @@ class MainWindow(QMainWindow):
             "QTabBar::tab { background-color: #3c3f41; color: #ffffff; padding: 8px; } "
             "QTabBar::tab:selected { background-color: #2a82da; }"
             if self.is_dark_mode else
-            "QTabWidget::pane { background-color: #ffffff; } "
-            "QTabBar::tab { background-color: #e0e0e0; color: black; padding: 8px; } "
-            "QTabBar::tab:selected { background-color: #2a82da; }"
+            "QTabWidget::pane { background-color: #e8e8e8; } "
+            "QTabBar::tab { background-color: #d0d0d0; color: #2c2c2c; padding: 8px; } "
+            "QTabBar::tab:selected { background-color: #2a82da; color: #ffffff; }"
         )
+
+        # Theme toggle button
+        self.theme_button = QPushButton("🌙 Dark")
+        self.theme_button.setFixedSize(90, 28)  # Fixed size - keep this consistent
+        self.theme_button.clicked.connect(self.toggle_theme)
+        
+        # Apply initial styling using the same method as toggle
+        self.apply_button_style()
+
+        # Set the button as a corner widget of the tab widget
+        self.tabs.setCornerWidget(self.theme_button, Qt.TopRightCorner)
+        
+        # Add tabs directly to main layout
         main_layout.addWidget(self.tabs)
 
         # Initialize panels
@@ -55,30 +56,67 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.input_panel, "Portfolio Setup")
         self.tabs.addTab(self.dashboard_panel, "Dashboard")
         self.tabs.addTab(self.recommendation_panel, "Trading History")
+    
+    def get_button_style(self, text_color="#ffffff"):
+        """Get consistent button styling - SINGLE SOURCE OF TRUTH"""
+        return f"""
+            QPushButton {{
+                background-color: #2a82da;
+                color: {text_color};
+                border-radius: 14px;
+                font-size: 11px;
+                font-weight: bold;
+                border: none;
+                padding: 4px 8px;
+                margin-right: 18px;
+                margin-top: 6px;
+                margin-bottom: 2px;
+            }}
+            QPushButton:hover {{
+                background-color: #3a92ea;
+            }}
+            QPushButton:pressed {{
+                background-color: #1a72ca;
+            }}
+        """
+
+    def apply_button_style(self):
+        """Apply button styling consistently"""
+        text_color = "#ffffff" if self.is_dark_mode else "#000000"
+        self.theme_button.setStyleSheet(self.get_button_style(text_color))
 
     def toggle_theme(self):
         """Toggle between light and dark mode."""
         self.is_dark_mode = not self.is_dark_mode
-        self.theme_button.setText("🌙" if self.is_dark_mode else "☀")
-        self.theme_button.setStyleSheet(
-            "background-color: #2a82da; color: #ffffff; border-radius: 12px;"
-            if self.is_dark_mode else
-            "background-color: #2a82da; color: black; border-radius: 12px;"
-        )
+        
+        # Update button text
+        if self.is_dark_mode:
+            self.theme_button.setText("🌙 Dark")
+        else:
+            self.theme_button.setText("☀ Light")
+
+        # Apply consistent button styling
+        self.apply_button_style()
+        
+        # Update main window style
         self.setStyleSheet(
             "background-color: #353535; color: #ffffff;"
             if self.is_dark_mode else
-            "background-color: #f0f0f0; color: black;"
+            "background-color: #e0e0e0; color: #2c2c2c;"  # Darker light gray - more comfortable
         )
+
+        # Update tabs style
         self.tabs.setStyleSheet(
             "QTabWidget::pane { background-color: #2b2b2b; } "
             "QTabBar::tab { background-color: #3c3f41; color: #ffffff; padding: 8px; } "
             "QTabBar::tab:selected { background-color: #2a82da; }"
             if self.is_dark_mode else
-            "QTabWidget::pane { background-color: #ffffff; } "
-            "QTabBar::tab { background-color: #e0e0e0; color: black; padding: 8px; } "
-            "QTabBar::tab:selected { background-color: #2a82da; }"
+            "QTabWidget::pane { background-color: #e8e8e8; } "
+            "QTabBar::tab { background-color: #d0d0d0; color: #2c2c2c; padding: 8px; } "
+            "QTabBar::tab:selected { background-color: #2a82da; color: #ffffff; }"
         )
+
+        # Update panel themes
         self.input_panel.set_theme(self.is_dark_mode)
         self.dashboard_panel.set_theme(self.is_dark_mode)
         self.recommendation_panel.set_theme(self.is_dark_mode)

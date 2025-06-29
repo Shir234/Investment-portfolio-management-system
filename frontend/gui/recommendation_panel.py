@@ -54,11 +54,24 @@ class RecommendationPanel(QWidget):
         # Table for trade history
         self.table = QTableWidget()
         self.table.setColumnCount(14)
+        # self.table.setHorizontalHeaderLabels([
+        #     "Date", "Ticker", "Action", "Portfolio Value", "Shares", "Price", 
+        #     "Investment Amount", "Transaction Cost", "Previous Shares", 
+        #     "Total Shares", "Pred. Sharpe", "Actual Sharpe", 
+        #     "Ticker Weight", "Signal Strength"
+        # ])
         self.table.setHorizontalHeaderLabels([
-            "Date", "Ticker", "Action", "Portfolio Value", "Shares", "Price", 
-            "Investment Amount", "Transaction Cost", "Previous Shares", 
-            "Total Shares", "Pred. Sharpe", "Actual Sharpe", 
-            "Ticker Weight", "Signal Strength"
+                "Date",           # When the trade happened
+                "Ticker",         # Stock symbol  
+                "Action",         # Buy/Sell
+                "Price",          # Price per share
+                "Shares",         # Shares in this transaction
+                "Trade Value",    # shares * price (gross amount)
+                "Total Cost",     # Trade value + transaction costs
+                "Total Shares",   # Cumulative shares after this trade
+                "Pred. Sharpe",   # Prediction that triggered the trade
+                "Actual Sharpe",  # Actual Sharpe to show in the test
+                "Signal Strength" # How strong the signal was
         ])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setStyleSheet(
@@ -155,23 +168,113 @@ class RecommendationPanel(QWidget):
             self.trade_count_label.setText(f"Number of Orders: {len(orders_df)}")
             
             for row, order in orders_df.iterrows():
+                # Column 0: Date
                 self.table.setItem(row, 0, QTableWidgetItem(str(order.get('date', ''))))
+                # Column 1: Ticker
                 self.table.setItem(row, 1, QTableWidgetItem(order.get('ticker', '')))
-                self.table.setItem(row, 2, QTableWidgetItem(order.get('action', '')))
-                portfolio_value = order.get('total_proceeds', order.get('total_cost', 0))  # Approximate
-                self.table.setItem(row, 3, QTableWidgetItem(f"${portfolio_value:,.2f}"))
-                self.table.setItem(row, 4, QTableWidgetItem(str(order.get('shares_amount', 0))))
-                self.table.setItem(row, 5, QTableWidgetItem(f"${order.get('price', 0):,.2f}"))
-                self.table.setItem(row, 6, QTableWidgetItem(f"${order.get('investment_amount', 0):,.2f}"))
-                self.table.setItem(row, 7, QTableWidgetItem(f"${order.get('transaction_cost', 0):,.2f}"))
-                self.table.setItem(row, 8, QTableWidgetItem(str(order.get('previous_shares', 0))))
-                self.table.setItem(row, 9, QTableWidgetItem(str(order.get('new_total_shares', 0))))
-                sharpe = order.get('sharpe', 0)
-                self.table.setItem(row, 10, QTableWidgetItem(f"{sharpe:.2f}" if sharpe != -1 else "N/A"))
-                actual_sharpe = self.get_actual_sharpe(order.get('ticker', ''), order.get('date', ''))
-                self.table.setItem(row, 11, QTableWidgetItem(f"{actual_sharpe:.2f}" if actual_sharpe != -1 else "N/A"))
-                self.table.setItem(row, 12, QTableWidgetItem(f"{order.get('ticker_weight', 0):.2%}"))
-                self.table.setItem(row, 13, QTableWidgetItem(f"{order.get('signal_strength', 0):.2f}"))
+                # Column 2: Action
+                action = order.get('action', '').upper()
+                self.table.setItem(row, 2, QTableWidgetItem(action))
+                ###self.table.setItem(row, 2, QTableWidgetItem(order.get('action', '')))
+
+                # Column 3: Price
+                price = order.get('price', 0)
+                self.table.setItem(row, 3, QTableWidgetItem(f"${price:,.2f}"))
+                ###self.table.setItem(row, 3, QTableWidgetItem(f"${order.get('price', 0):,.2f}"))
+                
+                # Column 4: Shares
+                shares = order.get('shares_amount', 0)
+                self.table.setItem(row, 4, QTableWidgetItem(str(shares)))
+                ###self.table.setItem(row, 4, QTableWidgetItem(str(order.get('shares_amount', 0))))
+                
+                # Column 5: Trade Value (shares * price)
+                trade_value = price * shares
+                self.table.setItem(row, 5, QTableWidgetItem(f"${trade_value:,.2f}"))
+                # trade_value = order.get('price', 0) * order.get('shares_amount', 0)
+                # self.table.setItem(row, 5, QTableWidgetItem(f"${trade_value:,.2f}"))
+                
+                # Column 6: Total Cost (different calculation for buy vs sell)
+                if action.lower() == 'buy':
+                    # For buys: investment_amount + transaction_cost OR total_cost
+                    total_cost = order.get('total_cost', 
+                        order.get('investment_amount', 0) + order.get('transaction_cost', 0))
+                else:  # sell
+                    # For sells: use total_proceeds
+                    total_cost = order.get('total_proceeds', 
+                        trade_value - order.get('transaction_cost', 0))
+                self.table.setItem(row, 6, QTableWidgetItem(f"${total_cost:,.2f}"))
+                # total_cost = order.get('investment_amount', 0) + order.get('transaction_cost', 0)
+                # self.table.setItem(row, 6, QTableWidgetItem(f"${total_cost:,.2f}"))
+
+                # Column 7: Total Shares (different logic for buy vs sell)
+                if action.lower() == 'buy':
+                    total_shares = order.get('new_total_shares', order.get('total_shares', 0))
+                else:  # sell
+                    # For sells, show remaining shares (could be 0 if position closed)
+                    total_shares = order.get('new_total_shares', 0)
+                if pd.isna(total_shares) or total_shares is None:
+                    total_shares = 0
+                elif isinstance(total_shares, (int, float)) and total_shares == int(total_shares):
+                    total_shares = int(total_shares)
+                self.table.setItem(row, 7, QTableWidgetItem(str(total_shares)))
+                ###self.table.setItem(row, 7, QTableWidgetItem(str(order.get('total_shares', 0))))
+
+                # Column 8: Pred. Sharpe (show "SELL" for sell orders)
+                if action.lower() == 'sell':
+                    sharpe_display = "SELL"
+                else:
+                    sharpe = order.get('sharpe', order.get('Best_Prediction', 0))
+                    if sharpe == -1 or pd.isna(sharpe):
+                        sharpe_display = "N/A"
+                    else:
+                        sharpe_display = f"{sharpe:.3f}"
+                self.table.setItem(row, 8, QTableWidgetItem(sharpe_display))
+                # sharpe = order.get('sharpe', 0)
+                # self.table.setItem(row, 10, QTableWidgetItem(f"{sharpe:.2f}" if sharpe != -1 else "N/A"))
+
+                # Column 9: Actual. Sharpe (show "SELL" for sell orders)
+                if action.lower() == 'sell':
+                    actual_sharpe_display = "SELL"
+                else:
+                    actual_sharpe = self.get_actual_sharpe(order.get('ticker', ''), order.get('date', ''))
+                    if isinstance(actual_sharpe, (int, float)):
+                        if actual_sharpe == -1 or pd.isna(actual_sharpe):
+                            actual_sharpe_display = "N/A"
+                        else:
+                            actual_sharpe_display = f"{actual_sharpe:.3f}"
+                    else:
+                        actual_sharpe_display = str(actual_sharpe)  # In case it already returns a string
+                self.table.setItem(row, 9, QTableWidgetItem(actual_sharpe_display))
+
+                # Column 10: Signal Strength (show "N/A" for sell orders or if missing)
+                if action.lower() == 'sell':
+                    signal_display = "SELL"
+                else:
+                    signal_strength = order.get('signal_strength', 0)
+                    if pd.isna(signal_strength) or signal_strength == 0:
+                        signal_display = "N/A"
+                    else:
+                        signal_display = f"{signal_strength:.3f}"
+                self.table.setItem(row, 10, QTableWidgetItem(signal_display))
+                ###self.table.setItem(row, 13, QTableWidgetItem(f"{order.get('signal_strength', 0):.2f}"))
+               
+                # self.table.setItem(row, 0, QTableWidgetItem(str(order.get('date', ''))))
+                # self.table.setItem(row, 1, QTableWidgetItem(order.get('ticker', '')))
+                # self.table.setItem(row, 2, QTableWidgetItem(order.get('action', '')))
+                # portfolio_value = order.get('total_proceeds', order.get('total_cost', 0))  # Approximate
+                # self.table.setItem(row, 3, QTableWidgetItem(f"${portfolio_value:,.2f}"))
+                # self.table.setItem(row, 4, QTableWidgetItem(str(order.get('shares_amount', 0))))
+                # self.table.setItem(row, 5, QTableWidgetItem(f"${order.get('price', 0):,.2f}"))
+                # self.table.setItem(row, 6, QTableWidgetItem(f"${order.get('investment_amount', 0):,.2f}"))
+                # self.table.setItem(row, 7, QTableWidgetItem(f"${order.get('transaction_cost', 0):,.2f}"))
+                # self.table.setItem(row, 8, QTableWidgetItem(str(order.get('previous_shares', 0))))
+                # self.table.setItem(row, 9, QTableWidgetItem(str(order.get('new_total_shares', 0))))
+                # sharpe = order.get('sharpe', 0)
+                # self.table.setItem(row, 10, QTableWidgetItem(f"{sharpe:.2f}" if sharpe != -1 else "N/A"))
+                # actual_sharpe = self.get_actual_sharpe(order.get('ticker', ''), order.get('date', ''))
+                # self.table.setItem(row, 11, QTableWidgetItem(f"{actual_sharpe:.2f}" if actual_sharpe != -1 else "N/A"))
+                # self.table.setItem(row, 12, QTableWidgetItem(f"{order.get('ticker_weight', 0):.2%}"))
+                # self.table.setItem(row, 13, QTableWidgetItem(f"{order.get('signal_strength', 0):.2f}"))
                 
                 for col in range(14):
                     if self.table.item(row, col):
