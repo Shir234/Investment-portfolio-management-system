@@ -1,141 +1,372 @@
 import os
 import sys
-from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QApplication
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QApplication, QFrame, QLabel
+from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect
+from PyQt6.QtGui import QIcon
 from frontend.gui.input_panel import InputPanel
 from frontend.gui.analysis_dashboard import AnalysisDashboard
 from frontend.gui.recommendation_panel import RecommendationPanel
+from frontend.gui.styles import ModernStyles
 
 class MainWindow(QMainWindow):
     def __init__(self, data_manager, parent=None):
-        """Initialize the main window with a data manager and optional parent."""
+        """Initialize the modern main window with enhanced styling."""
         super().__init__(parent)
         self.data_manager = data_manager
         self.is_dark_mode = True  # Default to dark mode
-        self.setWindowTitle("Investment Portfolio Management System")
-        self.setGeometry(100, 100, 800, 600)
-
+        
+        # Window setup
+        self.setWindowTitle("SharpSight Investment System")
+        self.setGeometry(100, 100, 1200, 800)  # Larger default size
+        self.setMinimumSize(1000, 700)  # Minimum size for better UX
+        
+        # Create the UI
+        self.setup_ui()
+        self.apply_modern_theme()
+        
+    def setup_ui(self):
+        """Setup the modern UI with better layout and spacing."""
         # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setContentsMargins(20, 20, 20, 20)  # More generous margins
+        main_layout.setSpacing(16)
+        
+        # Create header with title and theme toggle
+        self.create_header(main_layout)
+        
+        # Create modern tab widget
+        self.create_tab_widget(main_layout)
+        
+        # Initialize panels with modern styling
+        self.initialize_panels()
+        
+    def create_header(self, main_layout):
+        """Create a modern header with title and controls."""
+        header_frame = QFrame()
+        header_frame.setFixedHeight(80)
+        header_layout = QHBoxLayout(header_frame)
+        header_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Create tab widget
-        self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(
-            "QTabWidget::pane { background-color: #2b2b2b; } "
-            "QTabBar::tab { background-color: #3c3f41; color: #ffffff; padding: 8px; } "
-            "QTabBar::tab:selected { background-color: #2a82da; }"
-            if self.is_dark_mode else
-            "QTabWidget::pane { background-color: #e8e8e8; } "
-            "QTabBar::tab { background-color: #d0d0d0; color: #2c2c2c; padding: 8px; } "
-            "QTabBar::tab:selected { background-color: #2a82da; color: #ffffff; }"
-        )
-
-        # Theme toggle button
-        self.theme_button = QPushButton("🌙 Dark")
-        self.theme_button.setFixedSize(90, 28)  # Fixed size - keep this consistent
+        # App title and subtitle
+        title_layout = QVBoxLayout()
+        title_layout.setSpacing(4)
+        
+        self.title_label = QLabel("SharpSight")
+        self.title_label.setProperty("class", "title")
+        
+        self.subtitle_label = QLabel("Investment Portfolio Management System")
+        self.subtitle_label.setProperty("class", "subtitle")
+        
+        title_layout.addWidget(self.title_label)
+        title_layout.addWidget(self.subtitle_label)
+        title_layout.addStretch()
+        
+        header_layout.addLayout(title_layout)
+        header_layout.addStretch()
+        
+        # Theme toggle button (no emoji)
+        self.theme_button = QPushButton("Light Mode")  # Start with "Light Mode" since we default to dark
+        self.theme_button.setProperty("class", "theme-toggle")
+        self.theme_button.setFixedSize(120, 40)
         self.theme_button.clicked.connect(self.toggle_theme)
         
-        # Apply initial styling using the same method as toggle
-        self.apply_button_style()
-
-        # Set the button as a corner widget of the tab widget
-        self.tabs.setCornerWidget(self.theme_button, Qt.Corner.TopRightCorner)
-
+        header_layout.addWidget(self.theme_button)
+        main_layout.addWidget(header_frame)
         
-        # Add tabs directly to main layout
-        main_layout.addWidget(self.tabs)
-
-        # Initialize panels
+    def create_tab_widget(self, main_layout):
+        """Create modern tab widget with better styling."""
+        self.tabs = QTabWidget()
+        self.tabs.setTabPosition(QTabWidget.TabPosition.North)
+        self.tabs.setMovable(False)
+        self.tabs.setTabsClosable(False)
+        
+        # Add some padding around tab content
+        tab_frame = QFrame()
+        tab_layout = QVBoxLayout(tab_frame)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+        tab_layout.addWidget(self.tabs)
+        
+        main_layout.addWidget(tab_frame)
+        
+    def initialize_panels(self):
+        """Initialize all panels with modern styling."""
+        # Create panels with date constraints
         self.input_panel = InputPanel(self.data_manager, self)
         self.dashboard_panel = AnalysisDashboard(self.data_manager, self)
         self.recommendation_panel = RecommendationPanel(self.data_manager, self)
-
-        # Add panels to tabs
+        
+        # Set date constraints based on data
+        self.set_date_constraints()
+        
+        # Add panels to tabs without emojis
         self.tabs.addTab(self.input_panel, "Portfolio Setup")
-        self.tabs.addTab(self.dashboard_panel, "Dashboard")
+        self.tabs.addTab(self.dashboard_panel, "Analytics Dashboard")
         self.tabs.addTab(self.recommendation_panel, "Trading History")
-    
-    def get_button_style(self, text_color="#ffffff"):
-        """Get consistent button styling - SINGLE SOURCE OF TRUTH"""
-        return f"""
-            QPushButton {{
-                background-color: #2a82da;
-                color: {text_color};
-                border-radius: 14px;
-                font-size: 11px;
-                font-weight: bold;
-                border: none;
-                padding: 4px 8px;
-                margin-right: 18px;
-                margin-top: 6px;
-                margin-bottom: 2px;
-            }}
-            QPushButton:hover {{
-                background-color: #3a92ea;
-            }}
-            QPushButton:pressed {{
-                background-color: #1a72ca;
-            }}
-        """
-
-    def apply_button_style(self):
-        """Apply button styling consistently"""
-        text_color = "#ffffff" if self.is_dark_mode else "#000000"
-        self.theme_button.setStyleSheet(self.get_button_style(text_color))
-
+        
+        # Set initial tab
+        self.tabs.setCurrentIndex(0)
+        
+    def set_date_constraints(self):
+        """Set date constraints based on available data in the CSV file."""
+        if self.data_manager and self.data_manager.data is not None:
+            try:
+                # Get date range from data
+                dates = self.data_manager.data['Date'].dropna()
+                if not dates.empty:
+                    # Convert to datetime if not already
+                    import pandas as pd
+                    dates = pd.to_datetime(dates)
+                    
+                    min_date = dates.min().date()
+                    max_date = dates.max().date()
+                    
+                    # Set constraints in input panel if it has date fields
+                    if hasattr(self.input_panel, 'set_date_constraints'):
+                        self.input_panel.set_date_constraints(min_date, max_date)
+                    elif hasattr(self.input_panel, 'start_date_edit') and hasattr(self.input_panel, 'end_date_edit'):
+                        # Direct access to date widgets
+                        from PyQt6.QtCore import QDate
+                        
+                        # Convert Python dates to QDate
+                        q_min_date = QDate(min_date.year, min_date.month, min_date.day)
+                        q_max_date = QDate(max_date.year, max_date.month, max_date.day)
+                        
+                        # Set date ranges
+                        self.input_panel.start_date_edit.setDateRange(q_min_date, q_max_date)
+                        self.input_panel.end_date_edit.setDateRange(q_min_date, q_max_date)
+                        
+                        # Set default values
+                        self.input_panel.start_date_edit.setDate(q_min_date)
+                        self.input_panel.end_date_edit.setDate(q_max_date)
+                        
+            except Exception as e:
+                print(f"Error setting date constraints: {e}")
+        
+    def apply_modern_theme(self):
+        """Apply the complete modern theme."""
+        style = ModernStyles.get_complete_style(self.is_dark_mode)
+        self.setStyleSheet(style)
+        
+        # Update colors for specific elements
+        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
+        
+        # Header styling
+        if hasattr(self, 'title_label'):
+            self.title_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {colors['text_primary']};
+                    font-size: 28px;
+                    font-weight: 700;
+                    margin: 0;
+                }}
+            """)
+            
+        if hasattr(self, 'subtitle_label'):
+            self.subtitle_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {colors['text_secondary']};
+                    font-size: 14px;
+                    font-weight: 400;
+                    margin: 0;
+                }}
+            """)
+        
     def toggle_theme(self):
-        """Toggle between light and dark mode."""
+        """Toggle between light and dark mode with smooth transition."""
         self.is_dark_mode = not self.is_dark_mode
         
-        # Update button text
+        # Update button text (no emojis)
         if self.is_dark_mode:
-            self.theme_button.setText("🌙 Dark")
+            self.theme_button.setText("Light Mode")
         else:
-            self.theme_button.setText("☀ Light")
-
-        # Apply consistent button styling
-        self.apply_button_style()
+            self.theme_button.setText("Dark Mode")
         
-        # Update main window style
-        self.setStyleSheet(
-            "background-color: #353535; color: #ffffff;"
-            if self.is_dark_mode else
-            "background-color: #e0e0e0; color: #2c2c2c;"  # Darker light gray - more comfortable
-        )
-
-        # Update tabs style
-        self.tabs.setStyleSheet(
-            "QTabWidget::pane { background-color: #2b2b2b; } "
-            "QTabBar::tab { background-color: #3c3f41; color: #ffffff; padding: 8px; } "
-            "QTabBar::tab:selected { background-color: #2a82da; }"
-            if self.is_dark_mode else
-            "QTabWidget::pane { background-color: #e8e8e8; } "
-            "QTabBar::tab { background-color: #d0d0d0; color: #2c2c2c; padding: 8px; } "
-            "QTabBar::tab:selected { background-color: #2a82da; color: #ffffff; }"
-        )
-
-        # Update panel themes
-        self.input_panel.set_theme(self.is_dark_mode)
-        self.dashboard_panel.set_theme(self.is_dark_mode)
-        self.recommendation_panel.set_theme(self.is_dark_mode)
-        self.update_style_recursive(self)
+        # Apply new theme
+        self.apply_modern_theme()
+        
+        # Update all panels
+        if hasattr(self.input_panel, 'set_theme'):
+            self.input_panel.set_theme(self.is_dark_mode)
+        if hasattr(self.dashboard_panel, 'set_theme'):
+            self.dashboard_panel.set_theme(self.is_dark_mode)
+        if hasattr(self.recommendation_panel, 'set_theme'):
+            self.recommendation_panel.set_theme(self.is_dark_mode)
+        
+        # Force update all widgets
+        self.update_all_widgets()
+        
+        # Update message box styles for any future dialogs
+        self.update_message_box_styles()
+    
+    def update_message_box_styles(self):
+        """Update message box styling for current theme."""
+        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
+        
+        # Store the current theme colors for message boxes
+        self._current_theme_colors = colors
+        
+    def update_all_widgets(self):
+        """Recursively update all widget styles with better performance."""
+        # Get the current complete style
+        complete_style = ModernStyles.get_complete_style(self.is_dark_mode)
+        
+        # Apply to main window
+        self.setStyleSheet(complete_style)
+        
+        # Force application to process events and update styles
         QApplication.instance().processEvents()
-
-    def update_style_recursive(self, widget):
-        """Recursively update the style of all child widgets."""
-        for child in widget.findChildren(QWidget):
-            if hasattr(child, 'setStyleSheet'):
-                child.setStyleSheet(child.styleSheet())  # Reapply to force update
-            self.update_style_recursive(child)
-
+        
+        # Update specific widgets that might need manual refresh
+        if hasattr(self, 'tabs'):
+            self.tabs.setStyleSheet("")  # Clear
+            self.tabs.setStyleSheet(complete_style)  # Reapply
+            
+        # Recursively update all child widgets
+        self._update_widget_recursive(self)
+    
+    def _update_widget_recursive(self, widget):
+        """Recursively update widget styles."""
+        try:
+            # Update the widget itself
+            widget.update()
+            widget.repaint()
+            
+            # Update all children
+            for child in widget.findChildren(QWidget):
+                if child is not widget:  # Avoid infinite recursion
+                    child.update()
+                    child.repaint()
+        except Exception as e:
+            print(f"Error updating widget styles: {e}")
+            
     def update_dashboard(self):
         """Refresh the dashboard and recommendations."""
-        self.dashboard_panel.update_dashboard()
-        self.recommendation_panel.update_recommendations()
-
+        if hasattr(self.dashboard_panel, 'update_dashboard'):
+            self.dashboard_panel.update_dashboard()
+        if hasattr(self.recommendation_panel, 'update_recommendations'):
+            self.recommendation_panel.update_recommendations()
+        
     def update_recommendations(self):
         """Refresh the recommendations."""
-        self.recommendation_panel.update_recommendations()
+        if hasattr(self.recommendation_panel, 'update_recommendations'):
+            self.recommendation_panel.update_recommendations()
+            
+    def show_success_message(self, title, message):
+        """Show a success message with modern styling."""
+        from PyQt6.QtWidgets import QMessageBox
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        
+        # Apply modern styling to message box
+        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
+        msg.setStyleSheet(f"""
+            QMessageBox {{
+                background-color: {colors['primary']};
+                color: {colors['text_primary']};
+                font-size: 14px;
+                border: 1px solid {colors['border']};
+                border-radius: 12px;
+            }}
+            QMessageBox QLabel {{
+                color: {colors['text_primary']};
+                padding: 16px;
+                background-color: transparent;
+            }}
+            QMessageBox QPushButton {{
+                background-color: {colors['success']};
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: 600;
+                min-width: 80px;
+            }}
+            QMessageBox QPushButton:hover {{
+                background-color: #059669;
+            }}
+        """)
+        msg.exec()
+        
+    def show_error_message(self, title, message):
+        """Show an error message with modern styling."""
+        from PyQt6.QtWidgets import QMessageBox
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Critical)
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        
+        # Apply modern styling to message box
+        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
+        msg.setStyleSheet(f"""
+            QMessageBox {{
+                background-color: {colors['primary']};
+                color: {colors['text_primary']};
+                font-size: 14px;
+                border: 1px solid {colors['border']};
+                border-radius: 12px;
+            }}
+            QMessageBox QLabel {{
+                color: {colors['text_primary']};
+                padding: 16px;
+                background-color: transparent;
+            }}
+            QMessageBox QPushButton {{
+                background-color: {colors['danger']};
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: 600;
+                min-width: 80px;
+            }}
+            QMessageBox QPushButton:hover {{
+                background-color: #DC2626;
+            }}
+        """)
+        msg.exec()
+        
+    def show_warning_message(self, title, message):
+        """Show a warning message with modern styling."""
+        from PyQt6.QtWidgets import QMessageBox
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        # Apply modern styling to message box
+        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
+        msg.setStyleSheet(f"""
+            QMessageBox {{
+                background-color: {colors['primary']};
+                color: {colors['text_primary']};
+                font-size: 14px;
+                border: 1px solid {colors['border']};
+                border-radius: 12px;
+            }}
+            QMessageBox QLabel {{
+                color: {colors['text_primary']};
+                padding: 16px;
+                background-color: transparent;
+            }}
+            QMessageBox QPushButton {{
+                background-color: {colors['warning']};
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: 600;
+                min-width: 80px;
+                margin: 4px;
+            }}
+            QMessageBox QPushButton:hover {{
+                background-color: #D97706;
+            }}
+        """)
+        return msg.exec()
