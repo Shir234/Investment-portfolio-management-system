@@ -872,8 +872,8 @@ def main():
     # START_DATE = "2022-01-01" 
     # END_DATE = "2022-07-01" 
 
-    START_DATE = "2022-01-01" 
-    END_DATE = "2023-01-01" 
+    START_DATE = "2023-12-21" 
+    END_DATE = "2023-12-22" 
 
     # START_DATE = "2021-10-18" 
     # END_DATE = "2023-12-22" 

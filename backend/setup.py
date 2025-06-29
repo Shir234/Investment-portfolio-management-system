@@ -166,6 +166,10 @@ def create_requirements_file():
         "optuna-integration[tfkeras]",  # Added for TensorFlow/Keras integration with Optuna
         "ipykernel",  # For Jupyter notebook support in VS Code
         "pandas-datareader",  # Added for FRED data access
+        "pydrive",  # Added for Google Drive integration
+        "pytest",  # Added for testing framework
+        "pytest-qt",  # Added for Qt testing with pytest
+        "pyinstaller",  # Added for creating executable files
     ]
     
     with open(requirements_path, "w") as f:

@@ -73,6 +73,110 @@ def load_ticker_weights(weights_file=None):
     Load and normalize ticker weights from a CSV file.
     Preserve relative ordering - highest score still becomes highest normalized value 
     """
+    
+    # Define possible file locations
+    if weights_file is None:
+        filename = 'final_tickers_score.csv'
+        possible_paths = [
+            filename,  # Current directory
+            os.path.join('backend', 'data', filename),  # From frontend
+            os.path.join('data', filename),  # From backend
+            os.path.join('..', '..', '..', 'Investment-portfolio-management-system', 'backend', 'data', filename),  # Relative path
+        ]
+    else:
+        possible_paths = [weights_file]
+    
+    try:
+        # Try to find the file in possible locations
+        weights_file_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                weights_file_path = path
+                logger.info(f"Found weights file at: {path}")
+                break
+        
+        if weights_file_path is None:
+            logger.warning(f"Weights file not found in any of the expected locations: {possible_paths}")
+            logger.warning("Using default weight of 1.0 for all tickers.")
+            return {}
+        
+        df = pd.read_csv(weights_file_path)
+        weight_col = 'Transaction_Score'
+
+        if 'Ticker' not in df.columns or weight_col not in df.columns:
+            logger.error(f"Invalid weights file format. Columns found: {list(df.columns)}")
+            return {}
+        
+        df[weight_col] = pd.to_numeric(df[weight_col], errors='coerce')
+        df = df[df[weight_col].notnull()]
+
+        # Print head before normalization to verify data loaded correctly
+        print("Data loaded from weights file:")
+        print(df.head())
+        print(f"Shape: {df.shape}")
+        print(f"Score range: {df[weight_col].min():.4f} to {df[weight_col].max():.4f}")
+
+        # Normalize to -1 to +1 range (preserves meaning)
+        min_score = df[weight_col].min()
+        max_score = df[weight_col].max()
+        df['Trading_Signal'] = 2 * (df[weight_col] - min_score) / (max_score - min_score) - 1
+        
+        weights = dict(zip(df['Ticker'], df['Trading_Signal']))
+        logger.info(f"Successfully loaded {len(weights)} ticker weights")
+
+        return weights
+    
+    except Exception as e:
+        logger.error(f"Error loading ticker weights: {e}")
+        logger.warning("Using default weight of 1.0 for all tickers.")
+        return {}
+
+def load_ticker_weights0(weights_file='final_tickers_score.csv'):
+    """
+    Load and normalize ticker weights from a CSV file.
+    Preserve relative ordering - highest score still becomes highest normalized value 
+    """
+
+    try:
+        if not os.path.exists(weights_file):
+            logger.warning(f"Weights file {weights_file} not found. Using default weight of 1.0.")
+            return {}
+        
+        df = pd.read_csv(weights_file)
+        weight_col = 'Transaction_Score'
+
+        if 'Ticker' not in df.columns or weight_col not in df.columns:
+            logger.error(f"Invalid weights file format.")
+            return {}
+        
+        df[weight_col] = pd.to_numeric(df[weight_col], errors='coerce')
+        df = df[df[weight_col].notnull()]
+
+        # Print head before normalization to verify data loaded correctly
+        print("Data loaded from weights file:")
+        print(df.head())
+        print(f"Shape: {df.shape}")
+        print(f"Score range: {df[weight_col].min():.4f} to {df[weight_col].max():.4f}")
+
+        # Normalize to -1 to +1 range (preserves meaning)
+        min_score = df[weight_col].min()
+        max_score = df[weight_col].max()
+        df['Trading_Signal'] = 2 * (df[weight_col] - min_score) / (max_score - min_score) - 1
+        
+        weights = dict(zip(df['Ticker'], df['Trading_Signal']))
+
+        return weights
+    
+    except Exception as e:
+        logger.error(f"Error loading ticker weights: {e}")
+        return {}
+    
+
+def load_ticker_weights1(weights_file=None):
+    """
+    Load and normalize ticker weights from a CSV file.
+    Preserve relative ordering - highest score still becomes highest normalized value 
+    """
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
     if weights_file is None:
         weights_file = os.path.join(project_root, 'Investment-portfolio-management-system', 'backend', 'resources', 'final_tickers_score.csv')
@@ -123,6 +227,7 @@ def load_ticker_weights(weights_file=None):
     except Exception as e:
         logger.error(f"Error loading ticker weights: {e}")
         return {}
+
 
 def load_portfolio_state():
     """

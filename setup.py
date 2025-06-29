@@ -201,22 +201,6 @@ def create_tf_config_module():
     print("  - Import this module before TensorFlow to set environment variables programmatically")
 
 
-# def check_python_version():
-#     """Check if Python version is compatible."""
-#     print_section("Checking Python Version")
-    
-#     python_version = sys.version_info
-#     required_version = (3, 7)
-    
-#     if python_version < required_version:
-#         print(f"ERROR: Python {required_version[0]}.{required_version[1]} or higher required.")
-#         print(f"Current version: {python_version[0]}.{python_version[1]}")
-#         sys.exit(1)
-#     else:
-#         print(f"✓ Python version {python_version[0]}.{python_version[1]}.{python_version[2]} detected. Compatible!")
-
-
-
 def create_virtual_env(python_executable):
     """
     Create a virtual environment if one doesn't exist.
@@ -303,14 +287,6 @@ def create_requirements_file():
         print(f"  - {dep}")
 
 
-# def get_pip_path():
-#     """Get the pip executable path based on the OS."""
-#     if platform.system() == "Windows":
-#         return os.path.join("venv", "Scripts", "pip")
-#     else:
-#         return os.path.join("venv", "bin", "pip")
-
-
 def install_dependencies():
     """
     Install dependencies using the virtual environment Python.
@@ -384,7 +360,7 @@ def setup_project_structure():
     print_section("Setting Up Project Structure")
     
     # Define directories to create
-    directories = ["data", "models", "results", "scripts"]
+    directories = ["data", "results", "scripts"]
     
     for directory in directories:
         os.makedirs(directory, exist_ok=True)
