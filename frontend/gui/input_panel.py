@@ -5,13 +5,47 @@ from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdi
                              QDateEdit, QPushButton, QComboBox, QMessageBox,
                              QDoubleSpinBox, QDialog, QTableWidget, QTableWidgetItem,
                              QCheckBox)
-from PyQt5.QtCore import QDate, Qt
+from PyQt5.QtCore import QDate, Qt, QThread, QObject, pyqtSignal
 from frontend.logging_config import get_logger
 from frontend.data.trading_connector import execute_trading_strategy, get_order_history_df, log_trading_orders
 from backend.trading_logic_new import get_orders, get_portfolio_history
 
 # Set up logging
 logger = get_logger(__name__)
+
+class Worker(QObject):
+    """Worker class to run execute_trading_strategy in a background thread."""
+    finished = pyqtSignal(bool, dict)  # success, result
+    error = pyqtSignal(str)  # error message
+
+    def __init__(self, investment_amount, risk_level, start_date, end_date, data_manager, mode, reset_state, selected_orders=None):
+        super().__init__()
+        self.investment_amount = investment_amount
+        self.risk_level = risk_level
+        self.start_date = start_date
+        self.end_date = end_date
+        self.data_manager = data_manager
+        self.mode = mode
+        self.reset_state = reset_state
+        self.selected_orders = selected_orders
+
+    def run(self):
+        """Execute the trading strategy in the background."""
+        try:
+            success, result = execute_trading_strategy(
+                investment_amount=self.investment_amount,
+                risk_level=self.risk_level,
+                start_date=self.start_date,
+                end_date=self.end_date,
+                data_manager=self.data_manager,
+                mode=self.mode,
+                reset_state=self.reset_state,
+                selected_orders=self.selected_orders
+            )
+            self.finished.emit(success, result)
+        except Exception as e:
+            logger.error(f"Error in Worker.run: {e}", exc_info=True)
+            self.error.emit(str(e))
 
 class TradeConfirmationDialog(QDialog):
     """Dialog for confirming trades in semi-automatic mode."""
@@ -176,6 +210,11 @@ class InputPanel(QWidget):
         button_layout.addWidget(self.reset_button)
         layout.addLayout(button_layout)
 
+        # Status Label
+        self.status_label = QLabel("Ready")
+        self.status_label.setObjectName("status_label")
+        layout.addWidget(self.status_label)
+
         # Financial Metrics
         metrics_layout = QVBoxLayout()
         self.cash_label = QLabel("Liquid Cash: N/A")
@@ -265,9 +304,9 @@ class InputPanel(QWidget):
         """Ensure end_date is after start_date."""
         self.end_date_input.setMinimumDate(self.start_date_input.date())
 
-    def show_message_box(self, icon, title, text, buttons):
-        """Display a message box with themed style."""
-        msg = QMessageBox(self)
+    def show_message_box(self, icon, title, text, buttons=QMessageBox.Ok | QMessageBox.Cancel):
+        """Show a message box with the specified icon, title, text, and buttons."""
+        msg = QMessageBox()
         msg.setIcon(icon)
         msg.setWindowTitle(title)
         msg.setText(text)
@@ -316,6 +355,7 @@ class InputPanel(QWidget):
         self.cash_label.setStyleSheet(f"font-weight: bold; {label_style}")
         self.portfolio_label.setStyleSheet(f"font-weight: bold; {label_style}")
         self.total_label.setStyleSheet(f"font-weight: bold; {label_style}")
+        self.status_label.setStyleSheet(f"font-weight: bold; {label_style}")
         self.investment_input.setStyleSheet(input_style)
         self.risk_input.setStyleSheet(input_style)
         self.start_date_input.setStyleSheet(input_style)
@@ -374,7 +414,7 @@ class InputPanel(QWidget):
         logger.debug(f"Updated financial metrics: Cash=${cash:,.2f}, Portfolio=${portfolio_value:,.2f}")
 
     def execute_strategy(self):
-        """Execute the trading strategy based on user inputs."""
+        """Execute the trading strategy in a background thread with warning for short date ranges."""
         inputs = self.validate_inputs()
         if inputs is None:
             return
@@ -382,90 +422,153 @@ class InputPanel(QWidget):
         investment_amount, risk_level, start_date, end_date = inputs
         mode = self.mode_combo.currentText().lower()
 
-        # Log risk_level for debugging
-        logger.info(f"Executing strategy with risk_level={risk_level}, type={type(risk_level)}")
-
-        try:
-            success, result = execute_trading_strategy(
-                investment_amount=investment_amount,
-                risk_level=risk_level,
-                start_date=start_date,
-                end_date=end_date,
-                data_manager=self.data_manager,
-                mode=mode,
-                reset_state=True,
-                selected_orders=None
+        # Check for date range less than 7 days
+        start_date = pd.Timestamp(start_date, tz='UTC')
+        end_date = pd.Timestamp(end_date, tz='UTC')
+        date_diff = (end_date - start_date).days
+        if date_diff < 7:
+            result = self.show_message_box(
+                QMessageBox.Warning,
+                "Short Date Range",
+                "The selected date range is less than 7 days. For better trading results, a minimum one-week period is recommended. Proceed anyway?"
             )
-
-            if not success:
-                self.show_message_box(
-                    QMessageBox.Critical,
-                    "Error",
-                    f"Strategy failed: {result.get('warning_message', 'Unknown error')}",
-                    QMessageBox.Ok
-                )
-                logger.error(f"Strategy failed: {result.get('warning_message')}")
+            if result == QMessageBox.Cancel:
+                logger.info("User cancelled execution due to short date range")
                 return
 
-            orders = result.get('orders', [])
-            portfolio_history = result.get('portfolio_history', [])
-            portfolio_value = result.get('portfolio_value', investment_amount)
-            cash = result.get('cash', investment_amount)
-            warning_message = result.get('warning_message', '')
+        # Disable execute button and update status
+        self.execute_button.setEnabled(False)
+        self.status_label.setText("Executing strategy... Please wait.")
 
-            if warning_message:
-                self.show_message_box(
-                    QMessageBox.Warning,
-                    "Warning",
-                    warning_message,
-                    QMessageBox.Ok
+        # Set up worker and thread
+        self.thread = QThread()
+        self.worker = Worker(
+            investment_amount=investment_amount,
+            risk_level=risk_level,
+            start_date=start_date,
+            end_date=end_date,
+            data_manager=self.data_manager,
+            mode=mode,
+            reset_state=True,
+            selected_orders=None
+        )
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.handle_strategy_result)
+        self.worker.error.connect(self.handle_strategy_error)
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
+        self.thread.start()
+
+    def handle_strategy_result(self, success, result):
+        """Handle the result of the trading strategy."""
+        self.execute_button.setEnabled(True)
+        self.status_label.setText("Ready")
+        mode = self.mode_combo.currentText().lower()
+        investment_amount = float(self.investment_input.text())
+        risk_level = self.risk_input.value()
+        start_date = pd.Timestamp(self.start_date_input.date().toPyDate(), tz='UTC')
+        end_date = pd.Timestamp(self.end_date_input.date().toPyDate(), tz='UTC')
+
+        if not success:
+            self.show_message_box(
+                QMessageBox.Critical,
+                "Error",
+                f"Strategy failed: {result.get('warning_message', 'Unknown error')}",
+                QMessageBox.Ok
+            )
+            logger.error(f"Strategy failed: {result.get('warning_message')}")
+            return
+
+        orders = result.get('orders', [])
+        portfolio_history = result.get('portfolio_history', [])
+        portfolio_value = result.get('portfolio_value', investment_amount)
+        cash = result.get('cash', investment_amount)
+        warning_message = result.get('warning_message', '')
+
+        if warning_message:
+            self.show_message_box(
+                QMessageBox.Warning,
+                "Warning",
+                warning_message,
+                QMessageBox.Ok
+            )
+
+        if mode == "semi-automatic" and orders:
+            dialog = TradeConfirmationDialog(orders, self)
+            if dialog.exec_() == QDialog.Accepted and dialog.selected_orders:
+                # Run semi-automatic execution in a new thread
+                self.thread = QThread()
+                self.worker = Worker(
+                    investment_amount=investment_amount,
+                    risk_level=risk_level,
+                    start_date=start_date,
+                    end_date=end_date,
+                    data_manager=self.data_manager,
+                    mode="semi-automatic",
+                    reset_state=False,
+                    selected_orders=dialog.selected_orders
                 )
-
-            if mode == "semi-automatic" and orders:
-                dialog = TradeConfirmationDialog(orders, self)
-                if dialog.exec_() == QDialog.Accepted and dialog.selected_orders:
-                    success, result = execute_trading_strategy(
-                        investment_amount=investment_amount,
-                        risk_level=risk_level,
-                        start_date=start_date,
-                        end_date=end_date,
-                        data_manager=self.data_manager,
-                        mode="semi-automatic",
-                        reset_state=False,
-                        selected_orders=dialog.selected_orders
-                    )
-                    if not success:
-                        self.show_message_box(
-                            QMessageBox.Critical,
-                            "Error",
-                            f"Failed to execute trades: {result.get('warning_message', 'Unknown error')}",
-                            QMessageBox.Ok
-                        )
-                        logger.error(f"Trade execution failed: {result.get('warning_message')}")
-                        return
-                    portfolio_history = result.get('portfolio_history', [])
-                    portfolio_value = result.get('portfolio_value', investment_amount)
-                    cash = result.get('cash', investment_amount)
-                    orders = result.get('orders', [])
-                    warning_message = result.get('warning_message', '')
-                else:
-                    logger.info("User cancelled trade execution or no trades selected")
-                    return
-
+                self.worker.moveToThread(self.thread)
+                self.thread.started.connect(self.worker.run)
+                self.worker.finished.connect(self.handle_semi_auto_result)
+                self.worker.error.connect(self.handle_strategy_error)
+                self.worker.finished.connect(self.thread.quit)
+                self.worker.finished.connect(self.worker.deleteLater)
+                self.thread.finished.connect(self.thread.deleteLater)
+                self.execute_button.setEnabled(False)
+                self.status_label.setText("Executing semi-automatic trades... Please wait.")
+                self.thread.start()
+            else:
+                logger.info("User cancelled trade execution or no trades selected")
+                self.update_financial_metrics(cash, portfolio_value)
+                return
+        else:
             self.update_financial_metrics(cash, portfolio_value)
             log_trading_orders()
             if hasattr(self, 'main_window'):
                 self.main_window.update_dashboard()
             logger.info("Strategy execution completed successfully")
 
-        except Exception as e:
+    def handle_semi_auto_result(self, success, result):
+        """Handle the result of semi-automatic trading."""
+        self.execute_button.setEnabled(True)
+        self.status_label.setText("Ready")
+        investment_amount = float(self.investment_input.text())
+        if not success:
             self.show_message_box(
                 QMessageBox.Critical,
                 "Error",
-                f"Unexpected error: {e}",
+                f"Failed to execute trades: {result.get('warning_message', 'Unknown error')}",
                 QMessageBox.Ok
             )
-            logger.error(f"Unexpected error in execute_strategy: {e}", exc_info=True)
+            logger.error(f"Trade execution failed: {result.get('warning_message')}")
+            return
+
+        portfolio_history = result.get('portfolio_history', [])
+        portfolio_value = result.get('portfolio_value', investment_amount)
+        cash = result.get('cash', investment_amount)
+        orders = result.get('orders', [])
+        warning_message = result.get('warning_message', '')
+
+        self.update_financial_metrics(cash, portfolio_value)
+        log_trading_orders()
+        if hasattr(self, 'main_window'):
+            self.main_window.update_dashboard()
+        logger.info("Semi-automatic strategy execution completed successfully")
+
+    def handle_strategy_error(self, error_message):
+        """Handle errors from the worker thread."""
+        self.execute_button.setEnabled(True)
+        self.status_label.setText("Ready")
+        self.show_message_box(
+            QMessageBox.Critical,
+            "Error",
+            f"Unexpected error: {error_message}",
+            QMessageBox.Ok
+        )
+        logger.error(f"Unexpected error in worker thread: {error_message}")
 
     def reset_portfolio(self):
         """Delete portfolio_state.json to reset portfolio state."""
