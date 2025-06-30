@@ -67,6 +67,8 @@ class AnalysisDashboard(QWidget):
         self.data_manager = data_manager
         self.is_dark_mode = True
         self.ticker_colors = {}  # Cache ticker colors for consistency
+        self.selected_tickers_order = []  # Track the order of selected tickers
+        
         # Define plot descriptions for tooltips
         self.plot_descriptions = {
             "Portfolio Performance": "Shows the portfolio value over time compared to the S&P 500 benchmark.",
@@ -76,6 +78,21 @@ class AnalysisDashboard(QWidget):
             "Cumulative Returns by Ticker": "Shows normalized cumulative returns for selected tickers compared to the S&P 500.",
             "Profit/Loss by Ticker": "Bar plot of profit or loss for each ticker based on trade history."
         }
+        
+        # Define a more distinguishable color palette
+        self.color_palette = [
+            '#1f77b4',  # Blue
+            '#87ceeb',  # Light blue
+            '#ff7f0e',  # Orange
+            '#2ca02c',  # Green
+            '#d62728',  # Red
+            '#9467bd',  # Purple
+            '#8c564b',  # Brown
+            '#e377c2',  # Pink
+            '#7f7f7f',  # Gray
+            '#bcbd22',  # Olive
+        ]
+        
         # Select available font
         available_fonts = set(f.lower() for f in matplotlib.font_manager.findSystemFonts())
         font_priority = ['Arial', 'DejaVu Sans', 'sans-serif']
@@ -191,6 +208,10 @@ class AnalysisDashboard(QWidget):
         
         graph_label = QLabel("Graph Type:")
         graph_label.setProperty("class", "dropdown-label")
+        # Add tooltip to the label itself
+        graph_label.setMouseTracking(True)
+        graph_label.enterEvent = lambda event: self._show_label_tooltip(event, graph_label)
+        graph_label.leaveEvent = lambda event: QToolTip.hideText()
         graph_layout.addWidget(graph_label)
         
         self.graph_combo = CustomComboBox(get_tooltip_text=self.get_current_plot_description)
@@ -221,6 +242,13 @@ class AnalysisDashboard(QWidget):
         main_layout.addLayout(right_layout, stretch=1)
         self.set_theme(self.is_dark_mode)
         self.update_visualizations()
+
+    def _show_label_tooltip(self, event, label):
+        """Show tooltip for the graph type label."""
+        tooltip_text = self.get_current_plot_description()
+        if tooltip_text:
+            pos = QCursor.pos() + QPoint(10, 10)
+            QToolTip.showText(pos, tooltip_text, label)
 
     def get_current_plot_description(self):
         """Return the description of the currently selected plot."""
@@ -354,12 +382,11 @@ class AnalysisDashboard(QWidget):
 
     def _update_ticker_button_colors(self):
         """Update ticker button colors to match plot colors."""
-        selected_tickers = list(self.selected_tickers_buttons.keys())
-        if not selected_tickers:
+        if not self.selected_tickers_order:
             self.ticker_colors = {}
             return
             
-        self.ticker_colors = self._get_ticker_colors(selected_tickers)
+        self.ticker_colors = self._get_ticker_colors(self.selected_tickers_order)
         
         for ticker, button in self.selected_tickers_buttons.items():
             if ticker in self.ticker_colors:
@@ -401,20 +428,20 @@ class AnalysisDashboard(QWidget):
         }
 
     def _get_ticker_colors(self, tickers):
-        """Get consistent colors for tickers that match the plot colors."""
+        """Get consistent colors for tickers using the improved color palette."""
         if not tickers:
             return {}
         
-        colors_map = plt.cm.tab10(np.linspace(0, 1, len(tickers)))
         ticker_colors = {}
-        
         for idx, ticker in enumerate(tickers):
-            plot_color = colors_map[idx]
-            hex_color = plt.cm.colors.rgb2hex(plot_color[:3])  # Use normalized RGB for hex
-            hover_color = self.adjust_color_brightness(hex_color, 0.8)  # Adjusted hover color
+            color_hex = self.color_palette[idx % len(self.color_palette)]
+            # Convert hex to RGB (0-1 range for matplotlib)
+            rgb = tuple(int(color_hex[i:i+2], 16) / 255.0 for i in (1, 3, 5))
+            hover_color = self.adjust_color_brightness(color_hex, 0.8)
+            
             ticker_colors[ticker] = {
-                'hex': hex_color,
-                'rgb': plot_color[:3],  # Normalized RGB values (0-1)
+                'hex': color_hex,
+                'rgb': rgb,
                 'hover': hover_color
             }
         
@@ -437,19 +464,33 @@ class AnalysisDashboard(QWidget):
                 item.setSelected(False)
             selected_tickers = selected_tickers[:5]
 
+        # Update the order of selected tickers
+        # Maintain existing order and add new ones at the end
+        new_order = []
+        for ticker in self.selected_tickers_order:
+            if ticker in selected_tickers:
+                new_order.append(ticker)
+        
+        # Add newly selected tickers
+        for ticker in selected_tickers:
+            if ticker not in new_order:
+                new_order.append(ticker)
+        
+        self.selected_tickers_order = new_order
+
+        # Remove buttons for unselected tickers
         for ticker in list(self.selected_tickers_buttons.keys()):
             if ticker not in selected_tickers:
                 button = self.selected_tickers_buttons.pop(ticker)
                 button.deleteLater()
 
-        # Update cached ticker colors
-        self.ticker_colors = self._get_ticker_colors(selected_tickers)
+        # Update cached ticker colors based on new order
+        self.ticker_colors = self._get_ticker_colors(self.selected_tickers_order)
 
+        # Add buttons for newly selected tickers
         for ticker in selected_tickers:
             if ticker not in self.selected_tickers_buttons:
-                # Use cached color from self.ticker_colors
-                button_color = self.ticker_colors.get(ticker, {}).get('hex', '#3366CC')
-                hover_color = self.ticker_colors.get(ticker, {}).get('hover', self.adjust_color_brightness('#3366CC', 0.8))
+                color_info = self.ticker_colors.get(ticker, {'hex': '#1f77b4', 'hover': '#184f8d'})
                 
                 button = QPushButton(ticker)
                 button.setFixedHeight(25)
@@ -457,7 +498,7 @@ class AnalysisDashboard(QWidget):
                 
                 button_style = f"""
                     QPushButton {{
-                        background-color: {button_color}; 
+                        background-color: {color_info['hex']}; 
                         color: white; 
                         border: none; 
                         padding: 4px 8px; 
@@ -466,7 +507,7 @@ class AnalysisDashboard(QWidget):
                         font-weight: bold;
                     }} 
                     QPushButton:hover {{
-                        background-color: {hover_color};
+                        background-color: {color_info['hover']};
                     }}
                 """
                 button.setStyleSheet(button_style)
@@ -492,6 +533,7 @@ class AnalysisDashboard(QWidget):
     def clear_all_tickers(self):
         """Clear all selected tickers."""
         self.ticker_list.clearSelection()
+        self.selected_tickers_order = []
         self.update_selected_tickers()
         logger.debug("Cleared all tickers")
 
@@ -508,7 +550,6 @@ class AnalysisDashboard(QWidget):
     def update_visualizations(self):
         """Update the visualization based on the selected graph type."""
         graph_type = self.graph_combo.currentText()
-        selected_tickers = [item.text() for item in self.ticker_list.selectedItems()]
 
         self.chart_fig.clear()
         self._update_figure_colors()
@@ -539,13 +580,13 @@ class AnalysisDashboard(QWidget):
         if graph_type == "Portfolio Performance":
             self.plot_portfolio_performance()
         elif graph_type == "Sharpe Ratio Box Plot":
-            self.plot_sharpe_box_plot(selected_tickers)
+            self.plot_sharpe_box_plot(self.selected_tickers_order)
         elif graph_type == "Sharpe Prediction Error":
-            self.plot_sharpe_prediction_error(selected_tickers)
+            self.plot_sharpe_prediction_error(self.selected_tickers_order)
         elif graph_type == "Portfolio Drawdown":
             self.plot_portfolio_drawdown()
         elif graph_type == "Cumulative Returns by Ticker":
-            self.plot_cumulative_returns(selected_tickers)
+            self.plot_cumulative_returns(self.selected_tickers_order)
         elif graph_type == "Profit/Loss by Ticker":
             self.plot_profit_loss_by_ticker()
 
@@ -619,10 +660,8 @@ class AnalysisDashboard(QWidget):
                     verticalalignment='center', color=theme_colors['text'])
             return
 
-        # Use cached ticker colors
+        # Use cached ticker colors in selection order
         colors = [self.ticker_colors[ticker]['rgb'] for ticker in selected_tickers if ticker in self.ticker_colors]
-        if not colors:
-            colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
 
         # Prepare data for box plot
         plot_data = []
@@ -687,10 +726,8 @@ class AnalysisDashboard(QWidget):
                     verticalalignment='center', color=theme_colors['text'])
             return
 
-        # Use cached ticker colors
+        # Use cached ticker colors in selection order
         colors = [self.ticker_colors[ticker]['rgb'] for ticker in selected_tickers if ticker in self.ticker_colors]
-        if not colors:
-            colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
 
         for idx, ticker in enumerate(selected_tickers):
             ticker_data = data[data['Ticker'] == ticker].copy()
@@ -698,7 +735,7 @@ class AnalysisDashboard(QWidget):
             if not ticker_data.empty:
                 ticker_data['error'] = ticker_data['Actual_Sharpe'] - ticker_data['Best_Prediction']
                 ax.plot(ticker_data['date'], ticker_data['error'],
-                        label=f'{ticker} Error', color=colors[idx], linewidth=1.5)
+                        label=f'{ticker} Error', color=colors[idx], linewidth=2.0)
 
         ax.axhline(0, color='#F44336', linestyle='--', label='Zero Error')
         ax.set_title('Sharpe Ratio Prediction Error', pad=10, color=theme_colors['text'])
@@ -770,10 +807,8 @@ class AnalysisDashboard(QWidget):
                     verticalalignment='center', color=theme_colors['text'])
             return
 
-        # Use cached ticker colors
+        # Use cached ticker colors in selection order
         colors = [self.ticker_colors[ticker]['rgb'] for ticker in selected_tickers if ticker in self.ticker_colors]
-        if not colors:
-            colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
 
         for idx, ticker in enumerate(selected_tickers):
             ticker_data = data[data['Ticker'] == ticker].sort_values('date')
@@ -781,7 +816,7 @@ class AnalysisDashboard(QWidget):
                 returns = ticker_data['Close'].pct_change().fillna(0)
                 cumulative = (1 + returns).cumprod() * 100
                 ax.plot(ticker_data['date'], cumulative, label=f'{ticker} Returns',
-                        color=colors[idx], linewidth=1.5)
+                        color=colors[idx], linewidth=2.0)
 
         # Add S&P 500 benchmark
         if 'SPY' in self.data_manager.data['Ticker'].values:
@@ -831,14 +866,14 @@ class AnalysisDashboard(QWidget):
             )
         ).reset_index(name='profit_loss')
 
-        # Use cached ticker colors
+        # Use cached ticker colors in order of profits['ticker']
         selected_tickers = profits['ticker'].tolist()
+        # Update ticker colors for profit/loss plot to match selected order
+        self.ticker_colors = self._get_ticker_colors(selected_tickers)
         colors = [self.ticker_colors[ticker]['rgb'] for ticker in selected_tickers if ticker in self.ticker_colors]
-        if not colors:
-            colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
 
         # Convert colors to list to avoid UserWarning
-        sns.barplot(data=profits, x='ticker', y='profit_loss', hue='ticker', legend=False, ax=ax, palette=colors.tolist())
+        sns.barplot(data=profits, x='ticker', y='profit_loss', hue='ticker', legend=False, ax=ax, palette=colors)
         ax.axhline(0, color='#F44336', linestyle='--', label='Break-even')
         ax.set_title('Profit/Loss by Ticker', pad=10, color=theme_colors['text'])
         ax.set_xlabel('Ticker', color=theme_colors['text'])
