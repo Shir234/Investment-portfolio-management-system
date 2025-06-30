@@ -97,10 +97,10 @@ class RecommendationPanel(QWidget):
         self.table.setMinimumHeight(600)  # Even larger minimum height for more table space
         
         # Configure row headers (index column) to show row numbers properly
-        self.table.verticalHeader().setVisible(True)
+        self.table.verticalHeader().setVisible(False)
         
         # Set proper width for the vertical header (index column) so numbers show
-        self.table.verticalHeader().setFixedWidth(80)  # Wider fixed width for row numbers
+        self.table.verticalHeader().setFixedWidth(600)  # Wider fixed width for row numbers
         self.table.verticalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         
         table_layout.addWidget(self.table)

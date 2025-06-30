@@ -157,14 +157,14 @@ class StarterDialog(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        subtitle = QLabel("Investment Portfolio\nManagement System")
-        subtitle.setProperty("class", "subtitle")
+        subtitle = QLabel("Investment Portfolio Management System")
+        subtitle.setProperty("class", "subtitle-large")  # Changed class name
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
         prompt = QLabel("Please select 'all_tickers_results.csv' to begin.")
-        prompt.setProperty("class", "caption")
+        prompt.setProperty("class", "prompt")  # Changed class name
         prompt.setAlignment(Qt.AlignmentFlag.AlignCenter)
         prompt.setWordWrap(True)
         layout.addWidget(prompt)
@@ -175,7 +175,7 @@ class StarterDialog(QDialog):
         help_button = QToolButton()
         help_button.setText("?")
         help_button.setFixedSize(32, 32)
-        help_button.setProperty("class", "secondary")
+        help_button.setProperty("class", "help-button")  # Changed class name
         help_button.clicked.connect(self.show_help)
         button_layout.addWidget(help_button)
 
@@ -203,18 +203,35 @@ class StarterDialog(QDialog):
                     font-weight: 700;
                     margin: 8px 0;
                 }}
-                QLabel[class="subtitle"] {{
+                QLabel[class="subtitle-large"] {{
+                    color: {colors['text_secondary']};
+                    font-size: 18px;
+                    font-weight: 600;
+                    margin: 8px 0;
+                    line-height: 1.4;
+                }}
+                QLabel[class="prompt"] {{
                     color: {colors['text_secondary']};
                     font-size: 14px;
                     font-weight: 500;
-                    margin: 5px 0;
-                    line-height: 1.4;
+                    margin: 12px 0;
                 }}
-                QLabel[class="caption"] {{
-                    color: {colors['text_secondary']};
-                    font-size: 12px;
-                    font-weight: 400;
-                    margin: 10px 0;
+                QToolButton[class="help-button"] {{
+                    background-color: {colors['surface']};
+                    color: {colors['text_primary']};
+                    border: 2px solid {colors['border']};
+                    border-radius: 16px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    margin: 2px;
+                }}
+                QToolButton[class="help-button"]:hover {{
+                    background-color: {colors['secondary']};
+                    border-color: {colors['accent']};
+                }}
+                QToolButton[class="help-button"]:pressed {{
+                    background-color: {colors['accent']};
+                    color: white;
                 }}
             """
             

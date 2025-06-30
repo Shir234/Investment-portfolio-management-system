@@ -2,7 +2,7 @@ import matplotlib
 import os
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QComboBox, QGroupBox, QListWidget, QListWidgetItem,
-                             QPushButton, QMessageBox)
+                             QPushButton, QMessageBox, QFrame)
 from PyQt6.QtCore import Qt
 #from matplotlib.backends.backend_qt6agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -14,6 +14,7 @@ import numpy as np
 import seaborn as sns
 from backend.trading_logic_new import get_portfolio_history, get_orders
 from frontend.logging_config import get_logger
+from frontend.gui.styles import ModernStyles
 
 
 # Configure logging
@@ -30,53 +31,130 @@ class AnalysisDashboard(QWidget):
         font_family = [f for f in font_priority if f.lower() in available_fonts or f == 'sans-serif']
         if not font_family:
             font_family = ['sans-serif']
-        # Set matplotlib style
-        plt.rcParams.update({
-            'font.family': font_family,
-            'font.size': 10,
-            'axes.titlesize': 12,
-            'axes.labelsize': 10,
-            'xtick.labelsize': 8,
-            'ytick.labelsize': 8,
-            'legend.fontsize': 8,
-            'axes.facecolor': '#2b2b2b' if self.is_dark_mode else '#ffffff',
-            'figure.facecolor': '#212121' if self.is_dark_mode else '#f5f5f5'
-        })
+        
+        # Set initial matplotlib style
+        self._configure_matplotlib_style()
+        
         logger.debug(f"Using font family: {font_family}")
         self.setup_ui()
         logger.info("AnalysisDashboard initialized")
 
+    def _configure_matplotlib_style(self):
+        """Configure matplotlib styling based on current theme"""
+        if self.is_dark_mode:
+            plt.style.use('dark_background')
+            plt.rcParams.update({
+                'font.family': ['Arial', 'DejaVu Sans', 'sans-serif'],
+                'font.size': 10,
+                'axes.titlesize': 12,
+                'axes.labelsize': 10,
+                'xtick.labelsize': 8,
+                'ytick.labelsize': 8,
+                'legend.fontsize': 8,
+                'axes.facecolor': '#2b2b2b',
+                'figure.facecolor': '#212121',
+                'axes.labelcolor': '#ffffff',
+                'xtick.color': '#ffffff',
+                'ytick.color': '#ffffff',
+                'text.color': '#ffffff',
+                'axes.edgecolor': '#ffffff',
+                'grid.color': '#444444'
+            })
+        else:
+            plt.style.use('default')  # Use matplotlib's default light style
+            plt.rcParams.update({
+                'font.family': ['Arial', 'DejaVu Sans', 'sans-serif'],
+                'font.size': 10,
+                'axes.titlesize': 12,
+                'axes.labelsize': 10,
+                'xtick.labelsize': 8,
+                'ytick.labelsize': 8,
+                'legend.fontsize': 8,
+                'axes.facecolor': '#ffffff',
+                'figure.facecolor': '#f5f5f5',
+                'axes.labelcolor': '#333333',
+                'xtick.color': '#333333',
+                'ytick.color': '#333333',
+                'text.color': '#333333',
+                'axes.edgecolor': '#333333',
+                'grid.color': '#cccccc'
+            })
+
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(24)
 
         # Controls layout
         controls_layout = QHBoxLayout()
-        controls_layout.setSpacing(10)
+        controls_layout.setSpacing(20)
 
-        # Graph selection
-        self.selection_group = QGroupBox("Graph Type")
-        selection_layout = QVBoxLayout()
+        # Graph selection with modern styling (like input panel)
+        graph_container = QFrame()
+        graph_layout = QVBoxLayout(graph_container)
+        graph_layout.setContentsMargins(0, 0, 0, 0)
+        graph_layout.setSpacing(0)
+        
+        # Dark label background frame
+        graph_label_frame = QFrame()
+        graph_label_frame.setProperty("class", "label-frame")
+        graph_label_frame.setFixedHeight(35)
+        graph_label_layout = QHBoxLayout(graph_label_frame)
+        graph_label_layout.setContentsMargins(12, 8, 12, 8)
+        
+        graph_label = QLabel("Graph Type:")
+        graph_label.setProperty("class", "label-dark")
+        graph_label_layout.addWidget(graph_label)
+        graph_label_layout.addStretch()
+        
+        # Input field
+        graph_input_frame = QFrame()
+        graph_input_frame.setProperty("class", "input-frame")
+        graph_input_layout = QHBoxLayout(graph_input_frame)
+        graph_input_layout.setContentsMargins(12, 12, 12, 12)
+        
         self.graph_combo = QComboBox()
         self.graph_combo.addItems([
             "Portfolio Performance",
-            "Sharpe Distribution",
+            "Sharpe Distribution", 
             "Predicted vs Actual Sharpe",
             "Portfolio Drawdown",
             "Cumulative Returns by Ticker",
             "Trade Profit/Loss Distribution"
         ])
         self.graph_combo.currentIndexChanged.connect(self.change_graph_type)
-        selection_layout.addWidget(self.graph_combo)
-        self.selection_group.setLayout(selection_layout)
-        controls_layout.addWidget(self.selection_group, stretch=1)
+        self.graph_combo.setProperty("class", "input-field")
+        graph_input_layout.addWidget(self.graph_combo)
+        
+        graph_layout.addWidget(graph_label_frame)
+        graph_layout.addWidget(graph_input_frame)
+        controls_layout.addWidget(graph_container, stretch=1)
 
-        # Ticker selection
-        self.ticker_group = QGroupBox("Tickers")
-        ticker_layout = QVBoxLayout()
-        ticker_layout.setSpacing(5)
-
+        # Ticker selection with modern styling (like input panel)
+        ticker_container = QFrame()
+        ticker_layout = QVBoxLayout(ticker_container)
+        ticker_layout.setContentsMargins(0, 0, 0, 0)
+        ticker_layout.setSpacing(0)
+        
+        # Dark label background frame
+        ticker_label_frame = QFrame()
+        ticker_label_frame.setProperty("class", "label-frame")
+        ticker_label_frame.setFixedHeight(35)
+        ticker_label_layout = QHBoxLayout(ticker_label_frame)
+        ticker_label_layout.setContentsMargins(12, 8, 12, 8)
+        
+        ticker_label = QLabel("Tickers:")
+        ticker_label.setProperty("class", "label-dark")
+        ticker_label_layout.addWidget(ticker_label)
+        ticker_label_layout.addStretch()
+        
+        # Input field with ticker list and controls
+        ticker_input_frame = QFrame()
+        ticker_input_frame.setProperty("class", "input-frame")
+        ticker_input_layout = QVBoxLayout(ticker_input_frame)
+        ticker_input_layout.setContentsMargins(12, 12, 12, 12)
+        ticker_input_layout.setSpacing(8)
+        
         # Selected tickers display
         self.selected_tickers_layout = QHBoxLayout()
         self.selected_tickers_layout.setSpacing(5)
@@ -88,14 +166,16 @@ class AnalysisDashboard(QWidget):
         # Clear all button
         self.clear_tickers_button = QPushButton("Clear All")
         self.clear_tickers_button.clicked.connect(self.clear_all_tickers)
+        self.clear_tickers_button.setProperty("class", "secondary")
+        self.clear_tickers_button.setMaximumHeight(30)
         self.selected_tickers_layout.addWidget(self.clear_tickers_button)
 
-        ticker_layout.addLayout(self.selected_tickers_layout)
+        ticker_input_layout.addLayout(self.selected_tickers_layout)
 
         # Ticker list
         self.ticker_list = QListWidget()
         self.ticker_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
-        self.ticker_list.setMaximumWidth(200)
+        self.ticker_list.setMaximumHeight(150)
         if self.data_manager.data is not None and not self.data_manager.data.empty:
             tickers = sorted(self.data_manager.data['Ticker'].unique())
             for ticker in tickers:
@@ -105,9 +185,11 @@ class AnalysisDashboard(QWidget):
             logger.warning("No tickers available due to missing market data")
         self.ticker_list.itemSelectionChanged.connect(self.update_selected_tickers)
 
-        ticker_layout.addWidget(self.ticker_list)
-        self.ticker_group.setLayout(ticker_layout)
-        controls_layout.addWidget(self.ticker_group, stretch=1)
+        ticker_input_layout.addWidget(self.ticker_list)
+        
+        ticker_layout.addWidget(ticker_label_frame)
+        ticker_layout.addWidget(ticker_input_frame)
+        controls_layout.addWidget(ticker_container, stretch=1)
 
         layout.addLayout(controls_layout)
 
@@ -115,18 +197,6 @@ class AnalysisDashboard(QWidget):
         self.chart_fig = Figure(figsize=(10, 6))
         self.chart_canvas = FigureCanvas(self.chart_fig)
         layout.addWidget(self.chart_canvas, stretch=2)
-
-        # Metrics display
-        metrics_layout = QHBoxLayout()
-        metrics_layout.setSpacing(10)
-        self.metrics_labels = {}
-        for metric in ['Total Value', 'Sharpe Ratio', 'Volatility']:
-            label = QLabel(f"{metric}: --")
-            label.setObjectName(f"metric_{metric.lower().replace(' ', '_')}")
-            self.metrics_labels[metric] = label
-            metrics_layout.addWidget(label)
-
-        layout.addLayout(metrics_layout)
 
         self.set_theme(self.is_dark_mode)
         self.update_visualizations()
@@ -142,41 +212,212 @@ class AnalysisDashboard(QWidget):
 
     def set_theme(self, is_dark_mode):
         self.is_dark_mode = is_dark_mode
-        plt.style.use('dark_background' if is_dark_mode else 'seaborn-v0_8-white')
-        plt.rcParams.update({
-            'axes.facecolor': '#2b2b2b' if is_dark_mode else '#ffffff',
-            'figure.facecolor': '#212121' if is_dark_mode else '#f5f5f5',
-            'axes.labelcolor': '#ffffff' if is_dark_mode else '#333333',
-            'xtick.color': '#ffffff' if is_dark_mode else '#333333',
-            'ytick.color': '#ffffff' if is_dark_mode else '#333333',
-            'grid.color': '#444444' if is_dark_mode else '#cccccc'
-        })
+        
+        # Configure matplotlib styling
+        self._configure_matplotlib_style()
+        
+        # Update figure colors immediately
+        self._update_figure_colors()
 
-        if is_dark_mode:
-            group_style = "color: #ffffff; background-color: #212121; border: 1px solid #333333; border-radius: 5px;"
-            combo_style = "background-color: #2b2b2b; color: #ffffff; selection-background-color: #2196F3; border: 1px solid #333333; border-radius: 3px;"
-            list_style = "background-color: #2b2b2b; color: #ffffff; selection-background-color: #2196F3; border: 1px solid #333333; border-radius: 3px;"
-            label_style = "color: #ffffff; background-color: #2b2b2b; padding: 8px; border-radius: 5px;"
-            button_style = "QPushButton {background-color: #2196F3; color: #ffffff; border: none; padding: 5px; border-radius: 3px;} QPushButton:hover {background-color: #1976D2;}"
-        else:
-            group_style = "color: #333333; background-color: #f5f5f5; border: 1px solid #cccccc; border-radius: 5px;"
-            combo_style = "background-color: #ffffff; color: #333333; selection-background-color: #2196F3; border: 1px solid #cccccc; border-radius: 3px;"
-            list_style = "background-color: #ffffff; color: #333333; selection-background-color: #2196F3; border: 1px solid #cccccc; border-radius: 3px;"
-            label_style = "color: #333333; background-color: #f5f5f5; padding: 8px; border-radius: 5px;"
-            button_style = "QPushButton {background-color: #2196F3; color: #ffffff; border: none; padding: 5px; border-radius: 3px;} QPushButton:hover {background-color: #1976D2;}"
+        # Apply modern styling like the input panel
+        style = ModernStyles.get_complete_style(self.is_dark_mode)
+        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
+        
+        # Additional styles for label frames and input frames (same as input panel)
+        additional_styles = f"""
+            /* Label Frame Styling - Darker background for labels */
+            QFrame[class="label-frame"] {{
+                background-color: {'#252538' if self.is_dark_mode else '#9CA3AF'};
+                border: 1px solid {colors['border']};
+                border-bottom: none;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+            }}
+            
+            /* Input Frame Styling - Matches the surface color */
+            QFrame[class="input-frame"] {{
+                background-color: {colors['surface']};
+                border: 1px solid {colors['border']};
+                border-top: none;
+                border-bottom-left-radius: 8px;
+                border-bottom-right-radius: 8px;
+            }}
+            
+            /* Dark label text styling */
+            QLabel[class="label-dark"] {{
+                color: {'#FFFFFF' if self.is_dark_mode else '#FFFFFF'};
+                font-size: 14px;
+                font-weight: 600;
+                font-family: 'Segoe UI';
+                background-color: transparent;
+                border: none;
+            }}
+            
+            /* Input field styling with visible borders */
+            QComboBox[class="input-field"] {{
+                border: 2px solid {colors['border_light']};
+                border-radius: 6px;
+                background-color: {'#3A3A54' if self.is_dark_mode else '#F8FAFC'};
+                padding: 10px 12px;
+                font-size: 14px;
+                color: {colors['text_primary']};
+                margin: 2px;
+            }}
+            
+            QComboBox[class="input-field"]:focus {{
+                border: 2px solid {colors['accent']};
+                background-color: {'#404060' if self.is_dark_mode else '#FFFFFF'};
+            }}
+            
+            QComboBox[class="input-field"]:hover {{
+                border: 2px solid {colors['accent_hover']};
+            }}
+            
+            /* Dropdown styling for combo box */
+            QComboBox[class="input-field"]::drop-down {{
+                border: none;
+                border-left: 1px solid {colors['border']};
+                border-radius: 0px 4px 4px 0px;
+                background-color: {colors['secondary']};
+                width: 20px;
+            }}
+            
+            QComboBox[class="input-field"]::drop-down:hover {{
+                background-color: {colors['accent']};
+            }}
+            
+            QComboBox[class="input-field"]::down-arrow {{
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+            }}
+            
+            QComboBox[class="input-field"] QAbstractItemView {{
+                background-color: {colors['surface']};
+                color: {colors['text_primary']};
+                border: 1px solid {colors['border']};
+                border-radius: 8px;
+                selection-background-color: {colors['accent']};
+                outline: none;
+            }}
+            
+            /* List widget styling */
+            QListWidget {{
+                background-color: {'#3A3A54' if self.is_dark_mode else '#F8FAFC'};
+                color: {colors['text_primary']};
+                border: 2px solid {colors['border_light']};
+                border-radius: 6px;
+                padding: 4px;
+                font-size: 13px;
+                margin: 2px;
+            }}
+            
+            QListWidget::item {{
+                border-radius: 4px;
+                padding: 6px 10px;
+                margin: 1px;
+            }}
+            
+            QListWidget::item:selected {{
+                background-color: {colors['accent']};
+                color: white;
+            }}
+            
+            QListWidget::item:hover {{
+                background-color: {colors['hover']};
+            }}
+            
+            /* Button styling */
+            QPushButton[class="secondary"] {{
+                background-color: {colors['secondary']};
+                color: {colors['text_primary']};
+                border: 2px solid {colors['border']};
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 12px;
+                font-weight: 600;
+            }}
+            
+            QPushButton[class="secondary"]:hover {{
+                background-color: {colors['hover']};
+                border: 2px solid {colors['accent']};
+            }}
+        """
+        
+        # Combine all styles
+        complete_style = style + additional_styles
+        self.setStyleSheet(complete_style)
 
-        self.selection_group.setStyleSheet(group_style)
-        self.ticker_group.setStyleSheet(group_style)
-        self.graph_combo.setStyleSheet(combo_style)
-        self.ticker_list.setStyleSheet(list_style)
-        self.clear_tickers_button.setStyleSheet(button_style)
-        self.selected_tickers_label.setStyleSheet("color: #ffffff;" if is_dark_mode else "color: #333333;")
-        for ticker, button in self.selected_tickers_buttons.items():
-            button.setStyleSheet(button_style)
-        for label in self.metrics_labels.values():
-            label.setStyleSheet(label_style)
+        # Update selected ticker buttons with their individual colors
+        self._update_ticker_button_colors()
+        
+        # Style selected tickers label
+        self.selected_tickers_label.setStyleSheet(f"color: {colors['text_primary']}; font-size: 12px; font-weight: 500;")
+        
+        # Regenerate the visualizations with new theme
         self.update_visualizations()
         logger.debug(f"Applied theme: {'dark' if is_dark_mode else 'light'}")
+
+    def _update_ticker_button_colors(self):
+        """Update ticker button colors to maintain their individual plot colors"""
+        selected_tickers = list(self.selected_tickers_buttons.keys())
+        if not selected_tickers:
+            return
+            
+        ticker_colors = self._get_ticker_colors(selected_tickers)
+        
+        for ticker, button in self.selected_tickers_buttons.items():
+            if ticker in ticker_colors:
+                color_info = ticker_colors[ticker]
+                button_style = f"""
+                    QPushButton {{
+                        background-color: {color_info['hex']}; 
+                        color: white; 
+                        border: none; 
+                        padding: 4px 8px; 
+                        border-radius: 4px; 
+                        font-size: 11px;
+                        font-weight: bold;
+                    }} 
+                    QPushButton:hover {{
+                        background-color: {color_info['hover']};
+                    }}
+                """
+                button.setStyleSheet(button_style)
+
+    def _update_figure_colors(self):
+        """Update the figure and canvas colors to match the theme"""
+        if self.is_dark_mode:
+            bg_color = '#212121'
+        else:
+            bg_color = '#f5f5f5'
+        
+        # Update figure background
+        self.chart_fig.patch.set_facecolor(bg_color)
+        
+        # Update canvas background
+        self.chart_canvas.setStyleSheet(f"background-color: {bg_color};")
+
+    def _get_theme_colors(self):
+        """Get appropriate colors for current theme"""
+        if self.is_dark_mode:
+            return {
+                'text': '#ffffff',
+                'bg': '#212121',
+                'surface': '#2b2b2b',
+                'grid': '#444444',
+                'legend_bg': '#2b2b2b'
+            }
+        else:
+            return {
+                'text': '#333333',
+                'bg': '#f5f5f5',
+                'surface': '#ffffff',
+                'grid': '#cccccc',
+                'legend_bg': '#ffffff'
+            }
 
     def update_selected_tickers(self):
         selected_items = self.ticker_list.selectedItems()
@@ -189,7 +430,7 @@ class AnalysisDashboard(QWidget):
             msg.setText("Please select up to 5 tickers only.")
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.setStyleSheet(self.get_message_box_style())
-            msg.exec_()
+            msg.exec()
             for item in selected_items[5:]:
                 item.setSelected(False)
             selected_tickers = selected_tickers[:5]
@@ -200,17 +441,65 @@ class AnalysisDashboard(QWidget):
                 button = self.selected_tickers_buttons.pop(ticker)
                 button.deleteLater()
 
-        for ticker in selected_tickers:
+        # Use matplotlib's tab10 colormap to match the plot colors
+        import matplotlib.pyplot as plt
+        colors_map = plt.cm.tab10(np.linspace(0, 1, max(len(selected_tickers), 1)))
+        
+        for idx, ticker in enumerate(selected_tickers):
             if ticker not in self.selected_tickers_buttons:
+                # Get the color from matplotlib's tab10 colormap (same as used in plots)
+                plot_color = colors_map[idx] if len(selected_tickers) > 0 else [0.2, 0.4, 0.8, 1.0]
+                # Convert to hex color
+                hex_color = f"#{int(plot_color[0]*255):02x}{int(plot_color[1]*255):02x}{int(plot_color[2]*255):02x}"
+                
+                # Create a darker version for hover
+                hover_color = f"#{int(plot_color[0]*200):02x}{int(plot_color[1]*200):02x}{int(plot_color[2]*200):02x}"
+                
                 button = QPushButton(ticker)
                 button.setFixedHeight(25)
                 button.clicked.connect(lambda _, t=ticker: self.remove_ticker(t))
-                button.setStyleSheet("QPushButton {background-color: #2196F3; color: #ffffff; border: none; padding: 5px; border-radius: 3px;} QPushButton:hover {background-color: #1976D2;}")
+                
+                # Set color to match the plot line color
+                button_style = f"""
+                    QPushButton {{
+                        background-color: {hex_color}; 
+                        color: white; 
+                        border: none; 
+                        padding: 4px 8px; 
+                        border-radius: 4px; 
+                        font-size: 11px;
+                        font-weight: bold;
+                    }} 
+                    QPushButton:hover {{
+                        background-color: {hover_color};
+                    }}
+                """
+                button.setStyleSheet(button_style)
                 self.selected_tickers_layout.insertWidget(self.selected_tickers_layout.count()-2, button)
                 self.selected_tickers_buttons[ticker] = button
 
         self.update_visualizations()
         logger.debug(f"Selected tickers: {selected_tickers}")
+
+    def _get_ticker_colors(self, tickers):
+        """Get consistent colors for tickers that match the plot colors"""
+        import matplotlib.pyplot as plt
+        if not tickers:
+            return {}
+        
+        colors_map = plt.cm.tab10(np.linspace(0, 1, len(tickers)))
+        ticker_colors = {}
+        
+        for idx, ticker in enumerate(tickers):
+            plot_color = colors_map[idx]
+            hex_color = f"#{int(plot_color[0]*255):02x}{int(plot_color[1]*255):02x}{int(plot_color[2]*255):02x}"
+            ticker_colors[ticker] = {
+                'hex': hex_color,
+                'rgb': plot_color[:3],
+                'hover': f"#{int(plot_color[0]*200):02x}{int(plot_color[1]*200):02x}{int(plot_color[2]*200):02x}"
+            }
+        
+        return ticker_colors
 
     def remove_ticker(self, ticker):
         for item in self.ticker_list.findItems(ticker, Qt.MatchFlag.MatchExactly):
@@ -235,6 +524,9 @@ class AnalysisDashboard(QWidget):
         selected_tickers = [item.text() for item in self.ticker_list.selectedItems()]
 
         self.chart_fig.clear()
+        
+        # Update figure colors for current theme
+        self._update_figure_colors()
 
         try:
             start_date = pd.to_datetime(self.data_manager.start_date, utc=True) if self.data_manager.start_date else None
@@ -252,9 +544,10 @@ class AnalysisDashboard(QWidget):
             logger.debug(f"Using date range: {self.start_date} to {self.end_date}")
         except Exception as e:
             logger.error(f"Error setting dates: {e}")
+            theme_colors = self._get_theme_colors()
             self.chart_fig.add_subplot(111).text(0.5, 0.5, 'Error: Invalid date range',
                                                  horizontalalignment='center', verticalalignment='center',
-                                                 color='#ffffff' if self.is_dark_mode else '#333333')
+                                                 color=theme_colors['text'])
             self.chart_canvas.draw()
             return
 
@@ -271,7 +564,6 @@ class AnalysisDashboard(QWidget):
         elif graph_type == "Trade Profit/Loss Distribution":
             self.plot_trade_profit_loss()
 
-        self.update_metrics()
         self.chart_canvas.draw()
 
     def update_dashboard(self):
@@ -280,10 +572,12 @@ class AnalysisDashboard(QWidget):
 
     def plot_portfolio_performance(self):
         ax = self.chart_fig.add_subplot(111)
+        theme_colors = self._get_theme_colors()
+        
         portfolio_history = get_portfolio_history()
         if not portfolio_history:
             ax.text(0.5, 0.5, 'No portfolio history available', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         df = pd.DataFrame(portfolio_history)
@@ -291,23 +585,29 @@ class AnalysisDashboard(QWidget):
         df = df[(df['date'] >= self.start_date) & (df['date'] <= self.end_date)]
         if df.empty:
             ax.text(0.5, 0.5, 'No portfolio history in date range', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         ax.plot(df['date'], df['value'], label='Portfolio Value', color='#2196F3', linewidth=2)
-        ax.set_title('Portfolio Performance', pad=10)
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Value ($)')
-        ax.legend(loc='best', frameon=True, facecolor='#2b2b2b' if self.is_dark_mode else '#ffffff')
-        ax.grid(True, linestyle='--', alpha=0.5)
+        ax.set_title('Portfolio Performance', pad=10, color=theme_colors['text'])
+        ax.set_xlabel('Date', color=theme_colors['text'])
+        ax.set_ylabel('Value ($)', color=theme_colors['text'])
+        ax.legend(loc='best', frameon=True, facecolor=theme_colors['legend_bg'])
+        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
+        
+        # Set background colors
+        ax.set_facecolor(theme_colors['surface'])
+        
         self.chart_fig.tight_layout()
 
     def plot_sharpe_distribution(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
+        theme_colors = self._get_theme_colors()
+        
         data = self.data_manager.data.copy() if self.data_manager.data is not None else None
         if data is None or data.empty:
             ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         data['date'] = pd.to_datetime(data['date'], utc=True)
@@ -315,13 +615,13 @@ class AnalysisDashboard(QWidget):
 
         if not selected_tickers:
             ax.text(0.5, 0.5, 'Select at least one ticker', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         data = data[data['Ticker'].isin(selected_tickers)]
         if data.empty:
             ax.text(0.5, 0.5, 'No data for selected tickers', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
@@ -337,19 +637,23 @@ class AnalysisDashboard(QWidget):
                 sns.histplot(data=ticker_data, x='Actual_Sharpe', bins=15, ax=ax,
                              color=colors[idx], alpha=0.3, label=f'{ticker} Actual', linestyle='--')
 
-        ax.set_title('Sharpe Ratio Distribution', pad=10)
-        ax.set_xlabel('Sharpe Ratio')
-        ax.set_ylabel('Count')
-        ax.legend(loc='best', frameon=True, facecolor='#2b2b2b' if self.is_dark_mode else '#ffffff')
-        ax.grid(True, linestyle='--', alpha=0.5)
+        ax.set_title('Sharpe Ratio Distribution', pad=10, color=theme_colors['text'])
+        ax.set_xlabel('Sharpe Ratio', color=theme_colors['text'])
+        ax.set_ylabel('Count', color=theme_colors['text'])
+        ax.legend(loc='best', frameon=True, facecolor=theme_colors['legend_bg'])
+        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
+        ax.set_facecolor(theme_colors['surface'])
+        
         self.chart_fig.tight_layout()
 
     def plot_time_series_comparison(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
+        theme_colors = self._get_theme_colors()
+        
         data = self.data_manager.data.copy() if self.data_manager.data is not None else None
         if data is None or data.empty:
             ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         data['date'] = pd.to_datetime(data['date'], utc=True)
@@ -357,13 +661,13 @@ class AnalysisDashboard(QWidget):
 
         if not selected_tickers:
             ax.text(0.5, 0.5, 'Select at least one ticker', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         data = data[data['Ticker'].isin(selected_tickers)]
         if data.empty:
             ax.text(0.5, 0.5, 'No data for selected tickers', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
@@ -380,19 +684,23 @@ class AnalysisDashboard(QWidget):
                            color=colors[idx], s=30, alpha=0.7, label=f'{ticker} Actual')
 
         ax.set_ylim(-5, 5)
-        ax.set_title('Predicted vs Actual Sharpe Ratios', pad=10)
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Sharpe Ratio')
-        ax.legend(loc='best', frameon=True, facecolor='#2b2b2b' if self.is_dark_mode else '#ffffff')
-        ax.grid(True, linestyle='--', alpha=0.5)
+        ax.set_title('Predicted vs Actual Sharpe Ratios', pad=10, color=theme_colors['text'])
+        ax.set_xlabel('Date', color=theme_colors['text'])
+        ax.set_ylabel('Sharpe Ratio', color=theme_colors['text'])
+        ax.legend(loc='best', frameon=True, facecolor=theme_colors['legend_bg'])
+        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
+        ax.set_facecolor(theme_colors['surface'])
+        
         self.chart_fig.tight_layout()
 
     def plot_portfolio_drawdown(self):
         ax = self.chart_fig.add_subplot(111)
+        theme_colors = self._get_theme_colors()
+        
         portfolio_history = get_portfolio_history()
         if not portfolio_history:
             ax.text(0.5, 0.5, 'No portfolio history available', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         df = pd.DataFrame(portfolio_history)
@@ -400,7 +708,7 @@ class AnalysisDashboard(QWidget):
         df = df[(df['date'] >= self.start_date) & (df['date'] <= self.end_date)]
         if df.empty:
             ax.text(0.5, 0.5, 'No portfolio history in date range', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         # Calculate drawdown
@@ -409,19 +717,23 @@ class AnalysisDashboard(QWidget):
 
         ax.plot(df['date'], df['drawdown'], label='Drawdown (%)', color='#F44336', linewidth=2)
         ax.fill_between(df['date'], df['drawdown'], 0, color='#F44336', alpha=0.2)
-        ax.set_title('Portfolio Drawdown', pad=10)
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Drawdown (%)')
-        ax.legend(loc='best', frameon=True, facecolor='#2b2b2b' if self.is_dark_mode else '#ffffff')
-        ax.grid(True, linestyle='--', alpha=0.5)
+        ax.set_title('Portfolio Drawdown', pad=10, color=theme_colors['text'])
+        ax.set_xlabel('Date', color=theme_colors['text'])
+        ax.set_ylabel('Drawdown (%)', color=theme_colors['text'])
+        ax.legend(loc='best', frameon=True, facecolor=theme_colors['legend_bg'])
+        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
+        ax.set_facecolor(theme_colors['surface'])
+        
         self.chart_fig.tight_layout()
 
     def plot_cumulative_returns(self, selected_tickers):
         ax = self.chart_fig.add_subplot(111)
+        theme_colors = self._get_theme_colors()
+        
         data = self.data_manager.data.copy() if self.data_manager.data is not None else None
         if data is None or data.empty:
             ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         data['date'] = pd.to_datetime(data['date'], utc=True)
@@ -429,13 +741,13 @@ class AnalysisDashboard(QWidget):
 
         if not selected_tickers:
             ax.text(0.5, 0.5, 'Select at least one ticker', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         data = data[data['Ticker'].isin(selected_tickers)]
         if data.empty:
             ax.text(0.5, 0.5, 'No data for selected tickers', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         colors = plt.cm.tab10(np.linspace(0, 1, len(selected_tickers)))
@@ -447,19 +759,23 @@ class AnalysisDashboard(QWidget):
                 ax.plot(ticker_data['date'], cumulative, label=f'{ticker} Returns',
                         color=colors[idx], linewidth=1.5)
 
-        ax.set_title('Cumulative Returns by Ticker', pad=10)
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Cumulative Return (%)')
-        ax.legend(loc='best', frameon=True, facecolor='#2b2b2b' if self.is_dark_mode else '#ffffff')
-        ax.grid(True, linestyle='--', alpha=0.5)
+        ax.set_title('Cumulative Returns by Ticker', pad=10, color=theme_colors['text'])
+        ax.set_xlabel('Date', color=theme_colors['text'])
+        ax.set_ylabel('Cumulative Return (%)', color=theme_colors['text'])
+        ax.legend(loc='best', frameon=True, facecolor=theme_colors['legend_bg'])
+        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
+        ax.set_facecolor(theme_colors['surface'])
+        
         self.chart_fig.tight_layout()
 
     def plot_trade_profit_loss(self):
         ax = self.chart_fig.add_subplot(111)
+        theme_colors = self._get_theme_colors()
+        
         orders = get_orders()
         if not orders:
             ax.text(0.5, 0.5, 'No trade history available', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         orders_df = pd.DataFrame(orders)
@@ -468,7 +784,7 @@ class AnalysisDashboard(QWidget):
 
         if orders_df.empty:
             ax.text(0.5, 0.5, 'No trades in date range', horizontalalignment='center',
-                    verticalalignment='center', color='#ffffff' if self.is_dark_mode else '#333333')
+                    verticalalignment='center', color=theme_colors['text'])
             return
 
         # Calculate profit/loss per trade
@@ -483,25 +799,11 @@ class AnalysisDashboard(QWidget):
 
         sns.histplot(profits, bins=30, ax=ax, color='#2196F3', alpha=0.7)
         ax.axvline(0, color='#F44336', linestyle='--', label='Break-even')
-        ax.set_title('Trade Profit/Loss Distribution', pad=10)
-        ax.set_xlabel('Profit/Loss ($)')
-        ax.set_ylabel('Count')
-        ax.legend(loc='best', frameon=True, facecolor='#2b2b2b' if self.is_dark_mode else '#ffffff')
-        ax.grid(True, linestyle='--', alpha=0.5)
+        ax.set_title('Trade Profit/Loss Distribution', pad=10, color=theme_colors['text'])
+        ax.set_xlabel('Profit/Loss ($)', color=theme_colors['text'])
+        ax.set_ylabel('Count', color=theme_colors['text'])
+        ax.legend(loc='best', frameon=True, facecolor=theme_colors['legend_bg'])
+        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
+        ax.set_facecolor(theme_colors['surface'])
+        
         self.chart_fig.tight_layout()
-
-    def update_metrics(self):
-        data = self.data_manager.data
-        try:
-            portfolio_history = get_portfolio_history()
-            total_value = portfolio_history[-1]['value'] if portfolio_history else 10000.0
-            sharpe_ratio = data[data['Actual_Sharpe'] != -1.0]['Best_Prediction'].mean() if data is not None and not data.empty else 0.0
-            volatility = pd.DataFrame(portfolio_history)['value'].pct_change().std() if portfolio_history else 0.0
-            self.metrics_labels['Total Value'].setText(f"Total Value: ${total_value:,.2f}")
-            self.metrics_labels['Sharpe Ratio'].setText(f"Avg Sharpe: {sharpe_ratio:.2f}")
-            self.metrics_labels['Volatility'].setText(f"Volatility: {volatility:.2%}")
-            logger.debug(f"Updated metrics: Total=${total_value:,.2f}, Sharpe={sharpe_ratio:.2f}, Volatility={volatility:.2%}")
-        except Exception as e:
-            logger.error(f"Error updating metrics: {e}")
-            for label in self.metrics_labels.values():
-                label.setText(f"Error: {str(e)}")
