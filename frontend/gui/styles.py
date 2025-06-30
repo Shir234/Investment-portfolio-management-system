@@ -73,6 +73,12 @@ class ModernStyles:
         
         /* Central Widget and Scroll Areas */
         QWidget {{
+            background-color: transparent;  /* Make all QWidget containers transparent */
+            color: {colors['text_primary']};
+        }}
+        
+        /* Specific styling for main containers that need background */
+        QMainWindow > QWidget {{
             background-color: {colors['primary']};
         }}
         
@@ -82,7 +88,7 @@ class ModernStyles:
         }}
         
         QScrollArea > QWidget > QWidget {{
-            background-color: {colors['primary']};
+            background-color: transparent;  /* Keep scroll content transparent */
         }}
         
         /* Modern Tab Widget */
@@ -198,9 +204,10 @@ class ModernStyles:
         }}
         """
     
+
     @classmethod
     def get_input_styles(cls, is_dark=True):
-        """Modern input field styling"""
+        """Modern input field styling with text-based dropdown arrows"""
         colors = cls.COLORS['dark'] if is_dark else cls.COLORS['light']
         
         return f"""
@@ -226,50 +233,6 @@ class ModernStyles:
             color: {colors['text_muted']};
         }}
         
-        /* SpinBox Buttons */
-        QSpinBox::up-button, QDoubleSpinBox::up-button {{
-            subcontrol-origin: border;
-            subcontrol-position: top right;
-            width: 20px;
-            border-left: 1px solid {colors['border']};
-            border-bottom: 1px solid {colors['border']};
-            border-top-right-radius: 8px;
-            background-color: {colors['secondary']};
-        }}
-        
-        QSpinBox::down-button, QDoubleSpinBox::down-button {{
-            subcontrol-origin: border;
-            subcontrol-position: bottom right;
-            width: 20px;
-            border-left: 1px solid {colors['border']};
-            border-top: 1px solid {colors['border']};
-            border-bottom-right-radius: 8px;
-            background-color: {colors['secondary']};
-        }}
-        
-        QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
-            image: none;
-            border-left: 4px solid transparent;
-            border-right: 4px solid transparent;
-            border-bottom: 6px solid {colors['text_secondary']};
-            width: 0px;
-            height: 0px;
-        }}
-        
-        QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
-            image: none;
-            border-left: 4px solid transparent;
-            border-right: 4px solid transparent;
-            border-top: 6px solid {colors['text_secondary']};
-            width: 0px;
-            height: 0px;
-        }}
-        
-        QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
-        QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
-            background-color: {colors['hover']};
-        }}
-        
         /* Date Inputs */
         QDateEdit {{
             background-color: {colors['surface']};
@@ -291,22 +254,26 @@ class ModernStyles:
             subcontrol-position: top right;
             width: 20px;
             border-left: 1px solid {colors['border']};
-            border-top-right-radius: 8px;
-            border-bottom-right-radius: 8px;
+            border-top-right-radius: 6px;
+            border-bottom-right-radius: 6px;
             background-color: {colors['secondary']};
         }}
         
-        QDateEdit::down-arrow {{
-            image: none;
-            border-left: 4px solid transparent;
-            border-right: 4px solid transparent;
-            border-top: 6px solid {colors['text_secondary']};
-            width: 0px;
-            height: 0px;
+        QDateEdit::drop-down:hover {{
+            background-color: {colors['accent']};
         }}
         
-        QDateEdit::drop-down:hover {{
-            background-color: {colors['hover']};
+        QDateEdit::down-arrow {{
+            width: 12px;
+            height: 12px;
+            font-size: 12px;
+            color: {colors['text_primary']};
+            background-color: transparent;
+            border: none;
+        }}
+        
+        QDateEdit::down-arrow:after {{
+            content: "▼";
         }}
         
         /* Combo Boxes */
@@ -330,22 +297,26 @@ class ModernStyles:
             subcontrol-position: top right;
             width: 20px;
             border-left: 1px solid {colors['border']};
-            border-top-right-radius: 8px;
-            border-bottom-right-radius: 8px;
+            border-top-right-radius: 6px;
+            border-bottom-right-radius: 6px;
             background-color: {colors['secondary']};
         }}
         
-        QComboBox::down-arrow {{
-            image: none;
-            border-left: 4px solid transparent;
-            border-right: 4px solid transparent;
-            border-top: 6px solid {colors['text_secondary']};
-            width: 0px;
-            height: 0px;
+        QComboBox::drop-down:hover {{
+            background-color: {colors['accent']};
         }}
         
-        QComboBox::drop-down:hover {{
-            background-color: {colors['hover']};
+        QComboBox::down-arrow {{
+            width: 12px;
+            height: 12px;
+            font-size: 12px;
+            color: {colors['text_primary']};
+            background-color: transparent;
+            border: none;
+        }}
+        
+        QComboBox::down-arrow:after {{
+            content: "▼";
         }}
         
         QComboBox QAbstractItemView {{
@@ -471,6 +442,16 @@ class ModernStyles:
             color: {colors['text_primary']};
             font-size: 14px;
             font-weight: 500;
+            background-color: transparent;  /* Ensure transparent background */
+        }}
+        
+        QLabel[class="label"] {{
+            color: {colors['text_primary']};
+            font-size: 15px;  /* Slightly bigger */
+            font-weight: 700;  /* Bold */
+            margin-bottom: 8px;
+            background-color: transparent;  /* Make sure labels have transparent background */
+            border: none;  /* Remove any borders */
         }}
         
         QLabel[class="title"] {{
@@ -478,6 +459,7 @@ class ModernStyles:
             font-weight: 700;
             color: {colors['text_primary']};
             margin: 16px 0;
+            background-color: transparent;
         }}
         
         QLabel[class="subtitle"] {{
@@ -485,6 +467,7 @@ class ModernStyles:
             font-weight: 600;
             color: {colors['text_secondary']};
             margin: 12px 0;
+            background-color: transparent;
         }}
         
         QLabel[class="caption"] {{
@@ -492,6 +475,7 @@ class ModernStyles:
             font-weight: 400;
             color: {colors['text_muted']};
             margin: 4px 0;
+            background-color: transparent;
         }}
         
         QLabel[class="metric"] {{

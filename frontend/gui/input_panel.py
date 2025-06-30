@@ -83,12 +83,141 @@ class TradeConfirmationDialog(QDialog):
         self.table.setRowCount(len(self.orders))
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["Select", "Date", "Ticker", "Action", "Shares", "Price"])
+        
+        # Set specific column widths - fix for checkbox column
+        self.table.setColumnWidth(0, 80)  # Select column - wider for checkboxes
+        self.table.setColumnWidth(1, 140)  # Date column
+        self.table.setColumnWidth(2, 80)   # Ticker column
+        self.table.setColumnWidth(3, 80)   # Action column
+        self.table.setColumnWidth(4, 80)   # Shares column
+        self.table.setColumnWidth(5, 100)  # Price column
+        
+        # Set row height to accommodate larger checkboxes
+        self.table.verticalHeader().setDefaultSectionSize(50)
+        
+        # Make only the last column stretch to fill remaining space
         self.table.horizontalHeader().setStretchLastSection(True)
 
         for row, order in enumerate(self.orders):
+            # Create checkbox with larger size
             checkbox = QCheckBox()
             checkbox.setChecked(True)
-            self.table.setCellWidget(row, 0, checkbox)
+            # Make checkbox much larger with intuitive checkmark behavior
+            checkbox.setStyleSheet("""
+                QCheckBox {
+                    font-size: 18px;
+                    padding: 2px;
+                    spacing: 2px;
+                }
+                QCheckBox::indicator {
+                    width: 30px;
+                    height: 30px;
+                    border: 3px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                }
+                QCheckBox::indicator:unchecked {
+                    background-color: white;
+                    border: 3px solid #ccc;
+                }
+                QCheckBox::indicator:unchecked:hover {
+                    background-color: #f5f5f5;
+                    border: 3px solid #999;
+                }
+                QCheckBox::indicator:checked {
+                    background-color: #4CAF50;
+                    border: 3px solid #4CAF50;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 20px;
+                }
+                QCheckBox::indicator:checked:hover {
+                    background-color: #66bb6a;
+                    border: 3px solid #66bb6a;
+                }
+            """)
+            
+            # Create a custom checkbox that shows ✓ when checked
+            def create_custom_checkbox():
+                widget = QWidget()
+                layout = QHBoxLayout(widget)
+                layout.setContentsMargins(2, 2, 2, 2)  # Minimal margins
+                
+                # Create a clickable label that acts as checkbox
+                check_label = QLabel()
+                check_label.setFixedSize(20, 20)  # Keep original size
+                check_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                check_label.setStyleSheet("""
+                    QLabel {
+                        border: 3px solid #ccc;
+                        border-radius: 6px;
+                        background-color: white;
+                        font-size: 10px;
+                        font-weight: bold;
+                        color: white;
+                        padding: 1px;
+                    }
+                """)
+                
+                # Track checked state
+                check_label.checked = True
+                
+                def update_appearance():
+                    if check_label.checked:
+                        check_label.setText("✓")
+                        check_label.setStyleSheet("""
+                            QLabel {
+                                border: 3px solid #4CAF50;
+                                border-radius: 6px;
+                                background-color: #4CAF50;
+                                font-size: 16px;
+                                font-weight: bold;
+                                color: white;
+                                padding: 1px;
+                            }
+                            QLabel:hover {
+                                background-color: #66bb6a;
+                                border: 3px solid #66bb6a;
+                            }
+                        """)
+                    else:
+                        check_label.setText("")
+                        check_label.setStyleSheet("""
+                            QLabel {
+                                border: 3px solid #ccc;
+                                border-radius: 6px;
+                                background-color: white;
+                                font-size: 16px;
+                                font-weight: bold;
+                                color: white;
+                                padding: 1px;
+                            }
+                            QLabel:hover {
+                                background-color: #f5f5f5;
+                                border: 3px solid #999;
+                            }
+                        """)
+                
+                def toggle_check(event):
+                    check_label.checked = not check_label.checked
+                    update_appearance()
+                
+                # Make it clickable
+                check_label.mousePressEvent = toggle_check
+                
+                # Set initial appearance
+                update_appearance()
+                
+                layout.addWidget(check_label)
+                layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                
+                # Store reference to check state
+                widget.is_checked = lambda: check_label.checked
+                
+                return widget
+            
+            checkbox_widget = create_custom_checkbox()
+            self.table.setCellWidget(row, 0, checkbox_widget)
 
             self.table.setItem(row, 1, QTableWidgetItem(str(order.get('date', ''))))
             self.table.setItem(row, 2, QTableWidgetItem(order.get('ticker', '')))
@@ -100,7 +229,6 @@ class TradeConfirmationDialog(QDialog):
                 if self.table.item(row, col):
                     self.table.item(row, col).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.table.resizeColumnsToContents()
         layout.addWidget(self.table)
 
         # Buttons
@@ -122,17 +250,144 @@ class TradeConfirmationDialog(QDialog):
         # Apply modern styling
         self.apply_styles()
 
+    # def apply_styles(self):
+    #     """Apply modern styling to the dialog."""
+    #     style = ModernStyles.get_complete_style(self.is_dark_mode)
+    #     self.setStyleSheet(style)
     def apply_styles(self):
-        """Apply modern styling to the dialog."""
+        """Apply modern styling to the panel with risk button styles."""
         style = ModernStyles.get_complete_style(self.is_dark_mode)
-        self.setStyleSheet(style)
+        
+        # Add custom styles for risk buttons and input fixes
+        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
+        
+        custom_styles = f"""
+            /* Risk buttons */
+            QToolButton[class="risk-button"] {{
+                background-color: {colors['surface']};
+                border: 1px solid {colors['border']};
+                border-radius: 6px;
+                color: {colors['text_primary']};
+                font-size: 16px;
+                font-weight: 600;
+            }}
+            QToolButton[class="risk-button"]:hover {{
+                background-color: {colors['accent']};
+                border-color: {colors['accent']};
+                color: white;
+            }}
+            QToolButton[class="risk-button"]:pressed {{
+                background-color: {colors['accent_hover']};
+            }}
+            
+            /* Fix input field backgrounds to match overall background */
+            QLineEdit, QSpinBox, QDoubleSpinBox, QDateEdit, QComboBox {{
+                background-color: {colors['primary']};  /* Same as main background */
+                color: {colors['text_primary']};
+                border: 2px solid {colors['border']};
+                border-radius: 8px;
+                padding: 12px 16px;
+                font-size: 15px;  /* Slightly bigger font */
+                font-weight: 600;  /* Bold font */
+                min-width: 200px;
+                min-height: 20px;
+            }}
+            
+            QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QComboBox:focus {{
+                border: 2px solid {colors['accent']};
+                outline: none;
+            }}
+            
+            /* Fix dropdown arrows to be proper arrows */
+            QDateEdit::drop-down, QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 25px;
+                border-left: 2px solid {colors['border']};
+                border-top-right-radius: 6px;
+                border-bottom-right-radius: 6px;
+                background-color: {colors['secondary']};
+            }}
+            
+            QDateEdit::down-arrow, QComboBox::down-arrow {{
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 8px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+                margin: 0px;
+            }}
+            
+            QDateEdit::drop-down:hover, QComboBox::drop-down:hover {{
+                background-color: {colors['accent']};
+            }}
+            
+            QDateEdit::down-arrow:hover, QComboBox::down-arrow:hover {{
+                border-top: 8px solid white;
+            }}
+            
+            /* Fix ComboBox dropdown menu */
+            QComboBox QAbstractItemView {{
+                background-color: {colors['primary']};
+                color: {colors['text_primary']};
+                border: 2px solid {colors['border']};
+                border-radius: 8px;
+                selection-background-color: {colors['accent']};
+                outline: none;
+                font-weight: 600;
+            }}
+            
+            /* Make labels bold and slightly bigger */
+            QLabel[class="label"] {{
+                color: {colors['text_primary']};
+                font-size: 15px;  /* Slightly bigger */
+                font-weight: 700;  /* Bold */
+                margin-bottom: 8px;
+            }}
+            
+            /* Fix Portfolio Overview metrics positioning */
+            QLabel[class="metric"] {{
+                font-size: 16px;
+                font-weight: 600;
+                padding: 12px 16px;
+                background-color: {colors['surface']};
+                border: 1px solid {colors['border_light']};
+                border-radius: 8px;
+                color: {colors['text_primary']};
+                text-align: center;  /* Center the text */
+                margin: 0px;  /* Remove any margins */
+            }}
+            
+            QLabel[class="metric-success"] {{
+                color: {colors['success']};
+                border-left: 4px solid {colors['success']};
+                text-align: center;
+            }}
+            
+            QLabel[class="metric-warning"] {{
+                color: {colors['warning']};
+                border-left: 4px solid {colors['warning']};
+                text-align: center;
+            }}
+            
+            QLabel[class="metric-danger"] {{
+                color: {colors['danger']};
+                border-left: 4px solid {colors['danger']};
+                text-align: center;
+            }}
+        """
+        
+        complete_style = style + custom_styles
+        self.setStyleSheet(complete_style)
 
     def accept_selected(self):
         """Collect selected orders and accept the dialog."""
         self.selected_orders = []
         for row in range(self.table.rowCount()):
-            checkbox = self.table.cellWidget(row, 0)
-            if checkbox.isChecked():
+            # Get the custom checkbox widget
+            checkbox_widget = self.table.cellWidget(row, 0)
+            if checkbox_widget and checkbox_widget.is_checked():
                 self.selected_orders.append(self.orders[row])
         self.accept()
 
@@ -203,9 +458,10 @@ class InputPanel(QWidget):
         self.investment_input = QLineEdit("10000")
         self.investment_input.setPlaceholderText("Enter amount in USD")
         self.investment_input.setMinimumWidth(200)
-        self.investment_input.setMaximumWidth(400)
+        self.investment_input.setMaximumWidth(45)
         
-        config_layout.addWidget(investment_label, 0, 0, Qt.AlignmentFlag.AlignTop)
+       # config_layout.addWidget(investment_label, 0, 0, Qt.AlignmentFlag.AlignTop)
+        config_layout.addWidget(investment_label, 0, 0, Qt.AlignmentFlag.AlignVCenter)  # Changed to AlignVCenter
         config_layout.addWidget(self.investment_input, 0, 1)
 
         # Risk Level with horizontal buttons and integer steps
@@ -226,19 +482,19 @@ class InputPanel(QWidget):
         self.risk_input.setSuffix(" / 10")
         self.risk_input.setMinimumWidth(120)
         self.risk_input.setMaximumWidth(200)
-        self.risk_input.setMinimumHeight(35)  # Ensure adequate height
+        self.risk_input.setFixedHeight(45)  # Make input field smaller
         self.risk_input.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)  # Hide default buttons
         
         # Create custom horizontal buttons with better styling
         risk_down_btn = QToolButton()
         risk_down_btn.setText("−")
-        risk_down_btn.setFixedSize(35, 35)  # Slightly larger buttons
+        risk_down_btn.setFixedSize(45, 45)  # Match input field height
         risk_down_btn.setProperty("class", "risk-button")
         risk_down_btn.clicked.connect(lambda: self.risk_input.stepDown())
         
         risk_up_btn = QToolButton()
         risk_up_btn.setText("+")
-        risk_up_btn.setFixedSize(35, 35)  # Slightly larger buttons
+        risk_up_btn.setFixedSize(45, 45)  # Match input field height
         risk_up_btn.setProperty("class", "risk-button")
         risk_up_btn.clicked.connect(lambda: self.risk_input.stepUp())
         
@@ -248,7 +504,7 @@ class InputPanel(QWidget):
         risk_layout.addWidget(risk_up_btn)
         risk_layout.addStretch()
         
-        config_layout.addWidget(risk_label, 1, 0, Qt.AlignmentFlag.AlignTop)
+        config_layout.addWidget(risk_label, 1, 0, Qt.AlignmentFlag.AlignVCenter)  # Changed to AlignVCenter
         config_layout.addWidget(risk_container, 1, 1)
 
         # Date Range with better spacing
@@ -259,10 +515,10 @@ class InputPanel(QWidget):
         self.start_date_input.setDisplayFormat("yyyy-MM-dd")
         self.start_date_input.setMinimumWidth(200)
         self.start_date_input.setMaximumWidth(400)
-        self.start_date_input.setMinimumHeight(35)
+        self.start_date_input.setFixedHeight(45)  # Make input field smaller
         self.start_date_input.dateChanged.connect(self.update_end_date_minimum)
         
-        config_layout.addWidget(start_label, 2, 0, Qt.AlignmentFlag.AlignTop)
+        config_layout.addWidget(start_label, 2, 0, Qt.AlignmentFlag.AlignVCenter)  # Changed to AlignVCenter
         config_layout.addWidget(self.start_date_input, 2, 1)
 
         end_label = QLabel("End Date:")
@@ -272,9 +528,9 @@ class InputPanel(QWidget):
         self.end_date_input.setDisplayFormat("yyyy-MM-dd")
         self.end_date_input.setMinimumWidth(200)
         self.end_date_input.setMaximumWidth(400)
-        self.end_date_input.setMinimumHeight(35)
+        self.end_date_input.setFixedHeight(45)  # Make input field smaller
         
-        config_layout.addWidget(end_label, 3, 0, Qt.AlignmentFlag.AlignTop)
+        config_layout.addWidget(end_label, 3, 0, Qt.AlignmentFlag.AlignVCenter)  # Changed to AlignVCenter
         config_layout.addWidget(self.end_date_input, 3, 1)
 
         # Trading Mode
@@ -285,9 +541,9 @@ class InputPanel(QWidget):
         self.mode_combo.setCurrentText("Automatic")
         self.mode_combo.setMinimumWidth(200)
         self.mode_combo.setMaximumWidth(400)
-        self.mode_combo.setMinimumHeight(35)
+        self.mode_combo.setFixedHeight(45)  # Make input field smaller
         
-        config_layout.addWidget(mode_label, 4, 0, Qt.AlignmentFlag.AlignTop)
+        config_layout.addWidget(mode_label, 4, 0, Qt.AlignmentFlag.AlignVCenter)  # Changed to AlignVCenter
         config_layout.addWidget(self.mode_combo, 4, 1)
 
         main_layout.addWidget(config_group)
@@ -417,19 +673,23 @@ class InputPanel(QWidget):
         metrics_layout.setColumnStretch(1, 1)
         metrics_layout.setColumnStretch(2, 1)
 
-        # Create metric cards without emojis
+        # Create metric cards without emojis - with proper alignment
         self.cash_label = QLabel("Liquid Cash: N/A")
         self.cash_label.setProperty("class", "metric")
         self.cash_label.setWordWrap(True)
+        self.cash_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center align text
         
         self.portfolio_label = QLabel("Portfolio Value: N/A")
         self.portfolio_label.setProperty("class", "metric")
         self.portfolio_label.setWordWrap(True)
+        self.portfolio_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center align text
         
         self.total_label = QLabel("Total Value: N/A")
         self.total_label.setProperty("class", "metric")
         self.total_label.setWordWrap(True)
+        self.total_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center align text
 
+        # Add widgets with proper spacing
         metrics_layout.addWidget(self.cash_label, 0, 0)
         metrics_layout.addWidget(self.portfolio_label, 0, 1)
         metrics_layout.addWidget(self.total_label, 0, 2)
@@ -437,32 +697,9 @@ class InputPanel(QWidget):
         main_layout.addWidget(metrics_group)
 
     def apply_styles(self):
-        """Apply modern styling to the panel with risk button styles."""
+        """Apply modern styling to the dialog."""
         style = ModernStyles.get_complete_style(self.is_dark_mode)
-        
-        # Add custom styles for risk buttons
-        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
-        risk_button_style = f"""
-            QToolButton[class="risk-button"] {{
-                background-color: {colors['surface']};
-                border: 1px solid {colors['border']};
-                border-radius: 6px;
-                color: {colors['text_primary']};
-                font-size: 16px;
-                font-weight: 600;
-            }}
-            QToolButton[class="risk-button"]:hover {{
-                background-color: {colors['accent']};
-                border-color: {colors['accent']};
-                color: white;
-            }}
-            QToolButton[class="risk-button"]:pressed {{
-                background-color: {colors['accent_hover']};
-            }}
-        """
-        
-        complete_style = style + risk_button_style
-        self.setStyleSheet(complete_style)
+        self.setStyleSheet(style)
 
     def set_theme(self, is_dark_mode):
         """Apply light or dark theme to the panel."""
