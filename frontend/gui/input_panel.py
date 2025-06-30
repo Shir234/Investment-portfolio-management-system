@@ -3,15 +3,16 @@ import pandas as pd
 from datetime import datetime, date
 from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit,
                              QDateEdit, QPushButton, QComboBox, QMessageBox,
-                             QDoubleSpinBox, QDialog, QTableWidget, QTableWidgetItem,
+                             QDoubleSpinBox, QSpinBox, QDialog, QTableWidget, QTableWidgetItem,
                              QCheckBox, QFrame, QGridLayout, QSpacerItem, QSizePolicy,
                              QGroupBox, QProgressBar, QToolButton, QScrollArea)
 from PyQt6.QtCore import QDate, Qt, QThread, QObject, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QFont, QPalette, QColor
+from PyQt6.QtGui import QFont, QPalette, QColor, QIcon
 from frontend.logging_config import get_logger
 from frontend.data.trading_connector import execute_trading_strategy, get_order_history_df, log_trading_orders
 from backend.trading_logic_new import get_orders, get_portfolio_history
 from frontend.gui.styles import ModernStyles
+from frontend.utils import resource_path
 
 # Set up logging
 logger = get_logger(__name__)
@@ -99,124 +100,8 @@ class TradeConfirmationDialog(QDialog):
         self.table.horizontalHeader().setStretchLastSection(True)
 
         for row, order in enumerate(self.orders):
-            # Create checkbox with larger size
-            checkbox = QCheckBox()
-            checkbox.setChecked(True)
-            # Make checkbox much larger with intuitive checkmark behavior
-            checkbox.setStyleSheet("""
-                QCheckBox {
-                    font-size: 18px;
-                    padding: 2px;
-                    spacing: 2px;
-                }
-                QCheckBox::indicator {
-                    width: 30px;
-                    height: 30px;
-                    border: 3px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                }
-                QCheckBox::indicator:unchecked {
-                    background-color: white;
-                    border: 3px solid #ccc;
-                }
-                QCheckBox::indicator:unchecked:hover {
-                    background-color: #f5f5f5;
-                    border: 3px solid #999;
-                }
-                QCheckBox::indicator:checked {
-                    background-color: #4CAF50;
-                    border: 3px solid #4CAF50;
-                    color: white;
-                    font-weight: bold;
-                    font-size: 20px;
-                }
-                QCheckBox::indicator:checked:hover {
-                    background-color: #66bb6a;
-                    border: 3px solid #66bb6a;
-                }
-            """)
-            
-            # Create a custom checkbox that shows ✓ when checked
-            def create_custom_checkbox():
-                widget = QWidget()
-                layout = QHBoxLayout(widget)
-                layout.setContentsMargins(2, 2, 2, 2)  # Minimal margins
-                
-                # Create a clickable label that acts as checkbox
-                check_label = QLabel()
-                check_label.setFixedSize(20, 20)  # Keep original size
-                check_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                check_label.setStyleSheet("""
-                    QLabel {
-                        border: 3px solid #ccc;
-                        border-radius: 6px;
-                        background-color: white;
-                        font-size: 10px;
-                        font-weight: bold;
-                        color: white;
-                        padding: 1px;
-                    }
-                """)
-                
-                # Track checked state
-                check_label.checked = True
-                
-                def update_appearance():
-                    if check_label.checked:
-                        check_label.setText("✓")
-                        check_label.setStyleSheet("""
-                            QLabel {
-                                border: 3px solid #4CAF50;
-                                border-radius: 6px;
-                                background-color: #4CAF50;
-                                font-size: 16px;
-                                font-weight: bold;
-                                color: white;
-                                padding: 1px;
-                            }
-                            QLabel:hover {
-                                background-color: #66bb6a;
-                                border: 3px solid #66bb6a;
-                            }
-                        """)
-                    else:
-                        check_label.setText("")
-                        check_label.setStyleSheet("""
-                            QLabel {
-                                border: 3px solid #ccc;
-                                border-radius: 6px;
-                                background-color: white;
-                                font-size: 16px;
-                                font-weight: bold;
-                                color: white;
-                                padding: 1px;
-                            }
-                            QLabel:hover {
-                                background-color: #f5f5f5;
-                                border: 3px solid #999;
-                            }
-                        """)
-                
-                def toggle_check(event):
-                    check_label.checked = not check_label.checked
-                    update_appearance()
-                
-                # Make it clickable
-                check_label.mousePressEvent = toggle_check
-                
-                # Set initial appearance
-                update_appearance()
-                
-                layout.addWidget(check_label)
-                layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                
-                # Store reference to check state
-                widget.is_checked = lambda: check_label.checked
-                
-                return widget
-            
-            checkbox_widget = create_custom_checkbox()
+            # Create checkbox widget
+            checkbox_widget = self.create_custom_checkbox()
             self.table.setCellWidget(row, 0, checkbox_widget)
 
             self.table.setItem(row, 1, QTableWidgetItem(str(order.get('date', ''))))
@@ -250,136 +135,78 @@ class TradeConfirmationDialog(QDialog):
         # Apply modern styling
         self.apply_styles()
 
-    # def apply_styles(self):
-    #     """Apply modern styling to the dialog."""
-    #     style = ModernStyles.get_complete_style(self.is_dark_mode)
-    #     self.setStyleSheet(style)
+    def create_custom_checkbox(self):
+        """Create a custom checkbox widget that shows ✓ when checked."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Create a clickable label that acts as checkbox
+        check_label = QLabel()
+        check_label.setFixedSize(20, 20)
+        check_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Track checked state
+        check_label.checked = True
+        
+        def update_appearance():
+            if check_label.checked:
+                check_label.setText("✓")
+                check_label.setStyleSheet("""
+                    QLabel {
+                        border: 3px solid #4CAF50;
+                        border-radius: 6px;
+                        background-color: #4CAF50;
+                        font-size: 16px;
+                        font-weight: bold;
+                        color: white;
+                        padding: 1px;
+                    }
+                    QLabel:hover {
+                        background-color: #66bb6a;
+                        border: 3px solid #66bb6a;
+                    }
+                """)
+            else:
+                check_label.setText("")
+                check_label.setStyleSheet("""
+                    QLabel {
+                        border: 3px solid #ccc;
+                        border-radius: 6px;
+                        background-color: white;
+                        font-size: 16px;
+                        font-weight: bold;
+                        color: white;
+                        padding: 1px;
+                    }
+                    QLabel:hover {
+                        background-color: #f5f5f5;
+                        border: 3px solid #999;
+                    }
+                """)
+        
+        def toggle_check(event):
+            check_label.checked = not check_label.checked
+            update_appearance()
+        
+        # Make it clickable
+        check_label.mousePressEvent = toggle_check
+        
+        # Set initial appearance
+        update_appearance()
+        
+        layout.addWidget(check_label)
+        
+        # Store reference to check state
+        widget.is_checked = lambda: check_label.checked
+        
+        return widget
+
     def apply_styles(self):
-        """Apply modern styling to the panel with risk button styles."""
+        """Apply modern styling to the dialog."""
         style = ModernStyles.get_complete_style(self.is_dark_mode)
-        
-        # Add custom styles for risk buttons and input fixes
-        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
-        
-        custom_styles = f"""
-            /* Risk buttons */
-            QToolButton[class="risk-button"] {{
-                background-color: {colors['surface']};
-                border: 1px solid {colors['border']};
-                border-radius: 6px;
-                color: {colors['text_primary']};
-                font-size: 16px;
-                font-weight: 600;
-            }}
-            QToolButton[class="risk-button"]:hover {{
-                background-color: {colors['accent']};
-                border-color: {colors['accent']};
-                color: white;
-            }}
-            QToolButton[class="risk-button"]:pressed {{
-                background-color: {colors['accent_hover']};
-            }}
-            
-            /* Fix input field backgrounds to match overall background */
-            QLineEdit, QSpinBox, QDoubleSpinBox, QDateEdit, QComboBox {{
-                background-color: {colors['primary']};  /* Same as main background */
-                color: {colors['text_primary']};
-                border: 2px solid {colors['border']};
-                border-radius: 8px;
-                padding: 12px 16px;
-                font-size: 15px;  /* Slightly bigger font */
-                font-weight: 600;  /* Bold font */
-                min-width: 200px;
-                min-height: 20px;
-            }}
-            
-            QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QComboBox:focus {{
-                border: 2px solid {colors['accent']};
-                outline: none;
-            }}
-            
-            /* Fix dropdown arrows to be proper arrows */
-            QDateEdit::drop-down, QComboBox::drop-down {{
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 25px;
-                border-left: 2px solid {colors['border']};
-                border-top-right-radius: 6px;
-                border-bottom-right-radius: 6px;
-                background-color: {colors['secondary']};
-            }}
-            
-            QDateEdit::down-arrow, QComboBox::down-arrow {{
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 8px solid {colors['text_primary']};
-                width: 0px;
-                height: 0px;
-                margin: 0px;
-            }}
-            
-            QDateEdit::drop-down:hover, QComboBox::drop-down:hover {{
-                background-color: {colors['accent']};
-            }}
-            
-            QDateEdit::down-arrow:hover, QComboBox::down-arrow:hover {{
-                border-top: 8px solid white;
-            }}
-            
-            /* Fix ComboBox dropdown menu */
-            QComboBox QAbstractItemView {{
-                background-color: {colors['primary']};
-                color: {colors['text_primary']};
-                border: 2px solid {colors['border']};
-                border-radius: 8px;
-                selection-background-color: {colors['accent']};
-                outline: none;
-                font-weight: 600;
-            }}
-            
-            /* Make labels bold and slightly bigger */
-            QLabel[class="label"] {{
-                color: {colors['text_primary']};
-                font-size: 15px;  /* Slightly bigger */
-                font-weight: 700;  /* Bold */
-                margin-bottom: 8px;
-            }}
-            
-            /* Fix Portfolio Overview metrics positioning */
-            QLabel[class="metric"] {{
-                font-size: 16px;
-                font-weight: 600;
-                padding: 12px 16px;
-                background-color: {colors['surface']};
-                border: 1px solid {colors['border_light']};
-                border-radius: 8px;
-                color: {colors['text_primary']};
-                text-align: center;  /* Center the text */
-                margin: 0px;  /* Remove any margins */
-            }}
-            
-            QLabel[class="metric-success"] {{
-                color: {colors['success']};
-                border-left: 4px solid {colors['success']};
-                text-align: center;
-            }}
-            
-            QLabel[class="metric-warning"] {{
-                color: {colors['warning']};
-                border-left: 4px solid {colors['warning']};
-                text-align: center;
-            }}
-            
-            QLabel[class="metric-danger"] {{
-                color: {colors['danger']};
-                border-left: 4px solid {colors['danger']};
-                text-align: center;
-            }}
-        """
-        
-        complete_style = style + custom_styles
-        self.setStyleSheet(complete_style)
+        self.setStyleSheet(style)
 
     def accept_selected(self):
         """Collect selected orders and accept the dialog."""
@@ -441,110 +268,161 @@ class InputPanel(QWidget):
         self.update_financial_metrics(0, 0)
 
     def create_configuration_section(self, main_layout):
-        """Create the configuration input section with better spacing and responsiveness."""
+        """Create the configuration input section with darker label backgrounds."""
         config_group = QGroupBox("Strategy Configuration")
-        config_layout = QGridLayout(config_group)
-        config_layout.setContentsMargins(20, 30, 20, 30)  # Added bottom margin
-        config_layout.setVerticalSpacing(25)  # Increased vertical spacing even more
-        config_layout.setHorizontalSpacing(20)  # Increased horizontal spacing
+        config_layout = QVBoxLayout(config_group)
+        config_layout.setContentsMargins(20, 30, 20, 30)
+        config_layout.setSpacing(15)
 
-        # Set column stretch factors for responsive layout
-        config_layout.setColumnStretch(0, 0)  # Labels don't stretch
-        config_layout.setColumnStretch(1, 1)  # Inputs stretch
-
-        # Investment Amount
+        # Investment Amount - with darker label background
+        investment_container = QFrame()
+        investment_layout = QVBoxLayout(investment_container)
+        investment_layout.setContentsMargins(0, 0, 0, 0)
+        investment_layout.setSpacing(0)
+        
+        # Dark label background frame
+        investment_label_frame = QFrame()
+        investment_label_frame.setProperty("class", "label-frame")
+        investment_label_frame.setFixedHeight(35)
+        investment_label_layout = QHBoxLayout(investment_label_frame)
+        investment_label_layout.setContentsMargins(12, 8, 12, 8)
+        
         investment_label = QLabel("Investment Amount ($):")
-        investment_label.setProperty("class", "label")
+        investment_label.setProperty("class", "label-dark")
+        investment_label_layout.addWidget(investment_label)
+        investment_label_layout.addStretch()
+        
+        # Input field
+        investment_input_frame = QFrame()
+        investment_input_frame.setProperty("class", "input-frame")
+        investment_input_layout = QHBoxLayout(investment_input_frame)
+        investment_input_layout.setContentsMargins(12, 12, 12, 12)
+        
         self.investment_input = QLineEdit("10000")
-        self.investment_input.setPlaceholderText("Enter amount in USD")
-        self.investment_input.setMinimumWidth(200)
-        self.investment_input.setMaximumWidth(45)
+        self.investment_input.setPlaceholderText("Enter amount (e.g., 10000)")
+        self.investment_input.setToolTip("Enter the initial investment amount in USD")
+        self.investment_input.setProperty("class", "input-field")
+        investment_input_layout.addWidget(self.investment_input)
         
-       # config_layout.addWidget(investment_label, 0, 0, Qt.AlignmentFlag.AlignTop)
-        config_layout.addWidget(investment_label, 0, 0, Qt.AlignmentFlag.AlignVCenter)  # Changed to AlignVCenter
-        config_layout.addWidget(self.investment_input, 0, 1)
+        investment_layout.addWidget(investment_label_frame)
+        investment_layout.addWidget(investment_input_frame)
+        config_layout.addWidget(investment_container)
 
-        # Risk Level with horizontal buttons and integer steps
-        risk_label = QLabel("Risk Level (0-10):")
-        risk_label.setProperty("class", "label")
-        
-        # Create risk level container with horizontal layout
-        risk_container = QWidget()
-        risk_layout = QHBoxLayout(risk_container)
+        # Risk Level - with darker label background
+        risk_container = QFrame()
+        risk_layout = QVBoxLayout(risk_container)
         risk_layout.setContentsMargins(0, 0, 0, 0)
-        risk_layout.setSpacing(10)
+        risk_layout.setSpacing(0)
         
-        self.risk_input = QDoubleSpinBox()
+        # Dark label background frame
+        risk_label_frame = QFrame()
+        risk_label_frame.setProperty("class", "label-frame")
+        risk_label_frame.setFixedHeight(35)
+        risk_label_layout = QHBoxLayout(risk_label_frame)
+        risk_label_layout.setContentsMargins(12, 8, 12, 8)
+        
+        risk_label = QLabel("Risk Level (0-10):")
+        risk_label.setProperty("class", "label-dark")
+        risk_label_layout.addWidget(risk_label)
+        risk_label_layout.addStretch()
+        
+        # Input field
+        risk_input_frame = QFrame()
+        risk_input_frame.setProperty("class", "input-frame")
+        risk_input_layout = QHBoxLayout(risk_input_frame)
+        risk_input_layout.setContentsMargins(12, 12, 12, 12)
+        
+        self.risk_input = QSpinBox()
         self.risk_input.setRange(0, 10)
-        self.risk_input.setValue(0)  # Default to 0
-        self.risk_input.setSingleStep(1)  # Changed to integer steps
-        self.risk_input.setDecimals(0)  # No decimal places for integers
-        self.risk_input.setSuffix(" / 10")
-        self.risk_input.setMinimumWidth(120)
-        self.risk_input.setMaximumWidth(200)
-        self.risk_input.setFixedHeight(45)  # Make input field smaller
-        self.risk_input.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)  # Hide default buttons
+        self.risk_input.setValue(0)
+        self.risk_input.setToolTip("Set risk level (0 = low risk, 10 = high risk)")
+        self.risk_input.setProperty("class", "input-field")
+        risk_input_layout.addWidget(self.risk_input)
         
-        # Create custom horizontal buttons with better styling
-        risk_down_btn = QToolButton()
-        risk_down_btn.setText("−")
-        risk_down_btn.setFixedSize(45, 45)  # Match input field height
-        risk_down_btn.setProperty("class", "risk-button")
-        risk_down_btn.clicked.connect(lambda: self.risk_input.stepDown())
-        
-        risk_up_btn = QToolButton()
-        risk_up_btn.setText("+")
-        risk_up_btn.setFixedSize(45, 45)  # Match input field height
-        risk_up_btn.setProperty("class", "risk-button")
-        risk_up_btn.clicked.connect(lambda: self.risk_input.stepUp())
-        
-        # Add widgets to risk layout
-        risk_layout.addWidget(risk_down_btn)
-        risk_layout.addWidget(self.risk_input)
-        risk_layout.addWidget(risk_up_btn)
-        risk_layout.addStretch()
-        
-        config_layout.addWidget(risk_label, 1, 0, Qt.AlignmentFlag.AlignVCenter)  # Changed to AlignVCenter
-        config_layout.addWidget(risk_container, 1, 1)
+        risk_layout.addWidget(risk_label_frame)
+        risk_layout.addWidget(risk_input_frame)
+        config_layout.addWidget(risk_container)
 
-        # Date Range with better spacing
+        # Date Range - with darker label backgrounds
+        date_container = QFrame()
+        date_layout = QVBoxLayout(date_container)
+        date_layout.setContentsMargins(0, 0, 0, 0)
+        date_layout.setSpacing(0)
+        
+        # Dark labels background frame
+        date_label_frame = QFrame()
+        date_label_frame.setProperty("class", "label-frame")
+        date_label_frame.setFixedHeight(35)
+        date_label_layout = QHBoxLayout(date_label_frame)
+        date_label_layout.setContentsMargins(12, 8, 12, 8)
+        
         start_label = QLabel("Start Date:")
-        start_label.setProperty("class", "label")
+        start_label.setProperty("class", "label-dark")
+        end_label = QLabel("End Date:")
+        end_label.setProperty("class", "label-dark")
+        
+        date_label_layout.addWidget(start_label)
+        date_label_layout.addWidget(end_label)
+        
+        # Date inputs frame
+        date_input_frame = QFrame()
+        date_input_frame.setProperty("class", "input-frame")
+        date_input_layout = QHBoxLayout(date_input_frame)
+        date_input_layout.setContentsMargins(12, 12, 12, 12)
+        date_input_layout.setSpacing(10)
+        
         self.start_date_input = QDateEdit()
         self.start_date_input.setCalendarPopup(True)
         self.start_date_input.setDisplayFormat("yyyy-MM-dd")
-        self.start_date_input.setMinimumWidth(200)
-        self.start_date_input.setMaximumWidth(400)
-        self.start_date_input.setFixedHeight(45)  # Make input field smaller
         self.start_date_input.dateChanged.connect(self.update_end_date_minimum)
+        self.start_date_input.setProperty("class", "input-field")
         
-        config_layout.addWidget(start_label, 2, 0, Qt.AlignmentFlag.AlignVCenter)  # Changed to AlignVCenter
-        config_layout.addWidget(self.start_date_input, 2, 1)
-
-        end_label = QLabel("End Date:")
-        end_label.setProperty("class", "label")
         self.end_date_input = QDateEdit()
         self.end_date_input.setCalendarPopup(True)
         self.end_date_input.setDisplayFormat("yyyy-MM-dd")
-        self.end_date_input.setMinimumWidth(200)
-        self.end_date_input.setMaximumWidth(400)
-        self.end_date_input.setFixedHeight(45)  # Make input field smaller
+        self.end_date_input.setProperty("class", "input-field")
         
-        config_layout.addWidget(end_label, 3, 0, Qt.AlignmentFlag.AlignVCenter)  # Changed to AlignVCenter
-        config_layout.addWidget(self.end_date_input, 3, 1)
+        date_input_layout.addWidget(self.start_date_input)
+        date_input_layout.addWidget(self.end_date_input)
+        
+        date_layout.addWidget(date_label_frame)
+        date_layout.addWidget(date_input_frame)
+        config_layout.addWidget(date_container)
 
-        # Trading Mode
+        # Trading Mode - with darker label background
+        mode_container = QFrame()
+        mode_layout = QVBoxLayout(mode_container)
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+        mode_layout.setSpacing(0)
+        
+        # Dark label background frame
+        mode_label_frame = QFrame()
+        mode_label_frame.setProperty("class", "label-frame")
+        mode_label_frame.setFixedHeight(35)
+        mode_label_layout = QHBoxLayout(mode_label_frame)
+        mode_label_layout.setContentsMargins(12, 8, 12, 8)
+        
         mode_label = QLabel("Trading Mode:")
-        mode_label.setProperty("class", "label")
+        mode_label.setProperty("class", "label-dark")
+        mode_label_layout.addWidget(mode_label)
+        mode_label_layout.addStretch()
+        
+        # Input field
+        mode_input_frame = QFrame()
+        mode_input_frame.setProperty("class", "input-frame")
+        mode_input_layout = QHBoxLayout(mode_input_frame)
+        mode_input_layout.setContentsMargins(12, 12, 12, 12)
+        
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["Automatic", "Semi-Automatic"])
         self.mode_combo.setCurrentText("Automatic")
-        self.mode_combo.setMinimumWidth(200)
-        self.mode_combo.setMaximumWidth(400)
-        self.mode_combo.setFixedHeight(45)  # Make input field smaller
+        self.mode_combo.setToolTip("Automatic: Execute trades automatically\nSemi-Automatic: Confirm trades manually")
+        self.mode_combo.setProperty("class", "input-field")
+        mode_input_layout.addWidget(self.mode_combo)
         
-        config_layout.addWidget(mode_label, 4, 0, Qt.AlignmentFlag.AlignVCenter)  # Changed to AlignVCenter
-        config_layout.addWidget(self.mode_combo, 4, 1)
+        mode_layout.addWidget(mode_label_frame)
+        mode_layout.addWidget(mode_input_frame)
+        config_layout.addWidget(mode_container)
 
         main_layout.addWidget(config_group)
 
@@ -619,23 +497,39 @@ class InputPanel(QWidget):
                 logger.error(f"Error setting date constraints: {e}")
 
     def create_action_buttons(self, main_layout):
-        """Create the action buttons section without emojis."""
+        """Create the action buttons section with icons."""
         button_frame = QFrame()
         button_layout = QHBoxLayout(button_frame)
         button_layout.setContentsMargins(0, 0, 0, 0)
         button_layout.setSpacing(12)
 
-        # Execute button (no emoji)
-        self.execute_button = QPushButton("Execute Trading Strategy")
+        # Execute button with icon
+        self.execute_button = QPushButton("Execute Strategy")
         self.execute_button.setProperty("class", "primary")
         self.execute_button.clicked.connect(self.execute_strategy)
         self.execute_button.setMinimumHeight(50)
+        
+        # Try to load execute icon
+        try:
+            execute_icon = QIcon(resource_path("frontend/gui/icons/portfolio.png"))
+            if not execute_icon.isNull():
+                self.execute_button.setIcon(execute_icon)
+        except:
+            pass
 
-        # Reset button (no emoji)
+        # Reset button with icon
         self.reset_button = QPushButton("Reset Portfolio")
         self.reset_button.setProperty("class", "danger")
         self.reset_button.clicked.connect(self.reset_portfolio)
         self.reset_button.setMinimumHeight(50)
+        
+        # Try to load reset icon
+        try:
+            reset_icon = QIcon(resource_path("frontend/gui/icons/history.png"))
+            if not reset_icon.isNull():
+                self.reset_button.setIcon(reset_icon)
+        except:
+            pass
 
         button_layout.addWidget(self.execute_button, 2)
         button_layout.addWidget(self.reset_button, 1)
@@ -662,7 +556,7 @@ class InputPanel(QWidget):
         main_layout.addWidget(status_group)
 
     def create_metrics_section(self, main_layout):
-        """Create the financial metrics section without emojis."""
+        """Create the financial metrics section."""
         metrics_group = QGroupBox("Portfolio Overview")
         metrics_layout = QGridLayout(metrics_group)
         metrics_layout.setContentsMargins(20, 30, 20, 20)
@@ -673,21 +567,21 @@ class InputPanel(QWidget):
         metrics_layout.setColumnStretch(1, 1)
         metrics_layout.setColumnStretch(2, 1)
 
-        # Create metric cards without emojis - with proper alignment
+        # Create metric cards with proper alignment
         self.cash_label = QLabel("Liquid Cash: N/A")
         self.cash_label.setProperty("class", "metric")
         self.cash_label.setWordWrap(True)
-        self.cash_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center align text
+        self.cash_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         self.portfolio_label = QLabel("Portfolio Value: N/A")
         self.portfolio_label.setProperty("class", "metric")
         self.portfolio_label.setWordWrap(True)
-        self.portfolio_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center align text
+        self.portfolio_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         self.total_label = QLabel("Total Value: N/A")
         self.total_label.setProperty("class", "metric")
         self.total_label.setWordWrap(True)
-        self.total_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center align text
+        self.total_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Add widgets with proper spacing
         metrics_layout.addWidget(self.cash_label, 0, 0)
@@ -697,9 +591,262 @@ class InputPanel(QWidget):
         main_layout.addWidget(metrics_group)
 
     def apply_styles(self):
-        """Apply modern styling to the dialog."""
+        """Apply modern styling to the panel with darker label backgrounds."""
         style = ModernStyles.get_complete_style(self.is_dark_mode)
-        self.setStyleSheet(style)
+        
+        # Add custom styles for the dark label frames
+        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
+        
+        # Additional styles for label frames and input frames
+        additional_styles = f"""
+            /* Label Frame Styling - Darker background for labels */
+            QFrame[class="label-frame"] {{
+                background-color: {'#252538' if self.is_dark_mode else '#9CA3AF'};
+                border: 1px solid {colors['border']};
+                border-bottom: none;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+            }}
+            
+            /* Input Frame Styling - Matches the surface color */
+            QFrame[class="input-frame"] {{
+                background-color: {colors['surface']};
+                border: 1px solid {colors['border']};
+                border-top: none;
+                border-bottom-left-radius: 8px;
+                border-bottom-right-radius: 8px;
+            }}
+            
+            /* Label separator line */
+            QFrame[class="label-separator"] {{
+                color: {colors['border_light']};
+                background-color: {colors['border_light']};
+                max-width: 1px;
+                margin: 4px 0px;
+            }}
+            
+            /* Dark label text styling */
+            QLabel[class="label-dark"] {{
+                color: {'#FFFFFF' if self.is_dark_mode else '#FFFFFF'};
+                font-size: 14px;
+                font-weight: 600;
+                font-family: 'Segoe UI';
+                background-color: transparent;
+                border: none;
+            }}
+            
+            /* Input field styling with visible borders */
+            QLineEdit[class="input-field"], 
+            QSpinBox[class="input-field"], 
+            QDateEdit[class="input-field"], 
+            QComboBox[class="input-field"] {{
+                border: 2px solid {colors['border_light']};
+                border-radius: 6px;
+                background-color: {'#3A3A54' if self.is_dark_mode else '#F8FAFC'};
+                padding: 10px 12px;
+                font-size: 14px;
+                color: {colors['text_primary']};
+                margin: 2px;
+            }}
+            
+            QLineEdit[class="input-field"]:focus, 
+            QSpinBox[class="input-field"]:focus, 
+            QDateEdit[class="input-field"]:focus, 
+            QComboBox[class="input-field"]:focus {{
+                border: 2px solid {colors['accent']};
+                background-color: {'#404060' if self.is_dark_mode else '#FFFFFF'};
+            }}
+            
+            QLineEdit[class="input-field"]:hover, 
+            QSpinBox[class="input-field"]:hover, 
+            QDateEdit[class="input-field"]:hover, 
+            QComboBox[class="input-field"]:hover {{
+                border: 2px solid {colors['accent_hover']};
+            }}
+            
+            /* Dropdown styling for combo box and date edit */
+            QComboBox[class="input-field"]::drop-down {{
+                border: none;
+                border-left: 1px solid {colors['border']};
+                border-radius: 0px 4px 4px 0px;
+                background-color: {colors['secondary']};
+                width: 20px;
+            }}
+            
+            QComboBox[class="input-field"]::drop-down:hover {{
+                background-color: {colors['accent']};
+            }}
+            
+            QComboBox[class="input-field"]::down-arrow {{
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+            }}
+            
+            QDateEdit[class="input-field"]::drop-down {{
+                border: none;
+                border-left: 1px solid {colors['border']};
+                border-radius: 0px 4px 4px 0px;
+                background-color: {colors['secondary']};
+                width: 20px;
+            }}
+            
+            QDateEdit[class="input-field"]::drop-down:hover {{
+                background-color: {colors['accent']};
+            }}
+            
+            QDateEdit[class="input-field"]::down-arrow {{
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+            }}
+            
+            /* SpinBox buttons styling */
+            QSpinBox[class="input-field"]::up-button, QSpinBox[class="input-field"]::down-button {{
+                border: none;
+                background-color: {colors['secondary']};
+                width: 20px;
+            }}
+            
+            QSpinBox[class="input-field"]::up-button:hover, QSpinBox[class="input-field"]::down-button:hover {{
+                background-color: {colors['accent']};
+            }}
+            
+            QSpinBox[class="input-field"]::up-arrow {{
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-bottom: 6px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+            }}
+            
+            QSpinBox[class="input-field"]::down-arrow {{
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+            }}
+            
+            /* Enhanced button styling with visible borders */
+            QPushButton {{
+                border: 2px solid transparent;
+                border-radius: 8px;
+                padding: 12px 24px;
+                font-weight: 600;
+                font-size: 14px;
+                min-height: 20px;
+            }}
+            
+            QPushButton[class="primary"] {{
+                background-color: {colors['accent']};
+                color: white;
+                border: 2px solid {colors['accent']};
+            }}
+            
+            QPushButton[class="primary"]:hover {{
+                background-color: {colors['accent_hover']};
+                border: 2px solid {colors['accent_hover']};
+            }}
+            
+            QPushButton[class="primary"]:pressed {{
+                background-color: {colors['accent_pressed']};
+                border: 2px solid {colors['accent_pressed']};
+            }}
+            
+            QPushButton[class="danger"] {{
+                background-color: {colors['danger']};
+                color: white;
+                border: 2px solid {colors['danger']};
+            }}
+            
+            QPushButton[class="danger"]:hover {{
+                background-color: #DC2626;
+                border: 2px solid #DC2626;
+            }}
+            
+            QPushButton[class="danger"]:pressed {{
+                background-color: #B91C1C;
+                border: 2px solid #B91C1C;
+            }}
+            
+            QPushButton[class="secondary"] {{
+                background-color: {colors['secondary']};
+                color: {colors['text_primary']};
+                border: 2px solid {colors['border']};
+            }}
+            
+            QPushButton[class="secondary"]:hover {{
+                background-color: {colors['hover']};
+                border: 2px solid {colors['accent']};
+            }}
+            
+            QPushButton[class="success"] {{
+                background-color: {colors['success']};
+                color: white;
+                border: 2px solid {colors['success']};
+            }}
+            
+            QPushButton[class="success"]:hover {{
+                background-color: #059669;
+                border: 2px solid #059669;
+            }}
+            
+            /* Enhanced Metrics Styling - Ensure all metrics have visible borders */
+            QLabel[class="metric"] {{
+                font-size: 16px;
+                font-weight: 600;
+                padding: 16px 20px;
+                background-color: {colors['surface']};
+                border: 2px solid {colors['border_light']};
+                border-radius: 10px;
+                color: {colors['text_primary']};
+                text-align: center;
+                margin: 4px;
+            }}
+            
+            /* Base metric style with border */
+            QLabel[class~="metric"] {{
+                font-size: 16px;
+                font-weight: 600;
+                padding: 16px 20px;
+                background-color: {colors['surface']};
+                border: 2px solid {colors['border_light']};
+                border-radius: 10px;
+                color: {colors['text_primary']};
+                text-align: center;
+                margin: 4px;
+            }}
+            
+            /* Success metric styling */
+            QLabel[class~="metric-success"] {{
+                color: {colors['success']};
+                border: 2px solid {colors['success']};
+                background-color: {'rgba(16, 185, 129, 0.1)' if self.is_dark_mode else 'rgba(16, 185, 129, 0.05)'};
+            }}
+            
+            /* Warning metric styling */
+            QLabel[class~="metric-warning"] {{
+                color: {colors['warning']};
+                border: 2px solid {colors['warning']};
+                background-color: {'rgba(245, 158, 11, 0.1)' if self.is_dark_mode else 'rgba(245, 158, 11, 0.05)'};
+            }}
+            
+            /* Danger metric styling */
+            QLabel[class~="metric-danger"] {{
+                color: {colors['danger']};
+                border: 2px solid {colors['danger']};
+                background-color: {'rgba(239, 68, 68, 0.1)' if self.is_dark_mode else 'rgba(239, 68, 68, 0.05)'};
+            }}
+        """
+        
+        # Combine all styles
+        complete_style = style + additional_styles
+        self.setStyleSheet(complete_style)
 
     def set_theme(self, is_dark_mode):
         """Apply light or dark theme to the panel."""
@@ -834,21 +981,33 @@ class InputPanel(QWidget):
         return investment_amount, risk_level, start_date, end_date
 
     def update_financial_metrics(self, cash=0, portfolio_value=0):
-        """Update financial metrics display with color coding (no emojis)."""
+        """Update financial metrics display with color coding and ensure proper styling."""
         self.cash_label.setText(f"Liquid Cash: ${cash:,.2f}")
         self.portfolio_label.setText(f"Portfolio Value: ${portfolio_value:,.2f}")
         total_value = cash + portfolio_value
         self.total_label.setText(f"Total Value: ${total_value:,.2f}")
         
-        # Color coding based on performance
+        # Ensure all labels have the base metric class
+        self.cash_label.setProperty("class", "metric")
+        self.portfolio_label.setProperty("class", "metric")
+        self.total_label.setProperty("class", "metric")
+        
+        # Color coding based on performance - add additional class for coloring
         if total_value > 10000:  # Assuming 10k initial
-            self.total_label.setProperty("class", "metric-success")
+            self.total_label.setProperty("class", "metric metric-success")
         elif total_value < 9500:
-            self.total_label.setProperty("class", "metric-danger")
+            self.total_label.setProperty("class", "metric metric-danger")
         else:
-            self.total_label.setProperty("class", "metric-warning")
-            
-        self.apply_styles()  # Refresh styles
+            self.total_label.setProperty("class", "metric metric-warning")
+        
+        # Force style refresh for all metric labels
+        self.cash_label.style().unpolish(self.cash_label)
+        self.cash_label.style().polish(self.cash_label)
+        self.portfolio_label.style().unpolish(self.portfolio_label)
+        self.portfolio_label.style().polish(self.portfolio_label)
+        self.total_label.style().unpolish(self.total_label)
+        self.total_label.style().polish(self.total_label)
+        
         logger.debug(f"Updated financial metrics: Cash=${cash:,.2f}, Portfolio=${portfolio_value:,.2f}")
 
     def show_progress(self, message):
@@ -1091,6 +1250,7 @@ class InputPanel(QWidget):
                     QMessageBox.StandardButton.Ok
                 )
 
+    # Additional utility methods for compatibility and functionality
     def update_date_constraints(self):
         """Set minimum dates based on existing trades and dataset."""
         try:
@@ -1139,216 +1299,11 @@ class InputPanel(QWidget):
         except Exception as e:
             logger.error(f"Error updating date constraints: {e}")
 
-    def update_portfolio(self):
-        """Execute trading strategy and update portfolio metrics."""
-        try:
-            investment_amount = float(self.investment_input.text())
-            risk_level = self.risk_input.value()
-            start_date = pd.Timestamp(self.start_date_input.date().toPyDate(), tz='UTC')
-            end_date = pd.Timestamp(self.end_date_input.date().toPyDate(), tz='UTC')
-
-            orders = get_orders()
-            
-            # Get dataset dates
-            if self.data_manager.data is not None and not self.data_manager.data.empty:
-                # Try different possible column names for dates
-                date_column = None
-                for col in ['Date', 'date', 'DATE']:
-                    if col in self.data_manager.data.columns:
-                        date_column = col
-                        break
-                
-                if date_column:
-                    dates = pd.to_datetime(self.data_manager.data[date_column])
-                    dataset_start = dates.min()
-                    dataset_end = dates.max()
-                else:
-                    dataset_start = pd.Timestamp(datetime(2021, 1, 1), tz='UTC')
-                    dataset_end = pd.Timestamp(datetime(2023, 12, 31), tz='UTC')
-            else:
-                dataset_start = pd.Timestamp(datetime(2021, 1, 1), tz='UTC')
-                dataset_end = pd.Timestamp(datetime(2023, 12, 31), tz='UTC')
-
-            if orders:
-                order_dates = pd.to_datetime([order['date'] for order in orders], utc=True)
-                latest_trade_date = order_dates.max()
-                if start_date <= latest_trade_date:
-                    self.show_message_box(
-                        QMessageBox.Icon.Critical,
-                        "Invalid Date Range",
-                        f"Start date must be after {latest_trade_date.date()} due to existing trades.\n"
-                        f"Valid range: {latest_trade_date.date() + pd.Timedelta(days=1)} to {dataset_end.date() if dataset_end else 'today'}.",
-                        QMessageBox.StandardButton.Ok
-                    )
-                    return
-
-            if dataset_start and start_date < dataset_start:
-                self.show_message_box(
-                    QMessageBox.Icon.Critical,
-                    "Invalid Date Range",
-                    f"Start date cannot be before dataset start ({dataset_start.date()}).",
-                    QMessageBox.StandardButton.Ok
-                )
-                return
-
-            if dataset_end and end_date > dataset_end:
-                self.show_message_box(
-                    QMessageBox.Icon.Critical,
-                    "Invalid Date Range",
-                    f"End date cannot be after dataset end ({dataset_end.date()}).",
-                    QMessageBox.StandardButton.Ok
-                )
-                return
-
-            success, message = self.data_manager.set_date_range(start_date, end_date)
-            if not success:
-                self.show_message_box(
-                    QMessageBox.Icon.Critical,
-                    "Invalid Date Range",
-                    message,
-                    QMessageBox.StandardButton.Ok
-                )
-                return
-            if message:
-                self.show_message_box(
-                    QMessageBox.Icon.Information,
-                    "Date Range Adjusted",
-                    message,
-                    QMessageBox.StandardButton.Ok
-                )
-
-            logger.debug(f"Executing with risk_level={risk_level}, mode={self.mode_combo.currentText().lower()}")
-            success, result = execute_trading_strategy(
-                investment_amount=investment_amount,
-                risk_level=risk_level,
-                start_date=start_date,
-                end_date=end_date,
-                data_manager=self.data_manager,
-                mode=self.mode_combo.currentText().lower(),
-                reset_state=True
-            )
-            if success:
-                portfolio_history = result.get('portfolio_history', [])
-                portfolio_value = result.get('portfolio_value', investment_amount)
-                cash = result.get('cash', investment_amount)
-                orders = result.get('orders', [])
-                warning_message = result.get('warning_message', '')
-                correlation = result.get('signal_correlation', 0.0)
-                buy_hit_rate = result.get('buy_hit_rate', 0.0)
-                sell_hit_rate = result.get('sell_hit_rate', 0.0)
-
-                signal_quality_message = (
-                    f"Signal Quality Metrics:\n"
-                    f"Correlation: {correlation:.3f}\n"
-                    f"Buy Hit Rate: {buy_hit_rate:.1%}\n"
-                    f"Sell Hit Rate: {sell_hit_rate:.1%}"
-                )
-                self.show_message_box(
-                    QMessageBox.Icon.Information,
-                    "Signal Quality",
-                    signal_quality_message,
-                    QMessageBox.StandardButton.Ok
-                )
-
-                if correlation < 0.1:
-                    self.show_message_box(
-                        QMessageBox.Icon.Warning,
-                        "Low Signal Quality",
-                        "Signal-return correlation is low. Strategy may be unreliable.",
-                        QMessageBox.StandardButton.Ok
-                    )
-
-                if self.mode_combo.currentText().lower() == "semi-automatic" and orders:
-                    dialog = TradeConfirmationDialog(orders, self)
-                    if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_orders:
-                        success, result = execute_trading_strategy(
-                            investment_amount=investment_amount,
-                            risk_level=risk_level,
-                            start_date=start_date,
-                            end_date=end_date,
-                            data_manager=self.data_manager,
-                            mode="semi-automatic",
-                            reset_state=False,
-                            selected_orders=dialog.selected_orders
-                        )
-                        if not success:
-                            self.show_message_box(
-                                QMessageBox.Icon.Critical,
-                                "Error",
-                                f"Failed to execute trades: {result.get('warning_message', 'Unknown error')}",
-                                QMessageBox.StandardButton.Ok
-                            )
-                            return
-                        portfolio_history = result.get('portfolio_history', [])
-                        portfolio_value = result.get('portfolio_value', investment_amount)
-                        cash = result.get('cash', investment_amount)
-                        orders = result.get('orders', [])
-                        warning_message = result.get('warning_message', '')
-
-                if not orders and warning_message:
-                    self.show_message_box(
-                        QMessageBox.Icon.Warning,
-                        "No Signals Detected",
-                        warning_message,
-                        QMessageBox.StandardButton.Ok
-                    )
-
-                self.update_financial_metrics(cash, portfolio_value)
-                if hasattr(self, 'main_window'):
-                    self.main_window.update_dashboard()
-            else:
-                error_message = result.get('warning_message', 'Unknown error')
-                self.show_message_box(
-                    QMessageBox.Icon.Critical,
-                    "Error",
-                    f"Failed to execute strategy: {error_message}",
-                    QMessageBox.StandardButton.Ok
-                )
-                self.update_financial_metrics()
-        except Exception as e:
-            logger.error(f"Error in update_portfolio: {e}", exc_info=True)
-            self.show_message_box(
-                QMessageBox.Icon.Critical,
-                "Error",
-                f"Failed to run strategy: {e}",
-                QMessageBox.StandardButton.Ok
-            )
-            self.update_financial_metrics()
-
-    def update_date_constraints_based_on_orders(self):
-        """Update date constraints based on existing orders."""
-        try:
-            orders = get_orders()
-            if orders:
-                # Get the latest order date
-                order_dates = pd.to_datetime([order['date'] for order in orders], utc=True)
-                latest_order_date = order_dates.max()
-                
-                # Set minimum start date to day after latest order
-                min_start_date = latest_order_date + pd.Timedelta(days=1)
-                q_min_date = QDate(min_start_date.year, min_start_date.month, min_start_date.day)
-                
-                self.start_date_input.setMinimumDate(q_min_date)
-                self.end_date_input.setMinimumDate(q_min_date)
-                
-                logger.info(f"Updated date constraints based on latest order: {latest_order_date.date()}")
-        except Exception as e:
-            logger.error(f"Error updating date constraints based on orders: {e}")
-
-    def refresh_ui(self):
-        """Refresh the UI elements and update constraints."""
-        try:
-            self.update_date_constraints()
-            self.update_date_tooltips()
-            self.apply_styles()
-        except Exception as e:
-            logger.error(f"Error refreshing UI: {e}")
-
     def get_current_settings(self):
         """Get current input panel settings as a dictionary."""
         return {
             'investment_amount': float(self.investment_input.text().replace(',', '')),
-            'risk_level': int(self.risk_input.value()),
+            'risk_level': self.risk_input.value(),
             'start_date': self.start_date_input.date().toPyDate(),
             'end_date': self.end_date_input.date().toPyDate(),
             'trading_mode': self.mode_combo.currentText()
@@ -1376,17 +1331,14 @@ class InputPanel(QWidget):
         except Exception as e:
             logger.error(f"Error setting input panel settings: {e}")
 
-    def reset_to_defaults(self):
-        """Reset all inputs to their default values."""
+    def refresh_ui(self):
+        """Refresh the UI elements and update constraints."""
         try:
-            self.investment_input.setText("10000")
-            self.risk_input.setValue(0)
-            self.mode_combo.setCurrentText("Automatic")
-            self.set_default_values()  # Reset dates
-            self.update_financial_metrics(0, 0)
-            logger.info("Input panel reset to defaults")
+            self.update_date_constraints()
+            self.update_date_tooltips()
+            self.apply_styles()
         except Exception as e:
-            logger.error(f"Error resetting to defaults: {e}")
+            logger.error(f"Error refreshing UI: {e}")
 
     def is_valid_configuration(self):
         """Check if current configuration is valid."""
@@ -1409,25 +1361,3 @@ class InputPanel(QWidget):
             return False, "Invalid investment amount"
         except Exception as e:
             return False, f"Configuration error: {e}"
-
-    def enable_inputs(self, enabled=True):
-        """Enable or disable all input fields."""
-        self.investment_input.setEnabled(enabled)
-        self.risk_input.setEnabled(enabled)
-        self.start_date_input.setEnabled(enabled)
-        self.end_date_input.setEnabled(enabled)
-        self.mode_combo.setEnabled(enabled)
-
-    def get_date_range_info(self):
-        """Get information about the current date range."""
-        start_date = self.start_date_input.date().toPyDate()
-        end_date = self.end_date_input.date().toPyDate()
-        days_diff = (end_date - start_date).days
-        
-        return {
-            'start_date': start_date,
-            'end_date': end_date,
-            'days_difference': days_diff,
-            'is_short_range': days_diff < 7,
-            'is_valid_range': days_diff >= 1
-        }

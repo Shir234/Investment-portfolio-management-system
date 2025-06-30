@@ -272,8 +272,13 @@ class ModernStyles:
             border: none;
         }}
         
-        QDateEdit::down-arrow:after {{
-            content: "▼";
+        QDateEdit::down-arrow {{
+            image: none;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 6px solid {colors['text_primary']};
+            width: 0px;
+            height: 0px;
         }}
         
         /* Combo Boxes */
@@ -315,8 +320,13 @@ class ModernStyles:
             border: none;
         }}
         
-        QComboBox::down-arrow:after {{
-            content: "▼";
+        QComboBox::down-arrow {{
+            image: none;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 6px solid {colors['text_primary']};
+            width: 0px;
+            height: 0px;
         }}
         
         QComboBox QAbstractItemView {{

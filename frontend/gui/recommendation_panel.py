@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QTableWidget, QTableWidgetItem, QPushButton, 
-                             QMessageBox, QComboBox, QGroupBox, QFrame)
+                             QMessageBox, QComboBox, QGroupBox, QFrame, QFileDialog)
 from PyQt6.QtCore import Qt
 from backend.trading_logic_new import get_orders, get_portfolio_history
 import pandas as pd
@@ -8,6 +8,7 @@ import logging
 from frontend.logging_config import get_logger
 from frontend.gui.styles import ModernStyles
 import os
+import csv
 
 # Configure logging
 logger = get_logger(__name__)
@@ -27,82 +28,54 @@ class RecommendationPanel(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(20)
         
-        # Header section
-        self.create_header_section(layout)
-        
-        # Controls section
+        # Controls section - smaller
         self.create_controls_section(layout)
         
-        # Table section
+        # Table section - bigger (given more space)
         self.create_table_section(layout)
         
-        # Actions section
+        # Actions section - single row at bottom
         self.create_actions_section(layout)
         
         self.apply_styles()
         self.update_recommendations()
         
-    def create_header_section(self, main_layout):
-        """Create modern header section"""
-        header_frame = QFrame()
-        header_layout = QVBoxLayout(header_frame)
-        header_layout.setSpacing(8)
-        
-        self.title_label = QLabel("Trading History & Analysis")
-        self.title_label.setProperty("class", "title")
-        header_layout.addWidget(self.title_label)
-        
-        self.subtitle_label = QLabel("Review your executed trades and performance metrics")
-        self.subtitle_label.setProperty("class", "subtitle")
-        header_layout.addWidget(self.subtitle_label)
-        
-        main_layout.addWidget(header_frame)
-        
     def create_controls_section(self, main_layout):
-        """Create modern controls section"""
+        """Create compact controls section"""
         controls_group = QGroupBox("Filter & Display Options")
         controls_layout = QHBoxLayout(controls_group)
-        controls_layout.setContentsMargins(20, 30, 20, 20)
-        controls_layout.setSpacing(20)
+        controls_layout.setContentsMargins(15, 20, 15, 15)  # Reduced padding
+        controls_layout.setSpacing(15)
         
-        # Filter section
-        filter_frame = QFrame()
-        filter_layout = QHBoxLayout(filter_frame)
-        filter_layout.setSpacing(12)
-        
+        # Filter section - more compact
         filter_label = QLabel("Show:")
         filter_label.setProperty("class", "label")
         self.filter_combo = QComboBox()
         self.filter_combo.addItems(["All Orders", "Buy Orders", "Sell Orders"])
-        self.filter_combo.setMinimumWidth(150)
+        self.filter_combo.setMinimumWidth(120)  # Smaller width
         self.filter_combo.currentIndexChanged.connect(self.update_recommendations)
         
-        filter_layout.addWidget(filter_label)
-        filter_layout.addWidget(self.filter_combo)
-        filter_layout.addStretch()
-        
-        # Trade count section
-        count_frame = QFrame()
-        count_layout = QHBoxLayout(count_frame)
-        
+        # Trade count section - more compact
         self.trade_count_label = QLabel("📊 Total Orders: 0")
         self.trade_count_label.setProperty("class", "metric")
-        count_layout.addWidget(self.trade_count_label)
         
-        controls_layout.addWidget(filter_frame, 1)
-        controls_layout.addWidget(count_frame, 1)
+        controls_layout.addWidget(filter_label)
+        controls_layout.addWidget(self.filter_combo)
+        controls_layout.addStretch()
+        controls_layout.addWidget(self.trade_count_label)
         
-        main_layout.addWidget(controls_group)
+        # Give minimal stretch to controls section
+        main_layout.addWidget(controls_group, stretch=0)
         
     def create_table_section(self, main_layout):
-        """Create modern table section"""
+        """Create enlarged table section with maximum space allocation"""
         table_group = QGroupBox("Trade Details")
         table_layout = QVBoxLayout(table_group)
         table_layout.setContentsMargins(20, 30, 20, 20)
         
         # Table for trade history
         self.table = QTableWidget()
-        self.table.setColumnCount(11)  # Reduced columns for better readability
+        self.table.setColumnCount(11)  # Same columns
         self.table.setHorizontalHeaderLabels([
             "Date",           # When the trade happened
             "Ticker",         # Stock symbol  
@@ -121,44 +94,221 @@ class RecommendationPanel(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setMinimumHeight(400)
+        self.table.setMinimumHeight(600)  # Even larger minimum height for more table space
+        
+        # Configure row headers (index column) to show row numbers properly
+        self.table.verticalHeader().setVisible(True)
+        
+        # Set proper width for the vertical header (index column) so numbers show
+        self.table.verticalHeader().setFixedWidth(80)  # Wider fixed width for row numbers
+        self.table.verticalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         
         table_layout.addWidget(self.table)
-        main_layout.addWidget(table_group, stretch=2)
+        # Give the table section maximum stretch factor to occupy most space
+        main_layout.addWidget(table_group, stretch=4)  # Increased stretch
         
     def create_actions_section(self, main_layout):
-        """Create modern actions section"""
+        """Create compact single-row actions section with only export"""
         actions_group = QGroupBox("Actions")
         actions_layout = QHBoxLayout(actions_group)
-        actions_layout.setContentsMargins(20, 30, 20, 20)
+        actions_layout.setContentsMargins(20, 20, 20, 15)  # Reduced vertical padding
         actions_layout.setSpacing(12)
         
-        # Export button (future feature)
+        # Export button - now functional
         export_button = QPushButton("📊 Export to CSV")
-        export_button.setProperty("class", "secondary")
-        export_button.setEnabled(False)  # Disabled for now
-        export_button.setToolTip("Export trading history to CSV file (Coming Soon)")
+        export_button.setProperty("class", "primary")
+        export_button.clicked.connect(self.export_to_csv)
+        export_button.setToolTip("Export trading history to CSV file")
         
-        # Refresh button
-        refresh_button = QPushButton("🔄 Refresh")
-        refresh_button.clicked.connect(self.update_recommendations)
-        
-        # Clear history button
-        self.clear_button = QPushButton("🗑️ Clear History")
-        self.clear_button.setProperty("class", "danger")
-        self.clear_button.clicked.connect(self.clear_trade_history)
-        
+        actions_layout.addStretch()  # Push button to center/right
         actions_layout.addWidget(export_button)
         actions_layout.addStretch()
-        actions_layout.addWidget(refresh_button)
-        actions_layout.addWidget(self.clear_button)
         
-        main_layout.addWidget(actions_group)
+        # Give minimal stretch to actions section
+        main_layout.addWidget(actions_group, stretch=0)
+        
+    def export_to_csv(self):
+        """Export trading history to CSV file"""
+        try:
+            orders = get_orders()
+            if not orders:
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Icon.Information)
+                msg.setWindowTitle("No Data")
+                msg.setText("No trading history to export.")
+                msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg.setStyleSheet(self.get_message_box_style())
+                msg.exec()
+                return
+            
+            # Create DataFrame from orders
+            orders_df = pd.DataFrame(orders)
+            
+            # Apply current filter
+            filter_type = self.filter_combo.currentText()
+            if filter_type == "Buy Orders":
+                orders_df = orders_df[orders_df['action'] == 'buy']
+            elif filter_type == "Sell Orders":
+                orders_df = orders_df[orders_df['action'] == 'sell']
+            
+            if orders_df.empty:
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Icon.Information)
+                msg.setWindowTitle("No Data")
+                msg.setText(f"No {filter_type.lower()} to export.")
+                msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg.setStyleSheet(self.get_message_box_style())
+                msg.exec()
+                return
+            
+            # Get file path from user
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Trading History",
+                f"trading_history_{filter_type.lower().replace(' ', '_')}.csv",
+                "CSV Files (*.csv);;All Files (*)"
+            )
+            
+            if not file_path:
+                return  # User cancelled
+            
+            # Prepare data for export (same structure as table)
+            export_data = []
+            for _, order in orders_df.iterrows():
+                # Calculate values same as in table
+                price = order.get('price', 0)
+                shares = order.get('shares_amount', 0)
+                trade_value = price * shares
+                action = order.get('action', '').upper()
+                
+                if action.lower() == 'buy':
+                    total_cost = order.get('total_cost', 
+                        order.get('investment_amount', 0) + order.get('transaction_cost', 0))
+                    total_shares = order.get('new_total_shares', order.get('total_shares', 0))
+                else:  # sell
+                    total_cost = order.get('total_proceeds', 
+                        trade_value - order.get('transaction_cost', 0))
+                    total_shares = order.get('new_total_shares', 0)
+                
+                # Get Sharpe values
+                if action.lower() == 'sell':
+                    pred_sharpe = "SELL"
+                    actual_sharpe = "SELL"
+                    signal_strength = "SELL"
+                else:
+                    sharpe = order.get('sharpe', order.get('Best_Prediction', 0))
+                    pred_sharpe = "N/A" if sharpe == -1 or pd.isna(sharpe) else f"{sharpe:.3f}"
+                    
+                    actual_sharpe_val = self.get_actual_sharpe(order.get('ticker', ''), order.get('date', ''))
+                    if isinstance(actual_sharpe_val, (int, float)) and actual_sharpe_val != -1 and not pd.isna(actual_sharpe_val):
+                        actual_sharpe = f"{actual_sharpe_val:.3f}"
+                    else:
+                        actual_sharpe = "N/A"
+                    
+                    signal_strength_val = order.get('signal_strength', 0)
+                    if pd.isna(signal_strength_val) or signal_strength_val == 0:
+                        signal_strength = "N/A"
+                    else:
+                        signal_strength = f"{signal_strength_val:.3f}"
+                
+                export_row = {
+                    'Date': str(order.get('date', '')),
+                    'Ticker': order.get('ticker', ''),
+                    'Action': action,
+                    'Price': f"{price:.2f}",
+                    'Shares': str(shares),
+                    'Trade Value': f"{trade_value:.2f}",
+                    'Total Cost': f"{total_cost:.2f}",
+                    'Total Shares': str(total_shares if not pd.isna(total_shares) else 0),
+                    'Predicted Sharpe': pred_sharpe,
+                    'Actual Sharpe': actual_sharpe,
+                    'Signal Strength': signal_strength
+                }
+                export_data.append(export_row)
+            
+            # Write to CSV
+            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                if export_data:
+                    fieldnames = export_data[0].keys()
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(export_data)
+            
+            # Show success message
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Information)
+            msg.setWindowTitle("Export Successful")
+            msg.setText(f"Trading history exported successfully!\n\nFile: {file_path}\nRecords: {len(export_data)}")
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.setStyleSheet(self.get_message_box_style())
+            msg.exec()
+            
+            logger.info(f"Exported {len(export_data)} records to {file_path}")
+            
+        except Exception as e:
+            logger.error(f"Error exporting to CSV: {e}", exc_info=True)
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Critical)
+            msg.setWindowTitle("Export Failed")
+            msg.setText(f"Failed to export trading history:\n\n{e}")
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.setStyleSheet(self.get_message_box_style())
+            msg.exec()
         
     def apply_styles(self):
-        """Apply modern styling to the panel"""
+        """Apply modern styling to the panel with improved table row colors for light mode"""
         style = ModernStyles.get_complete_style(self.is_dark_mode)
-        self.setStyleSheet(style)
+        
+        # Add enhanced table styling for better light mode contrast
+        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
+        
+        additional_table_styles = f"""
+            /* Enhanced table styling with better alternating row colors */
+            QTableWidget {{
+                background-color: {colors['surface']};
+                color: {colors['text_primary']};
+                border: 1px solid {colors['border_light']};
+                border-radius: 12px;
+                gridline-color: {colors['border_light']};
+                font-size: 13px;
+                selection-background-color: {colors['selected']};
+                alternate-background-color: {'#2A2A3E' if self.is_dark_mode else '#E5E7EB'};
+            }}
+            
+            QTableWidget::item {{
+                border: none;
+                padding: 12px 8px;
+                border-bottom: 1px solid {colors['border_light']};
+            }}
+            
+            QTableWidget::item:selected {{
+                background-color: {colors['selected']};
+                color: {'#FFFFFF' if self.is_dark_mode else colors['text_primary']};
+            }}
+            
+            QTableWidget::item:hover {{
+                background-color: {colors['hover']};
+            }}
+            
+            QHeaderView::section {{
+                background-color: {colors['secondary']};
+                color: {colors['text_primary']};
+                border: none;
+                border-bottom: 2px solid {colors['border']};
+                padding: 16px 8px;
+                font-weight: 600;
+                font-size: 13px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }}
+            
+            QHeaderView::section:hover {{
+                background-color: {colors['hover']};
+            }}
+        """
+        
+        complete_style = style + additional_table_styles
+        self.setStyleSheet(complete_style)
         
     def get_message_box_style(self):
         """Return QMessageBox stylesheet based on theme."""
@@ -395,42 +545,3 @@ class RecommendationPanel(QWidget):
         except Exception as e:
             logger.error(f"Error retrieving actual Sharpe for {ticker} on {date}: {e}")
             return -1
-            
-    def clear_trade_history(self):
-        """Clear the trade history with confirmation."""
-        try:
-            msg = QMessageBox()
-            msg.setWindowTitle("Confirm Clear History")
-            msg.setText("Are you sure you want to clear all trade history?\n\nThis action cannot be undone.")
-            msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            msg.setStyleSheet(self.get_message_box_style())
-            
-            if msg.exec() == QMessageBox.StandardButton.Yes:
-                if os.path.exists(self.portfolio_state_file):
-                    with open(self.portfolio_state_file, 'w') as f:
-                        f.write('{"orders": [], "portfolio_history": []}')
-                    logger.info(f"Cleared trade history in {self.portfolio_state_file}")
-                else:
-                    logger.info(f"No portfolio state file found at {self.portfolio_state_file}")
-                    
-                self.update_recommendations()
-                
-                # Show success message
-                success_msg = QMessageBox()
-                success_msg.setIcon(QMessageBox.Icon.Information)
-                success_msg.setWindowTitle("Success")
-                success_msg.setText("Trade history cleared successfully.")
-                success_msg.setStandardButtons(QMessageBox.StandardButton.Ok)                
-                success_msg.setStyleSheet(self.get_message_box_style())
-                success_msg.exec()
-                
-        except Exception as e:
-            logger.error(f"Error clearing trade history: {e}", exc_info=True)
-            error_msg = QMessageBox()
-            error_msg.setIcon(QMessageBox.Icon.Critical)
-            error_msg.setWindowTitle("Error")
-            error_msg.setText(f"Failed to clear trade history:\n\n{e}")
-            error_msg.setStandardButtons(QMessageBox.StandardButton.Ok)            
-            error_msg.setStyleSheet(self.get_message_box_style())
-            error_msg.exec()

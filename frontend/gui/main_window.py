@@ -3,10 +3,14 @@ import sys
 from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QApplication, QFrame, QLabel
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QIcon
+from frontend.utils import resource_path
+from frontend.logging_config import get_logger
 from frontend.gui.input_panel import InputPanel
 from frontend.gui.analysis_dashboard import AnalysisDashboard
 from frontend.gui.recommendation_panel import RecommendationPanel
 from frontend.gui.styles import ModernStyles
+
+logger = get_logger(__name__)
 
 class MainWindow(QMainWindow):
     def __init__(self, data_manager, parent=None):
@@ -19,6 +23,15 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("SharpSight Investment System")
         self.setGeometry(100, 100, 1200, 800)  # Larger default size
         self.setMinimumSize(1000, 700)  # Minimum size for better UX
+
+       # Set window icon
+        try:
+            window_icon = QIcon(resource_path("frontend/gui/icons/portfolio.png"))
+            if not window_icon.isNull():
+                self.setWindowIcon(window_icon)
+                logger.info("Window icon loaded successfully")
+        except Exception as e:
+            logger.warning(f"Could not load window icon: {e}")
         
         # Create the UI
         self.setup_ui()
@@ -71,6 +84,16 @@ class MainWindow(QMainWindow):
         self.theme_button.setProperty("class", "theme-toggle")
         self.theme_button.setFixedSize(120, 40)
         self.theme_button.clicked.connect(self.toggle_theme)
+
+        # Try to load theme toggle icon
+        try:
+            theme_icon_path = "frontend/gui/icons/yellow_sun.png" if self.is_dark_mode else "frontend/gui/icons/black_sun.png"
+            theme_icon = QIcon(resource_path(theme_icon_path))
+            if not theme_icon.isNull():
+                self.theme_button.setIcon(theme_icon)
+                logger.info(f"Theme icon loaded: {theme_icon_path}")
+        except Exception as e:
+            logger.warning(f"Could not load theme icon: {e}")
         
         header_layout.addWidget(self.theme_button)
         main_layout.addWidget(header_frame)
@@ -91,7 +114,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(tab_frame)
         
     def initialize_panels(self):
-        """Initialize all panels with modern styling."""
+        """Initialize all panels with modern styling and icons."""
         # Create panels with date constraints
         self.input_panel = InputPanel(self.data_manager, self)
         self.dashboard_panel = AnalysisDashboard(self.data_manager, self)
@@ -100,10 +123,30 @@ class MainWindow(QMainWindow):
         # Set date constraints based on data
         self.set_date_constraints()
         
-        # Add panels to tabs without emojis
-        self.tabs.addTab(self.input_panel, "Portfolio Setup")
-        self.tabs.addTab(self.dashboard_panel, "Analytics Dashboard")
-        self.tabs.addTab(self.recommendation_panel, "Trading History")
+        # Icon paths for tabs
+        icon_paths = [
+            "frontend/gui/icons/portfolio.png",
+            "frontend/gui/icons/analytics.png", 
+            "frontend/gui/icons/history.png"
+        ]
+        
+        # Tab names
+        tab_names = ["Portfolio Setup", "Analytics Dashboard", "Trading History"]
+        panels = [self.input_panel, self.dashboard_panel, self.recommendation_panel]
+        
+        # Add panels to tabs with icons
+        for i, (icon_path, tab_name, panel) in enumerate(zip(icon_paths, tab_names, panels)):
+            try:
+                icon = QIcon(resource_path(icon_path))
+                if not icon.isNull():
+                    self.tabs.addTab(panel, icon, tab_name)
+                    logger.info(f"Tab icon loaded: {icon_path}")
+                else:
+                    self.tabs.addTab(panel, tab_name)
+                    logger.warning(f"Tab icon not found: {icon_path}")
+            except Exception as e:
+                self.tabs.addTab(panel, tab_name)
+                logger.warning(f"Error loading tab icon {icon_path}: {e}")
         
         # Set initial tab
         self.tabs.setCurrentIndex(0)
@@ -124,7 +167,7 @@ class MainWindow(QMainWindow):
                     
                     # Set constraints in input panel if it has date fields
                     if hasattr(self.input_panel, 'set_date_constraints'):
-                        self.input_panel.set_date_constraints(min_date, max_date)
+                        self.input_panel.set_date_constraints()
                     elif hasattr(self.input_panel, 'start_date_edit') and hasattr(self.input_panel, 'end_date_edit'):
                         # Direct access to date widgets
                         from PyQt6.QtCore import QDate
@@ -177,11 +220,23 @@ class MainWindow(QMainWindow):
         """Toggle between light and dark mode with smooth transition."""
         self.is_dark_mode = not self.is_dark_mode
         
-        # Update button text (no emojis)
+        # Update button text and icon
         if self.is_dark_mode:
             self.theme_button.setText("Light Mode")
+            try:
+                theme_icon = QIcon(resource_path("frontend/gui/icons/yellow_sun.png"))
+                if not theme_icon.isNull():
+                    self.theme_button.setIcon(theme_icon)
+            except:
+                pass
         else:
             self.theme_button.setText("Dark Mode")
+            try:
+                theme_icon = QIcon(resource_path("frontend/gui/icons/black_sun.png"))
+                if not theme_icon.isNull():
+                    self.theme_button.setIcon(theme_icon)
+            except:
+                pass
         
         # Apply new theme
         self.apply_modern_theme()
@@ -199,6 +254,7 @@ class MainWindow(QMainWindow):
         
         # Update message box styles for any future dialogs
         self.update_message_box_styles()
+        logger.info(f"Theme toggled to {'dark' if self.is_dark_mode else 'light'} mode")
     
     def update_message_box_styles(self):
         """Update message box styling for current theme."""
