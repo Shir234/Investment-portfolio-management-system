@@ -24,56 +24,65 @@ class RecommendationPanel(QWidget):
         logger.info("RecommendationPanel initialized")
         
     def setup_ui(self):
+        """Setup compact UI layout optimized for no-scroll display."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(20)
+        layout.setContentsMargins(16, 16, 16, 16)  # Reduced margins
+        layout.setSpacing(12)  # Reduced spacing
         
-        # Controls section - smaller
-        self.create_controls_section(layout)
+        # Compact controls section
+        self.create_compact_controls_section(layout)
         
-        # Table section - bigger (given more space)
-        self.create_table_section(layout)
+        # Maximized table section
+        self.create_maximized_table_section(layout)
         
-        # Actions section - single row at bottom
-        self.create_actions_section(layout)
+        # Minimal actions section
+        self.create_minimal_actions_section(layout)
         
         self.apply_styles()
         self.update_recommendations()
         
-    def create_controls_section(self, main_layout):
-        """Create compact controls section"""
-        controls_group = QGroupBox("Filter & Display Options")
-        controls_layout = QHBoxLayout(controls_group)
-        controls_layout.setContentsMargins(15, 20, 15, 15)  # Reduced padding
-        controls_layout.setSpacing(15)
+    def create_compact_controls_section(self, main_layout):
+        """Create very compact controls section in single row."""
+        controls_frame = QFrame()
+        controls_layout = QHBoxLayout(controls_frame)
+        controls_layout.setContentsMargins(12, 8, 12, 8)  # Minimal padding
+        controls_layout.setSpacing(16)  # Increased spacing between elements
         
-        # Filter section - more compact
+        # Filter section - compact
         filter_label = QLabel("Show:")
         filter_label.setProperty("class", "label")
         self.filter_combo = QComboBox()
         self.filter_combo.addItems(["All Orders", "Buy Orders", "Sell Orders"])
-        self.filter_combo.setMinimumWidth(120)  # Smaller width
+        self.filter_combo.setMinimumWidth(120)  # Increased width
+        self.filter_combo.setMaximumHeight(32)  # Slightly taller
         self.filter_combo.currentIndexChanged.connect(self.update_recommendations)
         
-        # Trade count section - more compact
-        self.trade_count_label = QLabel("📊 Total Orders: 0")
+        # Trade count section - compact with better sizing
+        self.trade_count_label = QLabel("📊 Total: 0")
         self.trade_count_label.setProperty("class", "metric")
+        self.trade_count_label.setMaximumHeight(32)  # Match combo height
+        self.trade_count_label.setMinimumWidth(100)  # Ensure minimum width
+        
+        # Export button - better sizing
+        export_button = QPushButton("📊 Export CSV")
+        export_button.setProperty("class", "primary")
+        export_button.clicked.connect(self.export_to_csv)
+        export_button.setToolTip("Export trading history to CSV file")
+        export_button.setMaximumHeight(32)  # Consistent height
+        export_button.setMinimumWidth(140)  # Ensure text fits
         
         controls_layout.addWidget(filter_label)
         controls_layout.addWidget(self.filter_combo)
-        controls_layout.addStretch()
+        controls_layout.addStretch()  # Push elements apart
         controls_layout.addWidget(self.trade_count_label)
+        controls_layout.addWidget(export_button)
         
-        # Give minimal stretch to controls section
-        main_layout.addWidget(controls_group, stretch=0)
+        # Give minimal space to controls
+        main_layout.addWidget(controls_frame, stretch=0)
         
-    def create_table_section(self, main_layout):
-        """Create enlarged table section with maximum space allocation"""
-        table_group = QGroupBox("Trade Details")
-        table_layout = QVBoxLayout(table_group)
-        table_layout.setContentsMargins(20, 30, 20, 20)
-        
-        # Table for trade history
+    def create_maximized_table_section(self, main_layout):
+        """Create maximized table section with equal column widths."""
+        # Table without group box for maximum space
         self.table = QTableWidget()
         self.table.setColumnCount(11)  # Same columns
         self.table.setHorizontalHeaderLabels([
@@ -90,42 +99,35 @@ class RecommendationPanel(QWidget):
             "Signal Strength" # How strong the signal was
         ])
         
-        # Modern table styling
-        self.table.horizontalHeader().setStretchLastSection(True)
+        # Configure table for equal column widths
+        self.table.horizontalHeader().setStretchLastSection(False)  # Don't stretch last section
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setMinimumHeight(600)  # Even larger minimum height for more table space
+        self.table.verticalHeader().setVisible(False)  # Hide row numbers for space
+        self.table.verticalHeader().setDefaultSectionSize(28)  # Better row height for readability
         
-        # Configure row headers (index column) to show row numbers properly
-        self.table.verticalHeader().setVisible(False)
+        # Set equal column widths - they will resize with window
+        header = self.table.horizontalHeader()
+        for i in range(11):
+            header.setSectionResizeMode(i, header.ResizeMode.Stretch)
         
-        # Set proper width for the vertical header (index column) so numbers show
-        self.table.verticalHeader().setFixedWidth(600)  # Wider fixed width for row numbers
-        self.table.verticalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Give maximum stretch to table
+        main_layout.addWidget(self.table, stretch=1)
         
-        table_layout.addWidget(self.table)
-        # Give the table section maximum stretch factor to occupy most space
-        main_layout.addWidget(table_group, stretch=4)  # Increased stretch
+    def create_minimal_actions_section(self, main_layout):
+        """Create minimal actions info - just status text."""
+        status_frame = QFrame()
+        status_layout = QHBoxLayout(status_frame)
+        status_layout.setContentsMargins(8, 4, 8, 4)  # Minimal padding
         
-    def create_actions_section(self, main_layout):
-        """Create compact single-row actions section with only export"""
-        actions_group = QGroupBox("Actions")
-        actions_layout = QHBoxLayout(actions_group)
-        actions_layout.setContentsMargins(20, 20, 20, 15)  # Reduced vertical padding
-        actions_layout.setSpacing(12)
+        self.status_label = QLabel("Trade history displayed above. Use filter to show specific order types.")
+        self.status_label.setProperty("class", "caption")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # Export button - now functional
-        export_button = QPushButton("📊 Export to CSV")
-        export_button.setProperty("class", "primary")
-        export_button.clicked.connect(self.export_to_csv)
-        export_button.setToolTip("Export trading history to CSV file")
+        status_layout.addWidget(self.status_label)
         
-        actions_layout.addStretch()  # Push button to center/right
-        actions_layout.addWidget(export_button)
-        actions_layout.addStretch()
-        
-        # Give minimal stretch to actions section
-        main_layout.addWidget(actions_group, stretch=0)
+        # Give minimal space to status
+        main_layout.addWidget(status_frame, stretch=0)
         
     def export_to_csv(self):
         """Export trading history to CSV file"""
@@ -234,11 +236,11 @@ class RecommendationPanel(QWidget):
                     writer.writeheader()
                     writer.writerows(export_data)
             
-            # Show success message
+            # Show compact success message
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Icon.Information)
             msg.setWindowTitle("Export Successful")
-            msg.setText(f"Trading history exported successfully!\n\nFile: {file_path}\nRecords: {len(export_data)}")
+            msg.setText(f"Exported {len(export_data)} records to:\n{os.path.basename(file_path)}")
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.setStyleSheet(self.get_message_box_style())
             msg.exec()
@@ -250,34 +252,34 @@ class RecommendationPanel(QWidget):
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Icon.Critical)
             msg.setWindowTitle("Export Failed")
-            msg.setText(f"Failed to export trading history:\n\n{e}")
+            msg.setText(f"Failed to export:\n{str(e)[:100]}...")
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.setStyleSheet(self.get_message_box_style())
             msg.exec()
         
     def apply_styles(self):
-        """Apply modern styling to the panel with improved table row colors for light mode"""
+        """Apply styling with better font sizes and button sizing."""
         style = ModernStyles.get_complete_style(self.is_dark_mode)
         
-        # Add enhanced table styling for better light mode contrast
+        # Add improved styling with better fonts and button sizing
         colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
         
-        additional_table_styles = f"""
-            /* Enhanced table styling with better alternating row colors */
+        additional_styles = f"""
+            /* Improved table with better font size */
             QTableWidget {{
                 background-color: {colors['surface']};
                 color: {colors['text_primary']};
                 border: 1px solid {colors['border_light']};
-                border-radius: 12px;
+                border-radius: 8px;
                 gridline-color: {colors['border_light']};
-                font-size: 13px;
+                font-size: 13px;  /* Increased from 10px */
                 selection-background-color: {colors['selected']};
                 alternate-background-color: {'#2A2A3E' if self.is_dark_mode else '#E5E7EB'};
             }}
             
             QTableWidget::item {{
                 border: none;
-                padding: 12px 8px;
+                padding: 6px 4px;  /* Better padding for readability */
                 border-bottom: 1px solid {colors['border_light']};
             }}
             
@@ -295,44 +297,88 @@ class RecommendationPanel(QWidget):
                 color: {colors['text_primary']};
                 border: none;
                 border-bottom: 2px solid {colors['border']};
-                padding: 16px 8px;
+                padding: 8px 4px;  /* Better header padding */
                 font-weight: 600;
-                font-size: 13px;
+                font-size: 12px;  /* Increased from 9px */
                 text-transform: uppercase;
-                letter-spacing: 0.5px;
+                letter-spacing: 0.3px;
             }}
             
             QHeaderView::section:hover {{
                 background-color: {colors['hover']};
             }}
+            
+            /* Better control styling with proper font sizes */
+            QComboBox {{
+                font-size: 13px;  /* Increased from 11px */
+                padding: 6px 12px;  /* Better padding */
+                min-height: 18px;
+            }}
+            
+            QLabel[class="caption"] {{
+                font-size: 12px;  /* Increased from 10px */
+                color: {colors['text_muted']};
+                font-style: italic;
+            }}
+            
+            /* Better button styling with proper text sizing */
+            QPushButton[class="primary"] {{
+                font-size: 13px;  /* Explicit font size */
+                padding: 8px 16px;  /* Better padding */
+                min-height: 20px;
+                min-width: 120px;  /* Ensure button is wide enough */
+                border-radius: 6px;
+                font-weight: 600;
+            }}
+            
+            /* Better metric label styling */
+            QLabel[class="metric"] {{
+                font-size: 13px;  /* Increased font size */
+                font-weight: 600;
+                padding: 8px 12px;  /* Better padding */
+                background-color: {colors['surface']};
+                border: 1px solid {colors['border_light']};
+                border-radius: 6px;
+                color: {colors['text_primary']};
+                text-align: center;
+            }}
+            
+            /* Better label styling */
+            QLabel[class="label"] {{
+                font-size: 14px;  /* Increased font size */
+                font-weight: 600;
+                color: {colors['text_primary']};
+            }}
         """
         
-        complete_style = style + additional_table_styles
+        complete_style = style + additional_styles
         self.setStyleSheet(complete_style)
         
     def get_message_box_style(self):
-        """Return QMessageBox stylesheet based on theme."""
+        """Return improved QMessageBox stylesheet."""
         colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
         return f"""
             QMessageBox {{ 
                 background-color: {colors['primary']}; 
                 color: {colors['text_primary']}; 
-                font-size: 14px;
-                border-radius: 12px;
+                font-size: 13px;  /* Increased font size */
+                border-radius: 8px;
             }}
             QMessageBox QLabel {{ 
                 color: {colors['text_primary']}; 
-                padding: 16px;
+                padding: 12px;
+                font-size: 12px;  /* Increased font size */
             }}
             QMessageBox QPushButton {{ 
                 background-color: {colors['accent']}; 
                 color: white; 
                 border: none;
-                border-radius: 6px;
-                padding: 8px 16px; 
+                border-radius: 4px;
+                padding: 8px 16px;  /* Better padding */
                 font-weight: 600;
                 min-width: 80px;
-                margin: 4px;
+                margin: 2px;
+                font-size: 12px;  /* Increased font size */
             }}
             QMessageBox QPushButton:hover {{ 
                 background-color: {colors['accent_hover']}; 
@@ -347,12 +393,13 @@ class RecommendationPanel(QWidget):
         logger.debug(f"Applied theme: {'dark' if is_dark_mode else 'light'}")
         
     def update_recommendations(self):
-        """Update the table with trade history."""
+        """Update the table with trade history using improved display."""
         try:
             orders = get_orders()
             if not orders:
                 self.table.setRowCount(0)
-                self.trade_count_label.setText("📊 Total Orders: 0")
+                self.trade_count_label.setText("📊 Total: 0")
+                self.status_label.setText("No trading history available.")
                 logger.info("No orders found")
                 return
             
@@ -366,14 +413,20 @@ class RecommendationPanel(QWidget):
                 orders_df = orders_df[orders_df['action'] == 'sell']
             
             self.table.setRowCount(len(orders_df))
-            self.trade_count_label.setText(f"📊 Total Orders: {len(orders_df)}")
+            self.trade_count_label.setText(f"📊 Total: {len(orders_df)}")
+            
+            if len(orders_df) == 0:
+                self.status_label.setText(f"No {filter_type.lower()} found.")
+                return
+            else:
+                self.status_label.setText(f"Showing {len(orders_df)} {filter_type.lower()}. Use Export CSV to save data.")
             
             # Define colors for different action types
             colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
             
             for row, (_, order) in enumerate(orders_df.iterrows()):
                 # Column 0: Date
-                date_item = QTableWidgetItem(str(order.get('date', '')))
+                date_item = QTableWidgetItem(str(order.get('date', ''))[:10])  # Show only date part
                 self.table.setItem(row, 0, date_item)
                 
                 # Column 1: Ticker
@@ -391,7 +444,7 @@ class RecommendationPanel(QWidget):
 
                 # Column 3: Price
                 price = order.get('price', 0)
-                price_item = QTableWidgetItem(f"${price:,.2f}")
+                price_item = QTableWidgetItem(f"${price:.2f}")
                 self.table.setItem(row, 3, price_item)
                 
                 # Column 4: Shares
@@ -401,7 +454,7 @@ class RecommendationPanel(QWidget):
                 
                 # Column 5: Trade Value (shares * price)
                 trade_value = price * shares
-                trade_value_item = QTableWidgetItem(f"${trade_value:,.2f}")
+                trade_value_item = QTableWidgetItem(f"${trade_value:.0f}")  # No decimals for compactness
                 self.table.setItem(row, 5, trade_value_item)
                 
                 # Column 6: Total Cost
@@ -411,7 +464,7 @@ class RecommendationPanel(QWidget):
                 else:  # sell
                     total_cost = order.get('total_proceeds', 
                         trade_value - order.get('transaction_cost', 0))
-                total_cost_item = QTableWidgetItem(f"${total_cost:,.2f}")
+                total_cost_item = QTableWidgetItem(f"${total_cost:.0f}")  # No decimals
                 self.table.setItem(row, 6, total_cost_item)
 
                 # Column 7: Total Shares
@@ -438,7 +491,7 @@ class RecommendationPanel(QWidget):
                         sharpe_item = QTableWidgetItem(sharpe_display)
                         sharpe_item.setForeground(self.get_color_from_hex(colors['text_muted']))
                     else:
-                        sharpe_display = f"{sharpe:.3f}"
+                        sharpe_display = f"{sharpe:.2f}"  # Reduced decimals
                         sharpe_item = QTableWidgetItem(sharpe_display)
                         # Color code based on Sharpe value
                         if sharpe > 1:
@@ -462,7 +515,7 @@ class RecommendationPanel(QWidget):
                             actual_item = QTableWidgetItem(actual_sharpe_display)
                             actual_item.setForeground(self.get_color_from_hex(colors['text_muted']))
                         else:
-                            actual_sharpe_display = f"{actual_sharpe:.3f}"
+                            actual_sharpe_display = f"{actual_sharpe:.2f}"  # Reduced decimals
                             actual_item = QTableWidgetItem(actual_sharpe_display)
                             # Color code based on actual Sharpe value
                             if actual_sharpe > 1:
@@ -489,7 +542,7 @@ class RecommendationPanel(QWidget):
                         signal_item = QTableWidgetItem(signal_display)
                         signal_item.setForeground(self.get_color_from_hex(colors['text_muted']))
                     else:
-                        signal_display = f"{signal_strength:.3f}"
+                        signal_display = f"{signal_strength:.2f}"  # Reduced decimals
                         signal_item = QTableWidgetItem(signal_display)
                         # Color code based on signal strength
                         if abs(signal_strength) > 2:
@@ -505,19 +558,11 @@ class RecommendationPanel(QWidget):
                     if self.table.item(row, col):
                         self.table.item(row, col).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             
-            # Auto-resize columns for better display
-            self.table.resizeColumnsToContents()
             logger.info(f"Updated recommendations with {len(orders_df)} orders")
             
         except Exception as e:
             logger.error(f"Error updating recommendations: {e}", exc_info=True)
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Critical)
-            msg.setWindowTitle("Error")
-            msg.setText(f"Failed to update trade history:\n\n{e}")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.setStyleSheet(self.get_message_box_style())
-            msg.exec()
+            self.status_label.setText(f"Error loading trade history: {str(e)[:50]}...")
             
     def get_color_from_hex(self, hex_color):
         """Convert hex color string to QColor"""
@@ -545,3 +590,9 @@ class RecommendationPanel(QWidget):
         except Exception as e:
             logger.error(f"Error retrieving actual Sharpe for {ticker} on {date}: {e}")
             return -1
+
+    def on_window_resize(self, size):
+        """Handle window resize events - columns will auto-resize due to stretch mode."""
+        # With stretch mode enabled, columns automatically resize
+        # This method can be used for other resize-related adjustments if needed
+        pass

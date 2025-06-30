@@ -94,8 +94,8 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(20, 20, 20, 20)  # More generous margins
-        main_layout.setSpacing(16)
+        main_layout.setContentsMargins(16, 16, 16, 16)  # Reduced from (20, 20, 20, 20)
+        main_layout.setSpacing(12)  # Reduced from 16
         
         # Create header with title and theme toggle
         self.create_header(main_layout)
@@ -105,17 +105,18 @@ class MainWindow(QMainWindow):
         
         # Initialize panels with modern styling
         self.initialize_panels()
+
         
     def create_header(self, main_layout):
         """Create a modern header with title and controls."""
         header_frame = QFrame()
-        header_frame.setFixedHeight(80)
+        header_frame.setFixedHeight(60)  # Reduced from 80
         header_layout = QHBoxLayout(header_frame)
         header_layout.setContentsMargins(0, 0, 0, 0)
 
         # App title and subtitle
         title_layout = QVBoxLayout()
-        title_layout.setSpacing(4)
+        title_layout.setSpacing(2)  # Reduced from 4
         
         self.title_label = QLabel("SharpSight")
         self.title_label.setProperty("class", "title")
@@ -133,7 +134,7 @@ class MainWindow(QMainWindow):
         # Theme toggle button (no emoji)
         self.theme_button = QPushButton("Light Mode")  # Start with "Light Mode" since we default to dark
         self.theme_button.setProperty("class", "theme-toggle")
-        self.theme_button.setFixedSize(120, 40)
+        self.theme_button.setFixedSize(100, 32)  # Reduced from (120, 40)
         self.theme_button.clicked.connect(self.toggle_theme)
 
         # Try to load theme toggle icon
