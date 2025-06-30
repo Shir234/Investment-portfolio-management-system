@@ -1,51 +1,57 @@
-import os
-import sys
-from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QApplication
+from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QLabel, QGraphicsDropShadowEffect
 from PyQt6.QtCore import Qt
-from frontend.gui.input_panel import InputPanel
-from frontend.gui.analysis_dashboard import AnalysisDashboard
-from frontend.gui.recommendation_panel import RecommendationPanel
+from PyQt6.QtGui import QIcon, QColor
+from .input_panel import InputPanel
+from .analysis_dashboard import AnalysisDashboard
+from .recommendation_panel import RecommendationPanel
+from ..logging_config import get_logger
+from ..utils import resource_path
+
+# Configure logging
+logger = get_logger(__name__)
 
 class MainWindow(QMainWindow):
     def __init__(self, data_manager, parent=None):
         """Initialize the main window with a data manager and optional parent."""
         super().__init__(parent)
         self.data_manager = data_manager
-        self.is_dark_mode = True  # Default to dark mode
-        self.setWindowTitle("Investment Portfolio Management System")
-        self.setGeometry(100, 100, 800, 600)
+        self.is_dark_mode = True
+        self.setWindowTitle("SharpSight Investment System")
+        self.setGeometry(100, 100, 1200, 800)
+        self.setup_ui()
+        logger.info("MainWindow initialized")
 
-        # Create central widget and main layout
+    def setup_ui(self):
+        """Set up the UI with a modern, professional design."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(10)
 
-        # Create tab widget
-        self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(
-            "QTabWidget::pane { background-color: #2b2b2b; } "
-            "QTabBar::tab { background-color: #3c3f41; color: #ffffff; padding: 8px; } "
-            "QTabBar::tab:selected { background-color: #2a82da; }"
-            if self.is_dark_mode else
-            "QTabWidget::pane { background-color: #e8e8e8; } "
-            "QTabBar::tab { background-color: #d0d0d0; color: #2c2c2c; padding: 8px; } "
-            "QTabBar::tab:selected { background-color: #2a82da; color: #ffffff; }"
-        )
+        # Header with title and theme toggle
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(10)
+        self.title_label = QLabel("SharpSight")
+        self.title_label.setStyleSheet(self.get_title_style())
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(12)
+        shadow.setColor(QColor(0, 0, 0, 160))
+        shadow.setOffset(3, 3)
+        self.title_label.setGraphicsEffect(shadow)
+        header_layout.addWidget(self.title_label)
+        header_layout.addStretch()
 
-        # Theme toggle button
-        self.theme_button = QPushButton("🌙 Dark")
-        self.theme_button.setFixedSize(90, 28)  # Fixed size - keep this consistent
+        self.theme_button = QPushButton()
+        self.theme_button.setFixedSize(36, 36)
         self.theme_button.clicked.connect(self.toggle_theme)
-        
-        # Apply initial styling using the same method as toggle
-        self.apply_button_style()
+        self.theme_button.setToolTip("Switch to Light Mode")
+        header_layout.addWidget(self.theme_button)
+        main_layout.addLayout(header_layout)
 
-        # Set the button as a corner widget of the tab widget
-        self.tabs.setCornerWidget(self.theme_button, Qt.Corner.TopRightCorner)
-
-        
-        # Add tabs directly to main layout
+        # Tab widget for panels
+        self.tabs = QTabWidget()
+        self.tabs.setTabPosition(QTabWidget.TabPosition.North)
         main_layout.addWidget(self.tabs)
 
         # Initialize panels
@@ -53,89 +59,134 @@ class MainWindow(QMainWindow):
         self.dashboard_panel = AnalysisDashboard(self.data_manager, self)
         self.recommendation_panel = RecommendationPanel(self.data_manager, self)
 
-        # Add panels to tabs
-        self.tabs.addTab(self.input_panel, "Portfolio Setup")
-        self.tabs.addTab(self.dashboard_panel, "Dashboard")
-        self.tabs.addTab(self.recommendation_panel, "Trading History")
-    
-    def get_button_style(self, text_color="#ffffff"):
-        """Get consistent button styling - SINGLE SOURCE OF TRUTH"""
+        # Add tabs with icons
+        icon_paths = [
+            "frontend/gui/icons/portfolio.png",
+            "frontend/gui/icons/analytics.png",
+            "frontend/gui/icons/history.png"
+        ]
+        tab_names = ["Portfolio Setup", "Analytics Dashboard", "Trading History"]
+        for i, (icon_path, tab_name) in enumerate(zip(icon_paths, tab_names)):
+            icon = QIcon(resource_path(icon_path))
+            if icon.isNull():
+                logger.warning(f"Tab icon not found: {icon_path}")
+            else:
+                logger.info(f"Tab icon loaded: {icon_path}")
+            self.tabs.addTab([self.input_panel, self.dashboard_panel, self.recommendation_panel][i], icon, tab_name)
+
+        # Apply initial theme
+        self.set_theme(self.is_dark_mode)
+
+    def get_title_style(self):
+        """Return stylesheet for the title label."""
+        return f"""
+            font-size: 32px;
+            font-weight: bold;
+            font-family: 'Segoe UI';
+            color: {'#FFFFFF' if self.is_dark_mode else '#2C2C2C'};
+            padding: 8px;
+        """
+
+    def get_button_style(self):
+        """Return stylesheet for buttons."""
         return f"""
             QPushButton {{
-                background-color: #2a82da;
-                color: {text_color};
-                border-radius: 14px;
-                font-size: 11px;
+                background-color: #0078D4;
+                color: #FFFFFF;
+                border-radius: 8px;
+                font-size: 12px;
                 font-weight: bold;
+                font-family: 'Segoe UI';
+                padding: 8px;
                 border: none;
-                padding: 4px 8px;
-                margin-right: 18px;
-                margin-top: 6px;
-                margin-bottom: 2px;
             }}
             QPushButton:hover {{
-                background-color: #3a92ea;
+                background-color: #005BA1;
             }}
             QPushButton:pressed {{
-                background-color: #1a72ca;
+                background-color: #003E7E;
             }}
         """
 
-    def apply_button_style(self):
-        """Apply button styling consistently"""
-        text_color = "#ffffff" if self.is_dark_mode else "#000000"
-        self.theme_button.setStyleSheet(self.get_button_style(text_color))
+    def get_tab_style(self):
+        """Return stylesheet for tabs."""
+        return f"""
+            QTabWidget::pane {{
+                background-color: {'#2D2D2D' if self.is_dark_mode else '#F5F5F5'};
+                border: 1px solid {'#444444' if self.is_dark_mode else '#CCCCCC'};
+                border-radius: 8px;
+            }}
+            QTabBar::tab {{
+                background-color: {'#3C3F41' if self.is_dark_mode else '#E0E0E0'};
+                color: {'#FFFFFF' if self.is_dark_mode else '#2C2C2C'};
+                padding: 12px 24px;
+                margin: 4px;
+                border-radius: 6px;
+                font-family: 'Segoe UI';
+                font-size: 14px;
+            }}
+            QTabBar::tab:selected {{
+                background-color: #0078D4;
+                color: #FFFFFF;
+                font-weight: bold;
+            }}
+            QTabBar::tab:hover {{
+                background-color: {'#555555' if self.is_dark_mode else '#D0D0D0'};
+            }}
+        """
+
+    def get_main_style(self):
+        """Return stylesheet for the main window."""
+        return f"""
+            QMainWindow {{
+                background-color: {'#2D2D2D' if self.is_dark_mode else '#F5F5F5'};
+            }}
+            QWidget {{
+                background-color: {'#2D2D2D' if self.is_dark_mode else '#F5F5F5'};
+                color: {'#FFFFFF' if self.is_dark_mode else '#2C2C2C'};
+            }}
+            QLabel {{
+                color: {'#FFFFFF' if self.is_dark_mode else '#2C2C2C'};
+                font-family: 'Segoe UI';
+                font-size: 14px;
+            }}
+        """
+
+    def set_theme(self, is_dark_mode):
+        """Apply light or dark theme to the main window and its panels."""
+        self.is_dark_mode = is_dark_mode
+        theme_icon_path = "frontend/gui/icons/yellow_sun.png" if is_dark_mode else "frontend/gui/icons/black_sun.png"
+        theme_icon = QIcon(resource_path(theme_icon_path))
+        if theme_icon.isNull():
+            logger.warning(f"Theme icon not found: {theme_icon_path}")
+        else:
+            logger.info(f"Theme icon loaded: {theme_icon_path}")
+        self.theme_button.setIcon(theme_icon)
+        self.theme_button.setToolTip("Switch to Light Mode" if is_dark_mode else "Switch to Dark Mode")
+        self.theme_button.setStyleSheet(self.get_button_style())
+        self.setStyleSheet(self.get_main_style())
+        self.tabs.setStyleSheet(self.get_tab_style())
+        self.title_label.setStyleSheet(self.get_title_style())
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(12)
+        shadow.setColor(QColor(0, 0, 0, 160))
+        shadow.setOffset(3, 3)
+        self.title_label.setGraphicsEffect(shadow)
+        self.input_panel.set_theme(is_dark_mode)
+        self.dashboard_panel.set_theme(is_dark_mode)
+        self.recommendation_panel.set_theme(is_dark_mode)
+        logger.debug(f"Applied theme: {'dark' if is_dark_mode else 'light'}")
 
     def toggle_theme(self):
         """Toggle between light and dark mode."""
-        self.is_dark_mode = not self.is_dark_mode
-        
-        # Update button text
-        if self.is_dark_mode:
-            self.theme_button.setText("🌙 Dark")
-        else:
-            self.theme_button.setText("☀ Light")
-
-        # Apply consistent button styling
-        self.apply_button_style()
-        
-        # Update main window style
-        self.setStyleSheet(
-            "background-color: #353535; color: #ffffff;"
-            if self.is_dark_mode else
-            "background-color: #e0e0e0; color: #2c2c2c;"  # Darker light gray - more comfortable
-        )
-
-        # Update tabs style
-        self.tabs.setStyleSheet(
-            "QTabWidget::pane { background-color: #2b2b2b; } "
-            "QTabBar::tab { background-color: #3c3f41; color: #ffffff; padding: 8px; } "
-            "QTabBar::tab:selected { background-color: #2a82da; }"
-            if self.is_dark_mode else
-            "QTabWidget::pane { background-color: #e8e8e8; } "
-            "QTabBar::tab { background-color: #d0d0d0; color: #2c2c2c; padding: 8px; } "
-            "QTabBar::tab:selected { background-color: #2a82da; color: #ffffff; }"
-        )
-
-        # Update panel themes
-        self.input_panel.set_theme(self.is_dark_mode)
-        self.dashboard_panel.set_theme(self.is_dark_mode)
-        self.recommendation_panel.set_theme(self.is_dark_mode)
-        self.update_style_recursive(self)
-        QApplication.instance().processEvents()
-
-    def update_style_recursive(self, widget):
-        """Recursively update the style of all child widgets."""
-        for child in widget.findChildren(QWidget):
-            if hasattr(child, 'setStyleSheet'):
-                child.setStyleSheet(child.styleSheet())  # Reapply to force update
-            self.update_style_recursive(child)
+        self.set_theme(not self.is_dark_mode)
 
     def update_dashboard(self):
-        """Refresh the dashboard and recommendations."""
+        """Refresh the dashboard panel."""
         self.dashboard_panel.update_dashboard()
-        self.recommendation_panel.update_recommendations()
+        logger.debug("Dashboard updated")
 
     def update_recommendations(self):
-        """Refresh the recommendations."""
+        """Refresh the recommendations panel."""
         self.recommendation_panel.update_recommendations()
+        logger.debug("Recommendations updated")

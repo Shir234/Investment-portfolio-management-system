@@ -1,17 +1,42 @@
 import os
 import pandas as pd
 from datetime import datetime, date
-from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit,
-                             QDateEdit, QPushButton, QComboBox, QMessageBox,
-                             QDoubleSpinBox, QDialog, QTableWidget, QTableWidgetItem,
-                             QCheckBox)
-from PyQt6.QtCore import QDate, Qt, QThread, QObject, pyqtSignal
-from frontend.logging_config import get_logger
-from frontend.data.trading_connector import execute_trading_strategy, get_order_history_df, log_trading_orders
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+                             QDoubleSpinBox, QDateEdit, QPushButton, QComboBox,
+                             QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox,
+                             QMessageBox, QDialog, QFrame, QGraphicsDropShadowEffect)
+from PyQt6.QtCore import QDate, Qt, QObject, pyqtSignal, QThread
+from PyQt6.QtGui import QColor
+from ..data.trading_connector import execute_trading_strategy, get_order_history_df, log_trading_orders
+from ..logging_config import get_logger
 from backend.trading_logic_new import get_orders, get_portfolio_history
 
-# Set up logging
+# Configure logging
 logger = get_logger(__name__)
+
+# Centralized theme colors (matching front_main.py)
+THEME_COLORS = {
+    'dark': {
+        'background': '#2D2D2D',
+        'text': '#FFFFFF',
+        'border': '#555555',
+        'card': '#3C3F41',
+        'highlight': '#0078D4',
+        'hover': '#005BA1',
+        'pressed': '#003E7E',
+        'alternate': '#2A2A2A'
+    },
+    'light': {
+        'background': '#F5F5F5',
+        'text': '#2C2C2C',
+        'border': '#CCCCCC',
+        'card': '#FFFFFF',
+        'highlight': '#0078D4',
+        'hover': '#005BA1',
+        'pressed': '#003E7E',
+        'alternate': '#F0F0F0'
+    }
+}
 
 class Worker(QObject):
     """Worker class to run execute_trading_strategy in a background thread."""
@@ -54,27 +79,50 @@ class TradeConfirmationDialog(QDialog):
         self.setWindowTitle("Confirm Trades")
         self.orders = orders
         self.selected_orders = []
+        self.setFixedSize(600, 400)
+        self.is_dark_mode = True  # Default to dark mode
         self.setup_ui()
 
     def setup_ui(self):
         """Configure the dialog UI with a table and buttons."""
         layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
 
+        # Title with shadow effect
+        self.title = QLabel("Confirm Trades")
+        self.title.setStyleSheet(f"""
+            font-size: 18px; 
+            font-weight: bold; 
+            font-family: 'Segoe UI'; 
+            color: {'#FFFFFF' if self.is_dark_mode else '#2C2C2C'};
+        """)
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(8)
+        shadow.setColor(QColor(0, 0, 0, 128))
+        shadow.setOffset(2, 2)
+        self.title.setGraphicsEffect(shadow)
+        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.title)
+
+        # Table
         self.table = QTableWidget()
         self.table.setRowCount(len(self.orders))
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["Select", "Date", "Ticker", "Action", "Shares", "Price"])
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setAlternatingRowColors(True)
+        self.table.horizontalHeader().setMinimumSectionSize(100)
 
         for row, order in enumerate(self.orders):
             checkbox = QCheckBox()
             checkbox.setChecked(True)
             self.table.setCellWidget(row, 0, checkbox)
-
             self.table.setItem(row, 1, QTableWidgetItem(str(order.get('date', ''))))
             self.table.setItem(row, 2, QTableWidgetItem(order.get('ticker', '')))
-            self.table.setItem(row, 3, QTableWidgetItem(order.get('action', '')))
-            self.table.setItem(row, 4, QTableWidgetItem(str(order.get('shares_amount', 0))))
+            self.table.setItem(row, 3, QTableWidgetItem(order.get('action', '').upper()))
+            shares = order.get('shares_amount', 0)
+            self.table.setItem(row, 4, QTableWidgetItem(str(int(shares)) if shares == int(shares) else str(shares)))
             self.table.setItem(row, 5, QTableWidgetItem(f"${order.get('price', 0):,.2f}"))
 
             for col in range(1, 6):
@@ -84,58 +132,92 @@ class TradeConfirmationDialog(QDialog):
         self.table.resizeColumnsToContents()
         layout.addWidget(self.table)
 
+        # Buttons
         button_layout = QHBoxLayout()
-        accept_button = QPushButton("Accept Selected")
+        button_layout.addStretch()
+        accept_button = QPushButton("Confirm Trades")
+        accept_button.setToolTip("Execute selected trades")
         accept_button.clicked.connect(self.accept_selected)
         cancel_button = QPushButton("Cancel")
+        cancel_button.setToolTip("Cancel trade execution")
         cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(accept_button)
         button_layout.addWidget(cancel_button)
+        button_layout.addStretch()
         layout.addLayout(button_layout)
 
-        self.setStyleSheet("""
-            QTableWidget {
-                background-color: #3c3f41;
-                color: #ffffff;
-                border: 1px solid #555555;
-            }
-            QTableWidget::item {
-                border: 1px solid #555555;
-            }
-            QTableWidget::item:selected {
-                background-color: #2a82da;
-            }
-            QHeaderView::section {
-                background-color: #353535;
-                color: #ffffff;
-                border: 1px solid #555555;
-            }
-            QPushButton {
-                background-color: #2a82da;
-                color: #ffffff;
-                padding: 5px;
-                border: none;
-                border-radius: 3px;
-            }
-            QPushButton:hover {
-                background-color: #3a92ea;
-            }
+        # Apply initial theme
+        self.set_theme(self.is_dark_mode)
+
+    def set_theme(self, is_dark_mode):
+        """Apply light or dark theme to the dialog."""
+        self.is_dark_mode = is_dark_mode
+        theme = THEME_COLORS['dark' if is_dark_mode else 'light']
+        self.setStyleSheet(f"background-color: {theme['background']};")
+        self.title.setStyleSheet(f"""
+            font-size: 18px; 
+            font-weight: bold; 
+            font-family: 'Segoe UI'; 
+            color: {theme['text']};
         """)
+        table_style = f"""
+            QTableWidget {{
+                background-color: {theme['card']};
+                color: {theme['text']};
+                border: 1px solid {theme['border']};
+                border-radius: 4px;
+                gridline-color: {theme['border']};
+                alternate-background-color: {theme['alternate']};
+            }}
+            QTableWidget::item {{
+                border: none;
+                padding: 8px;
+            }}
+            QTableWidget::item:selected {{
+                background-color: {theme['highlight']};
+                color: #FFFFFF;
+            }}
+            QHeaderView::section {{
+                background-color: {theme['card']};
+                color: {theme['text']};
+                padding: 8px;
+                border: 1px solid {theme['border']};
+            }}
+        """
+        button_style = f"""
+            QPushButton {{
+                background-color: {theme['highlight']};
+                color: #FFFFFF;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-family: 'Segoe UI';
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {theme['hover']};
+            }}
+            QPushButton:pressed {{
+                background-color: {theme['pressed']};
+            }}
+        """
+        self.table.setStyleSheet(table_style)
+        for button in self.findChildren(QPushButton):
+            button.setStyleSheet(button_style)
+        logger.debug(f"Applied theme to TradeConfirmationDialog: {'dark' if is_dark_mode else 'light'}")
 
     def accept_selected(self):
         """Collect selected orders and accept the dialog."""
-        self.selected_orders = []
-        for row in range(self.table.rowCount()):
-            checkbox = self.table.cellWidget(row, 0)
-            if checkbox.isChecked():
-                self.selected_orders.append(self.orders[row])
+        self.selected_orders = [self.orders[row] for row in range(self.table.rowCount()) if self.table.cellWidget(row, 0).isChecked()]
         self.accept()
+        logger.debug(f"Selected {len(self.selected_orders)} orders for confirmation")
 
 class InputPanel(QWidget):
     """Panel for user inputs and financial metrics display."""
     def __init__(self, data_manager, parent=None):
         super().__init__(parent)
         self.data_manager = data_manager
+        self.main_window = parent
         self.project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
         self.portfolio_state_file = os.path.join(self.project_root, 'data', 'portfolio_state.json')
         self.is_dark_mode = True
@@ -144,93 +226,259 @@ class InputPanel(QWidget):
         logger.info("InputPanel initialized")
 
     def init_ui(self):
-        """Initialize the UI components."""
+        """Initialize the UI components with modern design."""
         layout = QVBoxLayout(self)
+        layout.setSpacing(20)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # Title with shadow effect
+        title = QLabel("Portfolio Setup")
+        title.setStyleSheet(f"""
+            font-size: 18px; 
+            font-weight: bold; 
+            font-family: 'Segoe UI'; 
+            color: {'#FFFFFF' if self.is_dark_mode else '#2C2C2C'};
+        """)
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(8)
+        shadow.setColor(QColor(0, 0, 0, 128))
+        shadow.setOffset(2, 2)
+        title.setGraphicsEffect(shadow)
+        layout.addWidget(title)
+
+        # Investment Parameters Group
+        investment_group = QGroupBox("Investment Parameters")
+        investment_group_layout = QVBoxLayout(investment_group)
+        investment_group_layout.setSpacing(10)
 
         # Investment Amount
-        investment_layout = QHBoxLayout()
-        self.investment_label = QLabel("Investment Amount ($):")
-        self.investment_label.setObjectName("investment_label")
+        investment_layout = QVBoxLayout()
+        self.investment_label = QLabel("Investment Amount ($)")
         self.investment_input = QLineEdit("10000")
-        self.investment_input.setPlaceholderText("Enter amount")
+        self.investment_input.setPlaceholderText("Enter amount (e.g., 10000)")
+        self.investment_input.setToolTip("Enter the initial investment amount in USD")
         investment_layout.addWidget(self.investment_label)
         investment_layout.addWidget(self.investment_input)
-        layout.addLayout(investment_layout)
+        investment_group_layout.addLayout(investment_layout)
 
         # Risk Level
-        risk_layout = QHBoxLayout()
-        self.risk_label = QLabel("Risk Level (0-10):")
-        self.risk_label.setObjectName("risk_label")
+        risk_layout = QVBoxLayout()
+        self.risk_label = QLabel("Risk Level (0-10)")
         self.risk_input = QDoubleSpinBox()
         self.risk_input.setRange(0, 10)
         self.risk_input.setValue(5)
         self.risk_input.setSingleStep(0.1)
+        self.risk_input.setToolTip("Set risk level (0 = low risk, 10 = high risk)")
         risk_layout.addWidget(self.risk_label)
         risk_layout.addWidget(self.risk_input)
-        layout.addLayout(risk_layout)
+        investment_group_layout.addLayout(risk_layout)
+        layout.addWidget(investment_group)
 
-        # Date Range
-        date_layout = QHBoxLayout()
-        self.start_label = QLabel("Start Date:")
-        self.start_label.setObjectName("start_label")
+        # Date Range Group
+        date_group = QGroupBox("Date Range")
+        date_group_layout = QHBoxLayout(date_group)
+        date_group_layout.setSpacing(20)
+
+        start_layout = QVBoxLayout()
+        self.start_label = QLabel("Start Date")
         self.start_date_input = QDateEdit()
         self.start_date_input.setCalendarPopup(True)
         self.start_date_input.setDate(QDate(2021, 10, 18))
         self.start_date_input.dateChanged.connect(self.update_end_date_minimum)
-        self.end_label = QLabel("End Date:")
-        self.end_label.setObjectName("end_label")
+        start_layout.addWidget(self.start_label)
+        start_layout.addWidget(self.start_date_input)
+        date_group_layout.addLayout(start_layout)
+
+        end_layout = QVBoxLayout()
+        self.end_label = QLabel("End Date")
         self.end_date_input = QDateEdit()
         self.end_date_input.setCalendarPopup(True)
         self.end_date_input.setDate(QDate(2023, 12, 22))
-        date_layout.addWidget(self.start_label)
-        date_layout.addWidget(self.start_date_input)
-        date_layout.addWidget(self.end_label)
-        date_layout.addWidget(self.end_date_input)
-        layout.addLayout(date_layout)
+        end_layout.addWidget(self.end_label)
+        end_layout.addWidget(self.end_date_input)
+        date_group_layout.addLayout(end_layout)
+        layout.addWidget(date_group)
 
-        # Mode Selection
-        mode_layout = QHBoxLayout()
-        self.mode_label = QLabel("Trading Mode:")
-        self.mode_label.setObjectName("mode_label")
+        # Trading Mode Group
+        mode_group = QGroupBox("Trading Mode")
+        mode_group_layout = QVBoxLayout(mode_group)
+        self.mode_label = QLabel("Trading Mode")
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["Automatic", "Semi-Automatic"])
-        mode_layout.addWidget(self.mode_label)
-        mode_layout.addWidget(self.mode_combo)
-        layout.addLayout(mode_layout)
+        self.mode_combo.setToolTip("Automatic: Execute trades automatically\nSemi-Automatic: Confirm trades manually")
+        mode_group_layout.addWidget(self.mode_label)
+        mode_group_layout.addWidget(self.mode_combo)
+        layout.addWidget(mode_group)
 
         # Buttons
         button_layout = QHBoxLayout()
-        self.execute_button = QPushButton("Execute Trading Strategy")
-        self.execute_button.setObjectName("execute_button")
+        button_layout.addStretch()
+        self.execute_button = QPushButton("Execute Strategy")
+        self.execute_button.setToolTip("Run the trading strategy with the specified parameters")
         self.execute_button.clicked.connect(self.execute_strategy)
         self.reset_button = QPushButton("Reset Portfolio")
-        self.reset_button.setObjectName("reset_button")
+        self.reset_button.setToolTip("Clear portfolio state and reset metrics")
         self.reset_button.clicked.connect(self.reset_portfolio)
         button_layout.addWidget(self.execute_button)
         button_layout.addWidget(self.reset_button)
+        button_layout.addStretch()
         layout.addLayout(button_layout)
 
-        # Status Label
+        # Metrics Group
+        metrics_group = QGroupBox("Financial Metrics")
+        metrics_group_layout = QVBoxLayout(metrics_group)
+        metrics_group_layout.setSpacing(10)
         self.status_label = QLabel("Ready")
-        self.status_label.setObjectName("status_label")
-        layout.addWidget(self.status_label)
-
-        # Financial Metrics
-        metrics_layout = QVBoxLayout()
         self.cash_label = QLabel("Liquid Cash: N/A")
-        self.cash_label.setObjectName("cash_label")
         self.portfolio_label = QLabel("Portfolio Value: N/A")
-        self.portfolio_label.setObjectName("portfolio_value_label")
         self.total_label = QLabel("Total Value: N/A")
-        self.total_label.setObjectName("total_value_label")
-        metrics_layout.addWidget(self.cash_label)
-        metrics_layout.addWidget(self.portfolio_label)
-        metrics_layout.addWidget(self.total_label)
-        layout.addLayout(metrics_layout)
+        metrics_group_layout.addWidget(self.status_label)
+        metrics_group_layout.addWidget(self.cash_label)
+        metrics_group_layout.addWidget(self.portfolio_label)
+        metrics_group_layout.addWidget(self.total_label)
+        layout.addWidget(metrics_group)
 
-        self.setLayout(layout)
+        layout.addStretch()
         self.set_theme(self.is_dark_mode)
         self.update_financial_metrics(0, 0)
+
+    def set_theme(self, is_dark_mode):
+        """Apply light or dark theme to the panel."""
+        self.is_dark_mode = is_dark_mode
+        theme = THEME_COLORS['dark' if is_dark_mode else 'light']
+        group_style = f"""
+            QGroupBox {{
+                background-color: {theme['card']};
+                border: 1px solid {theme['border']};
+                border-radius: 8px;
+                margin-top: 10px;
+                font-size: 14px;
+                font-weight: bold;
+                font-family: 'Segoe UI';
+                color: {theme['text']};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 5px;
+                color: {theme['text']};
+            }}
+        """
+        label_style = f"color: {theme['text']}; font-family: 'Segoe UI'; font-size: 14px;"
+        bold_label_style = f"color: {theme['text']}; font-family: 'Segoe UI'; font-size: 14px; font-weight: bold;"
+        input_style = f"""
+            background-color: {theme['card']};
+            color: {theme['text']};
+            border: 1px solid {theme['border']};
+            border-radius: 4px;
+            padding: 6px;
+        """
+        button_style_execute = f"""
+            QPushButton {{
+                background-color: {theme['highlight']};
+                color: #FFFFFF;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-family: 'Segoe UI';
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {theme['hover']};
+            }}
+            QPushButton:pressed {{
+                background-color: {theme['pressed']};
+            }}
+            QPushButton:disabled {{
+                background-color: {'#555555' if is_dark_mode else '#CCCCCC'};
+                color: {'#AAAAAA' if is_dark_mode else '#666666'};
+            }}
+        """
+        button_style_reset = f"""
+            QPushButton {{
+                background-color: #D32F2F;
+                color: #FFFFFF;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-family: 'Segoe UI';
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: #B71C1C;
+            }}
+            QPushButton:pressed {{
+                background-color: #7F0000;
+            }}
+        """
+        self.setStyleSheet(f"background-color: {theme['background']};")
+        for group in self.findChildren(QGroupBox):
+            group.setStyleSheet(group_style)
+            shadow = QGraphicsDropShadowEffect()
+            shadow.setBlurRadius(8)
+            shadow.setColor(QColor(0, 0, 0, 128))
+            shadow.setOffset(2, 2)
+            group.setGraphicsEffect(shadow)
+        self.investment_label.setStyleSheet(bold_label_style)
+        self.risk_label.setStyleSheet(bold_label_style)
+        self.start_label.setStyleSheet(bold_label_style)
+        self.end_label.setStyleSheet(bold_label_style)
+        self.mode_label.setStyleSheet(bold_label_style)
+        self.status_label.setStyleSheet(bold_label_style)
+        self.cash_label.setStyleSheet(label_style)
+        self.portfolio_label.setStyleSheet(label_style)
+        # Handle non-numeric total_label text
+        total_value_text = self.total_label.text().replace('Total Value: $', '').replace(',', '')
+        try:
+            total_value = float(total_value_text)
+            total_color = '#4CAF50' if total_value > 0 else theme['text']
+        except ValueError:
+            total_color = theme['text']
+        self.total_label.setStyleSheet(f"""
+            color: {total_color}; 
+            font-family: 'Segoe UI'; 
+            font-size: 15px; 
+            font-weight: bold;
+        """)
+        self.investment_input.setStyleSheet(input_style)
+        self.risk_input.setStyleSheet(input_style)
+        self.start_date_input.setStyleSheet(input_style)
+        self.end_date_input.setStyleSheet(input_style)
+        self.mode_combo.setStyleSheet(f"{input_style} QComboBox::drop-down {{ border: none; width: 20px; }}")
+        self.execute_button.setStyleSheet(button_style_execute)
+        self.reset_button.setStyleSheet(button_style_reset)
+        logger.debug(f"Applied theme to InputPanel: {'dark' if is_dark_mode else 'light'}")
+
+    def get_message_box_style(self):
+        """Return stylesheet for QMessageBox based on the current theme."""
+        theme = THEME_COLORS['dark' if self.is_dark_mode else 'light']
+        return f"""
+            QMessageBox {{
+                background-color: {theme['background']};
+                color: {theme['text']};
+                font-family: 'Segoe UI';
+                border: 1px solid {theme['border']};
+                border-radius: 4px;
+            }}
+            QMessageBox QLabel {{
+                color: {theme['text']};
+            }}
+            QMessageBox QPushButton {{
+                background-color: {theme['highlight']};
+                color: #FFFFFF;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-family: 'Segoe UI';
+                font-weight: bold;
+            }}
+            QMessageBox QPushButton:hover {{
+                background-color: {theme['hover']};
+            }}
+            QMessageBox QPushButton:pressed {{
+                background-color: {theme['pressed']};
+            }}
+        """
 
     def update_date_tooltips(self):
         """Update date input tooltips based on data and order history."""
@@ -250,8 +498,8 @@ class InputPanel(QWidget):
             if not orders_df.empty:
                 latest_order_date = pd.to_datetime(orders_df['date']).max().date()
 
-            start_tooltip = "Select start date"
-            end_tooltip = "Select end date"
+            start_tooltip = "Select start date for trading period"
+            end_tooltip = "Select end date for trading period"
 
             if min_date:
                 start_tooltip += f"\nEarliest data: {min_date}"
@@ -303,6 +551,7 @@ class InputPanel(QWidget):
     def update_end_date_minimum(self):
         """Ensure end_date is after start_date."""
         self.end_date_input.setMinimumDate(self.start_date_input.date())
+        logger.debug("Updated end date minimum")
 
     def show_message_box(self, icon, title, text, buttons=QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel):
         """Show a message box with the specified icon, title, text, and buttons."""
@@ -312,57 +561,7 @@ class InputPanel(QWidget):
         msg.setText(text)
         msg.setStandardButtons(buttons)
         msg.setStyleSheet(self.get_message_box_style())
-        return msg.exec_()
-
-    def get_message_box_style(self):
-        """Return stylesheet for QMessageBox based on the current theme."""
-        if self.is_dark_mode:
-            return (
-                f"QMessageBox {{ background-color: #353535; color: #ffffff; }}"
-                f"QMessageBox QLabel {{ color: #ffffff; }}"
-                f"QPushButton {{ background-color: #2a82da; color: #ffffff; border: none; padding: 5px; border-radius: 3px; }}"
-                f"QPushButton:hover {{ background-color: #3a92ea; }}"
-            )
-        else:
-            return (
-                f"QMessageBox {{ background-color: #f0f0f0; color: black; }}"
-                f"QMessageBox QLabel {{ color: black; }}"
-                f"QPushButton {{ background-color: #2a82da; color: #ffffff; border: none; padding: 5px; border-radius: 3px; }}"
-                f"QPushButton:hover {{ background-color: #3a92ea; }}"
-            )
-
-    def set_theme(self, is_dark_mode):
-        """Apply light or dark theme to the panel."""
-        self.is_dark_mode = is_dark_mode
-        if is_dark_mode:
-            label_style = "color: #ffffff;"
-            input_style = "background-color: #3c3f41; color: #ffffff; border: 1px solid #555555; border-radius: 3px;"
-            combo_style = "background-color: #3c3f41; color: #ffffff; selection-background-color: #2a82da; border: 1px solid #555555; border-radius: 3px;"
-            button_style_execute = "QPushButton {background-color: #2a82da; color: #ffffff; border: none; padding: 5px; border-radius: 3px;} QPushButton:hover {background-color: #3a92ea;}"
-            button_style_reset = "QPushButton {background-color: #ff4444; color: #ffffff; border: none; padding: 5px; border-radius: 3px;} QPushButton:hover {background-color: #ff6666;}"
-        else:
-            label_style = "color: black;"
-            input_style = "background-color: #ffffff; color: black; border: 1px solid #cccccc; border-radius: 3px;"
-            combo_style = "background-color: #ffffff; color: black; selection-background-color: #2a82da; border: 1px solid #cccccc; border-radius: 3px;"
-            button_style_execute = "QPushButton {background-color: #2a82da; color: #ffffff; border: none; padding: 5px; border-radius: 3px;} QPushButton:hover {background-color: #3a92ea;}"
-            button_style_reset = "QPushButton {background-color: #ff4444; color: #ffffff; border: none; padding: 5px; border-radius: 3px;} QPushButton:hover {background-color: #ff6666;}"
-
-        self.investment_label.setStyleSheet(label_style)
-        self.risk_label.setStyleSheet(label_style)
-        self.start_label.setStyleSheet(label_style)
-        self.end_label.setStyleSheet(label_style)
-        self.mode_label.setStyleSheet(label_style)
-        self.cash_label.setStyleSheet(f"font-weight: bold; {label_style}")
-        self.portfolio_label.setStyleSheet(f"font-weight: bold; {label_style}")
-        self.total_label.setStyleSheet(f"font-weight: bold; {label_style}")
-        self.status_label.setStyleSheet(f"font-weight: bold; {label_style}")
-        self.investment_input.setStyleSheet(input_style)
-        self.risk_input.setStyleSheet(input_style)
-        self.start_date_input.setStyleSheet(input_style)
-        self.end_date_input.setStyleSheet(input_style)
-        self.mode_combo.setStyleSheet(combo_style)
-        self.execute_button.setStyleSheet(button_style_execute)
-        self.reset_button.setStyleSheet(button_style_reset)
+        return msg.exec()
 
     def validate_inputs(self):
         """Validate user inputs."""
@@ -407,10 +606,11 @@ class InputPanel(QWidget):
         return investment_amount, risk_level, start_date, end_date
 
     def update_financial_metrics(self, cash=0, portfolio_value=0):
-        """Update financial metrics display."""
+        """Update financial metrics display with color-coded total value."""
         self.cash_label.setText(f"Liquid Cash: ${cash:,.2f}")
         self.portfolio_label.setText(f"Portfolio Value: ${portfolio_value:,.2f}")
         self.total_label.setText(f"Total Value: ${(cash + portfolio_value):,.2f}")
+        self.set_theme(self.is_dark_mode)  # Reapply theme to update total_label color
         logger.debug(f"Updated financial metrics: Cash=${cash:,.2f}, Portfolio=${portfolio_value:,.2f}")
 
     def execute_strategy(self):
@@ -430,7 +630,8 @@ class InputPanel(QWidget):
             result = self.show_message_box(
                 QMessageBox.Icon.Warning,
                 "Short Date Range",
-                "The selected date range is less than 7 days. For better trading results, a minimum one-week period is recommended. Proceed anyway?"
+                "The selected date range is less than 7 days. For better trading results, a minimum one-week period is recommended. Proceed anyway?",
+                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
             )
             if result == QMessageBox.StandardButton.Cancel:
                 logger.info("User cancelled execution due to short date range")
@@ -439,6 +640,7 @@ class InputPanel(QWidget):
         # Disable execute button and update status
         self.execute_button.setEnabled(False)
         self.status_label.setText("Executing strategy... Please wait.")
+        logger.debug("Starting strategy execution")
 
         # Set up worker and thread
         self.thread = QThread()
@@ -482,7 +684,6 @@ class InputPanel(QWidget):
             return
 
         orders = result.get('orders', [])
-        portfolio_history = result.get('portfolio_history', [])
         portfolio_value = result.get('portfolio_value', investment_amount)
         cash = result.get('cash', investment_amount)
         warning_message = result.get('warning_message', '')
@@ -497,6 +698,7 @@ class InputPanel(QWidget):
 
         if mode == "semi-automatic" and orders:
             dialog = TradeConfirmationDialog(orders, self)
+            dialog.set_theme(self.is_dark_mode)
             if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_orders:
                 # Run semi-automatic execution in a new thread
                 self.thread = QThread()
@@ -546,7 +748,6 @@ class InputPanel(QWidget):
             logger.error(f"Trade execution failed: {result.get('warning_message')}")
             return
 
-        portfolio_history = result.get('portfolio_history', [])
         portfolio_value = result.get('portfolio_value', investment_amount)
         cash = result.get('cash', investment_amount)
         orders = result.get('orders', [])
@@ -597,7 +798,7 @@ class InputPanel(QWidget):
             self.show_message_box(
                 QMessageBox.Icon.Critical,
                 "Error",
-                f"Failed to reset portfolio: {e}",
+                f"Failed to reset portfolio: {str(e)}",
                 QMessageBox.StandardButton.Ok
             )
 
@@ -672,7 +873,6 @@ class InputPanel(QWidget):
                 reset_state=True
             )
             if success:
-                portfolio_history = result.get('portfolio_history', [])
                 portfolio_value = result.get('portfolio_value', investment_amount)
                 cash = result.get('cash', investment_amount)
                 orders = result.get('orders', [])
@@ -704,7 +904,8 @@ class InputPanel(QWidget):
 
                 if self.mode_combo.currentText().lower() == "semi-automatic" and orders:
                     dialog = TradeConfirmationDialog(orders, self)
-                    if dialog.exec_() == QDialog.Accepted and dialog.selected_orders:
+                    dialog.set_theme(self.is_dark_mode)
+                    if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_orders:
                         success, result = execute_trading_strategy(
                             investment_amount=investment_amount,
                             risk_level=risk_level,
@@ -723,7 +924,6 @@ class InputPanel(QWidget):
                                 QMessageBox.StandardButton.Ok
                             )
                             return
-                        portfolio_history = result.get('portfolio_history', [])
                         portfolio_value = result.get('portfolio_value', investment_amount)
                         cash = result.get('cash', investment_amount)
                         orders = result.get('orders', [])
@@ -754,7 +954,7 @@ class InputPanel(QWidget):
             self.show_message_box(
                 QMessageBox.Icon.Critical,
                 "Error",
-                f"Failed to run strategy: {e}",
+                f"Failed to run strategy: {str(e)}",
                 QMessageBox.StandardButton.Ok
             )
             self.update_financial_metrics()
