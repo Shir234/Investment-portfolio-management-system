@@ -1236,8 +1236,9 @@ class InputPanel(QWidget):
     def update_financial_metrics(self, cash=0, portfolio_value=0):
         """Update financial metrics display with color coding."""
         self.cash_label.setText(f"Liquid Cash: ${cash:,.2f}")
-        self.portfolio_label.setText(f"Portfolio Value: ${portfolio_value:,.2f}")
-        total_value = cash + portfolio_value
+        portfolio_value_only = portfolio_value- cash
+        self.portfolio_label.setText(f"Portfolio Value: ${portfolio_value_only:,.2f}")
+        total_value = portfolio_value
         self.total_label.setText(f"Total Value: ${total_value:,.2f}")
         
         # Reset all labels to base metric class first
@@ -1375,7 +1376,7 @@ class InputPanel(QWidget):
                 "Strategy Executed Successfully",
                 f"Trading strategy completed successfully!\n\n"
                 f"Orders executed: {len(orders)}\n"
-                f"Final portfolio value: ${(cash + portfolio_value):,.2f}",
+                f"Final portfolio value: ${(portfolio_value):,.2f}",
                 QMessageBox.StandardButton.Ok
             )
             logger.info("Strategy execution completed successfully")
