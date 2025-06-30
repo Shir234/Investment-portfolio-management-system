@@ -60,7 +60,7 @@ class MainWindow(QMainWindow):
     update_panel_signal = pyqtSignal(object, bool)
     
     def __init__(self, data_manager, parent=None):
-        """Initialize the modern main window with enhanced styling."""
+        """Initialize the modern main window with responsive design."""
         super().__init__(parent)
         self.data_manager = data_manager
         self.is_dark_mode = True  # Default to dark mode
@@ -70,12 +70,26 @@ class MainWindow(QMainWindow):
         self.apply_style_signal.connect(self.apply_style_safely)
         self.update_panel_signal.connect(self.update_panel_safely)
         
-        # Window setup
+        # Window setup with responsive sizing
         self.setWindowTitle("SharpSight Investment System")
-        self.setGeometry(100, 100, 1200, 800)  # Larger default size
-        self.setMinimumSize(1000, 700)  # Minimum size for better UX
+        
+        # Get screen dimensions for responsive sizing
+        screen = QApplication.primaryScreen().geometry()
+        screen_width = screen.width()
+        screen_height = screen.height()
+        
+        # Calculate optimal window size (80% of screen, but with reasonable limits)
+        optimal_width = min(max(1200, int(screen_width * 0.8)), 1800)
+        optimal_height = min(max(800, int(screen_height * 0.8)), 1200)
+        
+        # Center the window
+        x = (screen_width - optimal_width) // 2
+        y = (screen_height - optimal_height) // 2
+        
+        self.setGeometry(x, y, optimal_width, optimal_height)
+        self.setMinimumSize(1000, 650)  # Reduced minimum height
 
-       # Set window icon
+        # Set window icon
         try:
             window_icon = QIcon(resource_path("frontend/gui/icons/portfolio.png"))
             if not window_icon.isNull():
@@ -89,38 +103,38 @@ class MainWindow(QMainWindow):
         self.apply_modern_theme()
         
     def setup_ui(self):
-        """Setup the modern UI with better layout and spacing."""
+        """Setup the responsive UI with optimized layout."""
         # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(20, 20, 20, 20)  # More generous margins
-        main_layout.setSpacing(16)
+        main_layout.setContentsMargins(16, 16, 16, 16)  # Reduced margins
+        main_layout.setSpacing(12)  # Reduced spacing
         
-        # Create header with title and theme toggle
-        self.create_header(main_layout)
+        # Create compact header
+        self.create_compact_header(main_layout)
         
-        # Create modern tab widget
+        # Create modern tab widget with more space allocation
         self.create_tab_widget(main_layout)
         
-        # Initialize panels with modern styling
+        # Initialize panels with responsive design
         self.initialize_panels()
         
-    def create_header(self, main_layout):
-        """Create a modern header with title and controls."""
+    def create_compact_header(self, main_layout):
+        """Create a compact header with title and controls."""
         header_frame = QFrame()
-        header_frame.setFixedHeight(80)
+        header_frame.setFixedHeight(60)  # Reduced height
         header_layout = QHBoxLayout(header_frame)
         header_layout.setContentsMargins(0, 0, 0, 0)
 
-        # App title and subtitle
-        title_layout = QVBoxLayout()
-        title_layout.setSpacing(4)
+        # App title and subtitle in horizontal layout for space efficiency
+        title_layout = QHBoxLayout()
+        title_layout.setSpacing(16)
         
         self.title_label = QLabel("SharpSight")
         self.title_label.setProperty("class", "title")
         
-        self.subtitle_label = QLabel("Investment Portfolio Management System")
+        self.subtitle_label = QLabel("Investment Portfolio Management")
         self.subtitle_label.setProperty("class", "subtitle")
         
         title_layout.addWidget(self.title_label)
@@ -130,10 +144,10 @@ class MainWindow(QMainWindow):
         header_layout.addLayout(title_layout)
         header_layout.addStretch()
         
-        # Theme toggle button (no emoji)
-        self.theme_button = QPushButton("Light Mode")  # Start with "Light Mode" since we default to dark
+        # Theme toggle button
+        self.theme_button = QPushButton("Light Mode")
         self.theme_button.setProperty("class", "theme-toggle")
-        self.theme_button.setFixedSize(120, 40)
+        self.theme_button.setFixedSize(100, 32)  # Smaller button
         self.theme_button.clicked.connect(self.toggle_theme)
 
         # Try to load theme toggle icon
@@ -142,7 +156,6 @@ class MainWindow(QMainWindow):
             theme_icon = QIcon(resource_path(theme_icon_path))
             if not theme_icon.isNull():
                 self.theme_button.setIcon(theme_icon)
-                logger.info(f"Theme icon loaded: {theme_icon_path}")
         except Exception as e:
             logger.warning(f"Could not load theme icon: {e}")
         
@@ -150,23 +163,18 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(header_frame)
         
     def create_tab_widget(self, main_layout):
-        """Create modern tab widget with better styling."""
+        """Create modern tab widget with maximized content area."""
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
         self.tabs.setMovable(False)
         self.tabs.setTabsClosable(False)
         
-        # Add some padding around tab content
-        tab_frame = QFrame()
-        tab_layout = QVBoxLayout(tab_frame)
-        tab_layout.setContentsMargins(0, 0, 0, 0)
-        tab_layout.addWidget(self.tabs)
-        
-        main_layout.addWidget(tab_frame)
+        # Direct tab widget without additional frame for maximum space
+        main_layout.addWidget(self.tabs, stretch=1)  # Give tabs maximum stretch
         
     def initialize_panels(self):
-        """Initialize all panels with modern styling and icons."""
-        # Create panels with date constraints
+        """Initialize all panels with responsive design."""
+        # Create panels with responsive sizing
         self.input_panel = InputPanel(self.data_manager, self)
         self.dashboard_panel = AnalysisDashboard(self.data_manager, self)
         self.recommendation_panel = RecommendationPanel(self.data_manager, self)
@@ -239,19 +247,19 @@ class MainWindow(QMainWindow):
                 print(f"Error setting date constraints: {e}")
         
     def apply_modern_theme(self):
-        """Apply the complete modern theme."""
+        """Apply the complete modern theme with compact header styling."""
         style = ModernStyles.get_complete_style(self.is_dark_mode)
         self.setStyleSheet(style)
         
         # Update colors for specific elements
         colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
         
-        # Header styling
+        # Compact header styling
         if hasattr(self, 'title_label'):
             self.title_label.setStyleSheet(f"""
                 QLabel {{
                     color: {colors['text_primary']};
-                    font-size: 28px;
+                    font-size: 22px;
                     font-weight: 700;
                     margin: 0;
                 }}
@@ -261,12 +269,12 @@ class MainWindow(QMainWindow):
             self.subtitle_label.setStyleSheet(f"""
                 QLabel {{
                     color: {colors['text_secondary']};
-                    font-size: 14px;
+                    font-size: 13px;
                     font-weight: 400;
                     margin: 0;
                 }}
             """)
-        
+    
     def toggle_theme(self):
         """Toggle between light and dark mode using worker thread."""
         # Prevent multiple theme changes at once
@@ -320,7 +328,7 @@ class MainWindow(QMainWindow):
             self.title_label.setStyleSheet(f"""
                 QLabel {{
                     color: {colors['text_primary']};
-                    font-size: 28px;
+                    font-size: 22px;
                     font-weight: 700;
                     margin: 0;
                 }}
@@ -330,7 +338,7 @@ class MainWindow(QMainWindow):
             self.subtitle_label.setStyleSheet(f"""
                 QLabel {{
                     color: {colors['text_secondary']};
-                    font-size: 14px;
+                    font-size: 13px;
                     font-weight: 400;
                     margin: 0;
                 }}
@@ -386,14 +394,19 @@ class MainWindow(QMainWindow):
                 
         except Exception as e:
             logger.error(f"Error in gentle UI refresh: {e}")
+    
+    def resizeEvent(self, event):
+        """Handle window resize events to maintain responsive layout."""
+        super().resizeEvent(event)
         
-    def update_message_box_styles(self):
-        """Update message box styling for current theme."""
-        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
+        # Notify panels of size change for responsive adjustments
+        if hasattr(self, 'input_panel') and hasattr(self.input_panel, 'on_window_resize'):
+            self.input_panel.on_window_resize(event.size())
+        if hasattr(self, 'dashboard_panel') and hasattr(self.dashboard_panel, 'on_window_resize'):
+            self.dashboard_panel.on_window_resize(event.size())
+        if hasattr(self, 'recommendation_panel') and hasattr(self.recommendation_panel, 'on_window_resize'):
+            self.recommendation_panel.on_window_resize(event.size())
         
-        # Store the current theme colors for message boxes
-        self._current_theme_colors = colors
-            
     def update_dashboard(self):
         """Refresh the dashboard and recommendations."""
         if hasattr(self.dashboard_panel, 'update_dashboard'):

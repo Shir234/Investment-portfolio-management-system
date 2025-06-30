@@ -1,9 +1,9 @@
-# styles.py - Modern UI styling for SharpSight Investment System
+# styles.py - Optimized UI styling for compact, no-scroll layout
 
 class ModernStyles:
-    """Modern, comfortable styling following UI design principles"""
+    """Modern, compact styling optimized for single-window display"""
     
-    # Color Palette
+    # Color Palette (unchanged)
     COLORS = {
         'dark': {
             'primary': '#1E1E2E',           # Deep dark background
@@ -24,7 +24,6 @@ class ModernStyles:
             'selected': '#6366F1',         # Selection color
         },
         'light': {
-            # Even darker "light" mode - almost medium-dark theme
             'primary': '#D1D5DB',          # Even darker background - medium-dark gray
             'secondary': '#B0B7C3',        # Much darker panels 
             'surface': '#C4C7CF',          # Much darker card surfaces
@@ -46,12 +45,11 @@ class ModernStyles:
     
     @classmethod
     def get_main_window_style(cls, is_dark=True):
-        """Main window styling with modern design principles"""
+        """Compact main window styling optimized for no-scroll layout"""
         colors = cls.COLORS['dark'] if is_dark else cls.COLORS['light']
         
         # For light mode, keep some elements darker for contrast and visual hierarchy
         if not is_dark:
-            # Override certain colors to maintain contrast in light mode
             tab_bg = '#374151'  # Even darker tabs in light mode
             tab_text = '#F9FAFB'  # Light text on dark tabs
             tab_selected_bg = colors['surface']  # Light background for selected tab
@@ -67,47 +65,38 @@ class ModernStyles:
             background-color: {colors['primary']};
             color: {colors['text_primary']};
             font-family: 'Segoe UI', 'SF Pro Display', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-            font-size: 13px;
-            line-height: 1.5;
+            font-size: 12px;  /* Reduced base font size */
+            line-height: 1.4;  /* Tighter line height */
         }}
         
-        /* Central Widget and Scroll Areas */
+        /* Central Widget and Containers */
         QWidget {{
-            background-color: transparent;  /* Make all QWidget containers transparent */
+            background-color: transparent;
             color: {colors['text_primary']};
         }}
         
-        /* Specific styling for main containers that need background */
         QMainWindow > QWidget {{
             background-color: {colors['primary']};
         }}
         
-        QScrollArea {{
-            background-color: {colors['primary']};
-            border: none;
-        }}
-        
-        QScrollArea > QWidget > QWidget {{
-            background-color: transparent;  /* Keep scroll content transparent */
-        }}
-        
-        /* Modern Tab Widget */
+        /* Compact Tab Widget */
         QTabWidget::pane {{
             border: 1px solid {colors['border_light']};
             background-color: {colors['surface']};
-            border-radius: 12px;
-            margin-top: 8px;
+            border-radius: 8px;  /* Reduced radius */
+            margin-top: 6px;  /* Reduced margin */
         }}
         
         QTabBar::tab {{
             background-color: {tab_bg};
             color: {tab_text};
-            padding: 12px 24px;
-            margin-right: 4px;
-            border-radius: 8px 8px 0 0;
+            padding: 8px 16px;  /* Reduced padding */
+            margin-right: 2px;  /* Reduced margin */
+            border-radius: 6px 6px 0 0;  /* Smaller radius */
             font-weight: 500;
-            font-size: 14px;
+            font-size: 12px;  /* Smaller font */
             {"border: 1px solid #4A5568;" if not is_dark else ""}
+            min-height: 12px;  /* Compact height */
         }}
         
         QTabBar::tab:selected {{
@@ -125,7 +114,7 @@ class ModernStyles:
     
     @classmethod
     def get_button_styles(cls, is_dark=True):
-        """Modern button styling with proper hierarchy"""
+        """Compact button styling"""
         colors = cls.COLORS['dark'] if is_dark else cls.COLORS['light']
         
         return f"""
@@ -134,11 +123,11 @@ class ModernStyles:
             background-color: {colors['accent']};
             color: white;
             border: none;
-            border-radius: 8px;
-            padding: 12px 24px;
+            border-radius: 6px;  /* Smaller radius */
+            padding: 8px 16px;  /* Reduced padding */
             font-weight: 600;
-            font-size: 14px;
-            min-height: 20px;
+            font-size: 12px;  /* Smaller font */
+            min-height: 16px;  /* Reduced height */
         }}
         
         QPushButton:hover {{
@@ -186,16 +175,16 @@ class ModernStyles:
             background-color: #059669;
         }}
         
-        /* Theme Toggle Button */
+        /* Compact Theme Toggle Button */
         QPushButton[class="theme-toggle"] {{
             background-color: {colors['surface']};
             color: {colors['text_primary']};
             border: 1px solid {colors['border']};
-            border-radius: 20px;
-            padding: 8px 16px;
-            font-size: 13px;
+            border-radius: 16px;  /* Smaller radius */
+            padding: 6px 12px;  /* Reduced padding */
+            font-size: 11px;  /* Smaller font */
             font-weight: 500;
-            min-width: 80px;
+            min-width: 60px;  /* Reduced width */
         }}
         
         QPushButton[class="theme-toggle"]:hover {{
@@ -204,23 +193,22 @@ class ModernStyles:
         }}
         """
     
-
     @classmethod
     def get_input_styles(cls, is_dark=True):
-        """Modern input field styling with text-based dropdown arrows"""
+        """Compact input field styling"""
         colors = cls.COLORS['dark'] if is_dark else cls.COLORS['light']
         
         return f"""
-        /* Text Inputs */
+        /* Compact Text Inputs */
         QLineEdit, QSpinBox, QDoubleSpinBox {{
             background-color: {colors['surface']};
             color: {colors['text_primary']};
             border: 1px solid {colors['border_light']};
-            border-radius: 8px;
-            padding: 12px 16px;
-            font-size: 14px;
-            min-width: 200px;
-            min-height: 20px;
+            border-radius: 6px;  /* Smaller radius */
+            padding: 6px 10px;  /* Reduced padding */
+            font-size: 12px;  /* Smaller font */
+            min-width: 120px;  /* Reduced width */
+            min-height: 14px;  /* Reduced height */
             selection-background-color: {colors['accent']};
         }}
         
@@ -233,16 +221,16 @@ class ModernStyles:
             color: {colors['text_muted']};
         }}
         
-        /* Date Inputs */
+        /* Compact Date Inputs */
         QDateEdit {{
             background-color: {colors['surface']};
             color: {colors['text_primary']};
             border: 1px solid {colors['border_light']};
-            border-radius: 8px;
-            padding: 12px 16px;
-            font-size: 14px;
-            min-width: 200px;
-            min-height: 20px;
+            border-radius: 6px;
+            padding: 6px 10px;  /* Reduced padding */
+            font-size: 12px;  /* Smaller font */
+            min-width: 120px;  /* Reduced width */
+            min-height: 14px;  /* Reduced height */
         }}
         
         QDateEdit:focus {{
@@ -252,10 +240,10 @@ class ModernStyles:
         QDateEdit::drop-down {{
             subcontrol-origin: padding;
             subcontrol-position: top right;
-            width: 20px;
+            width: 16px;  /* Smaller dropdown */
             border-left: 1px solid {colors['border']};
-            border-top-right-radius: 6px;
-            border-bottom-right-radius: 6px;
+            border-top-right-radius: 4px;
+            border-bottom-right-radius: 4px;
             background-color: {colors['secondary']};
         }}
         
@@ -264,33 +252,23 @@ class ModernStyles:
         }}
         
         QDateEdit::down-arrow {{
-            width: 12px;
-            height: 12px;
-            font-size: 12px;
-            color: {colors['text_primary']};
-            background-color: transparent;
-            border: none;
-        }}
-        
-        QDateEdit::down-arrow {{
-            image: none;
-            border-left: 4px solid transparent;
-            border-right: 4px solid transparent;
-            border-top: 6px solid {colors['text_primary']};
+            border-left: 3px solid transparent;
+            border-right: 3px solid transparent;
+            border-top: 5px solid {colors['text_primary']};
             width: 0px;
             height: 0px;
         }}
         
-        /* Combo Boxes */
+        /* Compact Combo Boxes */
         QComboBox {{
             background-color: {colors['surface']};
             color: {colors['text_primary']};
             border: 1px solid {colors['border_light']};
-            border-radius: 8px;
-            padding: 12px 16px;
-            font-size: 14px;
-            min-width: 200px;
-            min-height: 20px;
+            border-radius: 6px;
+            padding: 6px 10px;  /* Reduced padding */
+            font-size: 12px;  /* Smaller font */
+            min-width: 120px;  /* Reduced width */
+            min-height: 14px;  /* Reduced height */
         }}
         
         QComboBox:focus {{
@@ -300,10 +278,10 @@ class ModernStyles:
         QComboBox::drop-down {{
             subcontrol-origin: padding;
             subcontrol-position: top right;
-            width: 20px;
+            width: 16px;  /* Smaller dropdown */
             border-left: 1px solid {colors['border']};
-            border-top-right-radius: 6px;
-            border-bottom-right-radius: 6px;
+            border-top-right-radius: 4px;
+            border-bottom-right-radius: 4px;
             background-color: {colors['secondary']};
         }}
         
@@ -312,19 +290,9 @@ class ModernStyles:
         }}
         
         QComboBox::down-arrow {{
-            width: 12px;
-            height: 12px;
-            font-size: 12px;
-            color: {colors['text_primary']};
-            background-color: transparent;
-            border: none;
-        }}
-        
-        QComboBox::down-arrow {{
-            image: none;
-            border-left: 4px solid transparent;
-            border-right: 4px solid transparent;
-            border-top: 6px solid {colors['text_primary']};
+            border-left: 3px solid transparent;
+            border-right: 3px solid transparent;
+            border-top: 5px solid {colors['text_primary']};
             width: 0px;
             height: 0px;
         }}
@@ -333,15 +301,42 @@ class ModernStyles:
             background-color: {colors['surface']};
             color: {colors['text_primary']};
             border: 1px solid {colors['border']};
-            border-radius: 8px;
+            border-radius: 6px;
             selection-background-color: {colors['accent']};
             outline: none;
+        }}
+        
+        /* SpinBox compact buttons */
+        QSpinBox::up-button, QSpinBox::down-button {{
+            border: none;
+            background-color: {colors['secondary']};
+            width: 14px;  /* Smaller buttons */
+        }}
+        
+        QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+            background-color: {colors['accent']};
+        }}
+        
+        QSpinBox::up-arrow {{
+            border-left: 3px solid transparent;
+            border-right: 3px solid transparent;
+            border-bottom: 5px solid {colors['text_primary']};
+            width: 0px;
+            height: 0px;
+        }}
+        
+        QSpinBox::down-arrow {{
+            border-left: 3px solid transparent;
+            border-right: 3px solid transparent;
+            border-top: 5px solid {colors['text_primary']};
+            width: 0px;
+            height: 0px;
         }}
         """
     
     @classmethod
     def get_table_styles(cls, is_dark=True):
-        """Modern table styling with better readability"""
+        """Compact table styling"""
         colors = cls.COLORS['dark'] if is_dark else cls.COLORS['light']
         
         return f"""
@@ -349,15 +344,16 @@ class ModernStyles:
             background-color: {colors['surface']};
             color: {colors['text_primary']};
             border: 1px solid {colors['border_light']};
-            border-radius: 12px;
+            border-radius: 8px;  /* Smaller radius */
             gridline-color: {colors['border_light']};
-            font-size: 13px;
+            font-size: 11px;  /* Smaller font */
             selection-background-color: {colors['selected']};
+            alternate-background-color: {'#2A2A3E' if is_dark else '#E5E7EB'};
         }}
         
         QTableWidget::item {{
             border: none;
-            padding: 12px 8px;
+            padding: 8px 6px;  /* Reduced padding */
             border-bottom: 1px solid {colors['border_light']};
         }}
         
@@ -375,9 +371,9 @@ class ModernStyles:
             color: {colors['text_primary']};
             border: none;
             border-bottom: 2px solid {colors['border']};
-            padding: 16px 8px;
+            padding: 10px 6px;  /* Reduced padding */
             font-weight: 600;
-            font-size: 13px;
+            font-size: 11px;  /* Smaller font */
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }}
@@ -389,47 +385,48 @@ class ModernStyles:
     
     @classmethod
     def get_card_styles(cls, is_dark=True):
-        """Modern card/panel styling"""
+        """Compact card/panel styling"""
         colors = cls.COLORS['dark'] if is_dark else cls.COLORS['light']
         
         return f"""
-        /* Group Boxes as Cards */
+        /* Compact Group Boxes */
         QGroupBox {{
             background-color: {colors['surface']};
             border: 1px solid {colors['border_light']};
-            border-radius: 12px;
-            margin: 8px 0;
-            padding-top: 24px;
+            border-radius: 8px;  /* Smaller radius */
+            margin: 4px 0;  /* Reduced margin */
+            padding-top: 16px;  /* Reduced padding */
             font-weight: 600;
-            font-size: 14px;
+            font-size: 12px;  /* Smaller font */
             color: {colors['text_primary']};
         }}
         
         QGroupBox::title {{
             subcontrol-origin: margin;
             subcontrol-position: top left;
-            padding: 8px 16px;
+            padding: 4px 10px;  /* Reduced padding */
             background-color: {colors['surface']};
             border: 1px solid {colors['border_light']};
-            border-radius: 6px;
+            border-radius: 4px;  /* Smaller radius */
             color: {colors['accent']};
             font-weight: 600;
+            font-size: 11px;  /* Smaller font */
         }}
         
-        /* List Widgets */
+        /* Compact List Widgets */
         QListWidget {{
             background-color: {colors['surface']};
             color: {colors['text_primary']};
             border: 1px solid {colors['border_light']};
-            border-radius: 8px;
-            padding: 4px;
-            font-size: 13px;
+            border-radius: 6px;
+            padding: 2px;  /* Reduced padding */
+            font-size: 11px;  /* Smaller font */
         }}
         
         QListWidget::item {{
-            border-radius: 6px;
-            padding: 8px 12px;
-            margin: 2px;
+            border-radius: 4px;
+            padding: 6px 8px;  /* Reduced padding */
+            margin: 1px;
         }}
         
         QListWidget::item:selected {{
@@ -444,148 +441,150 @@ class ModernStyles:
     
     @classmethod
     def get_label_styles(cls, is_dark=True):
-        """Modern label and text styling"""
+        """Compact label and text styling"""
         colors = cls.COLORS['dark'] if is_dark else cls.COLORS['light']
         
         return f"""
         QLabel {{
             color: {colors['text_primary']};
-            font-size: 14px;
+            font-size: 12px;  /* Smaller font */
             font-weight: 500;
-            background-color: transparent;  /* Ensure transparent background */
+            background-color: transparent;
         }}
         
         QLabel[class="label"] {{
             color: {colors['text_primary']};
-            font-size: 15px;  /* Slightly bigger */
-            font-weight: 700;  /* Bold */
-            margin-bottom: 8px;
-            background-color: transparent;  /* Make sure labels have transparent background */
-            border: none;  /* Remove any borders */
+            font-size: 13px;  /* Slightly bigger but still compact */
+            font-weight: 600;
+            margin-bottom: 4px;  /* Reduced margin */
+            background-color: transparent;
+            border: none;
         }}
         
         QLabel[class="title"] {{
-            font-size: 24px;
+            font-size: 20px;  /* Reduced from 24px */
             font-weight: 700;
             color: {colors['text_primary']};
-            margin: 16px 0;
+            margin: 8px 0;  /* Reduced margin */
             background-color: transparent;
         }}
         
         QLabel[class="subtitle"] {{
-            font-size: 18px;
+            font-size: 14px;  /* Reduced from 18px */
             font-weight: 600;
             color: {colors['text_secondary']};
-            margin: 12px 0;
+            margin: 6px 0;  /* Reduced margin */
             background-color: transparent;
         }}
         
         QLabel[class="caption"] {{
-            font-size: 12px;
+            font-size: 10px;  /* Smaller font */
             font-weight: 400;
             color: {colors['text_muted']};
-            margin: 4px 0;
+            margin: 2px 0;  /* Reduced margin */
             background-color: transparent;
         }}
         
         QLabel[class="metric"] {{
-            font-size: 16px;
+            font-size: 14px;  /* Slightly reduced */
             font-weight: 600;
-            padding: 12px 16px;
+            padding: 8px 12px;  /* Reduced padding */
             background-color: {colors['surface']};
             border: 1px solid {colors['border_light']};
-            border-radius: 8px;
+            border-radius: 6px;  /* Smaller radius */
             color: {colors['text_primary']};
         }}
         
         QLabel[class="metric-success"] {{
             color: {colors['success']};
-            border-left: 4px solid {colors['success']};
+            border-left: 3px solid {colors['success']};  /* Thinner border */
         }}
         
         QLabel[class="metric-warning"] {{
             color: {colors['warning']};
-            border-left: 4px solid {colors['warning']};
+            border-left: 3px solid {colors['warning']};
         }}
         
         QLabel[class="metric-danger"] {{
             color: {colors['danger']};
-            border-left: 4px solid {colors['danger']};
+            border-left: 3px solid {colors['danger']};
         }}
         """
     
     @classmethod
     def get_dialog_styles(cls, is_dark=True):
-        """Modern dialog styling"""
+        """Compact dialog styling"""
         colors = cls.COLORS['dark'] if is_dark else cls.COLORS['light']
         
         return f"""
         QDialog {{
             background-color: {colors['primary']};
             color: {colors['text_primary']};
-            border-radius: 16px;
+            border-radius: 12px;
         }}
         
         QMessageBox {{
             background-color: {colors['primary']};
             color: {colors['text_primary']};
-            border-radius: 12px;
+            border-radius: 8px;
         }}
         
         QMessageBox QLabel {{
             color: {colors['text_primary']};
-            font-size: 14px;
-            padding: 8px;
+            font-size: 12px;  /* Smaller font */
+            padding: 6px;  /* Reduced padding */
         }}
         
         QMessageBox QPushButton {{
-            min-width: 80px;
-            margin: 4px;
+            min-width: 60px;  /* Reduced width */
+            margin: 2px;  /* Reduced margin */
+            padding: 6px 12px;  /* Reduced padding */
+            font-size: 11px;  /* Smaller font */
         }}
         """
     
     @classmethod
     def get_progress_styles(cls, is_dark=True):
-        """Modern progress bar styling"""
+        """Compact progress bar styling"""
         colors = cls.COLORS['dark'] if is_dark else cls.COLORS['light']
         
         return f"""
         QProgressBar {{
             background-color: {colors['secondary']};
             border: 1px solid {colors['border_light']};
-            border-radius: 8px;
+            border-radius: 6px;  /* Smaller radius */
             text-align: center;
             font-weight: 600;
-            font-size: 12px;
+            font-size: 10px;  /* Smaller font */
             color: {colors['text_primary']};
-            min-height: 20px;
+            min-height: 16px;  /* Reduced height */
         }}
         
         QProgressBar::chunk {{
             background-color: {colors['accent']};
-            border-radius: 6px;
-            margin: 2px;
+            border-radius: 4px;  /* Smaller radius */
+            margin: 1px;
         }}
         """
     
     @classmethod
     def get_scrollbar_styles(cls, is_dark=True):
-        """Modern scrollbar styling"""
+        """Compact scrollbar styling"""
         colors = cls.COLORS['dark'] if is_dark else cls.COLORS['light']
         
         return f"""
         QScrollBar:vertical {{
             background-color: {colors['secondary']};
-            width: 12px;
-            border-radius: 6px;
+            width: 8px;  /* Thinner scrollbar */
+            border-radius: 4px;
             margin: 0;
         }}
         
         QScrollBar::handle:vertical {{
             background-color: {colors['text_muted']};
-            border-radius: 6px;
-            min-height: 20px;
-            margin: 2px;
+            border-radius: 4px;
+            min-height: 16px;  /* Smaller handle */
+            margin: 1px;
         }}
         
         QScrollBar::handle:vertical:hover {{
@@ -600,16 +599,16 @@ class ModernStyles:
         
         QScrollBar:horizontal {{
             background-color: {colors['secondary']};
-            height: 12px;
-            border-radius: 6px;
+            height: 8px;  /* Thinner scrollbar */
+            border-radius: 4px;
             margin: 0;
         }}
         
         QScrollBar::handle:horizontal {{
             background-color: {colors['text_muted']};
-            border-radius: 6px;
-            min-width: 20px;
-            margin: 2px;
+            border-radius: 4px;
+            min-width: 16px;  /* Smaller handle */
+            margin: 1px;
         }}
         
         QScrollBar::handle:horizontal:hover {{
@@ -625,7 +624,7 @@ class ModernStyles:
     
     @classmethod
     def get_complete_style(cls, is_dark=True):
-        """Get complete modern styling"""
+        """Get complete compact styling optimized for no-scroll layout"""
         return (
             cls.get_main_window_style(is_dark) +
             cls.get_button_styles(is_dark) +
