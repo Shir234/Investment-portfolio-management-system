@@ -1,7 +1,7 @@
 import os
 import sys
 from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QApplication, QFrame, QLabel
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect
+from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QThread, QObject, pyqtSignal, QTimer
 from PyQt6.QtGui import QIcon
 from frontend.utils import resource_path
 from frontend.logging_config import get_logger
@@ -12,12 +12,63 @@ from frontend.gui.styles import ModernStyles
 
 logger = get_logger(__name__)
 
+class ThemeWorker(QObject):
+    """Worker class to handle theme changes in background."""
+    finished = pyqtSignal()
+    progress = pyqtSignal(str)
+    
+    def __init__(self, main_window, is_dark_mode):
+        super().__init__()
+        self.main_window = main_window
+        self.is_dark_mode = is_dark_mode
+    
+    def run(self):
+        """Apply theme changes in background."""
+        try:
+            self.progress.emit("Applying theme...")
+            
+            # Get the complete style
+            complete_style = ModernStyles.get_complete_style(self.is_dark_mode)
+            
+            # Apply to main window on main thread via signal
+            self.main_window.apply_style_signal.emit(complete_style)
+            
+            self.progress.emit("Updating panels...")
+            
+            # Update panel themes
+            panels = [
+                self.main_window.input_panel,
+                self.main_window.dashboard_panel,
+                self.main_window.recommendation_panel
+            ]
+            
+            for panel in panels:
+                if hasattr(panel, 'set_theme'):
+                    # Use signal to update on main thread
+                    self.main_window.update_panel_signal.emit(panel, self.is_dark_mode)
+            
+            self.progress.emit("Finalizing...")
+            self.finished.emit()
+            
+        except Exception as e:
+            logger.error(f"Error in theme worker: {e}")
+            self.finished.emit()
+
 class MainWindow(QMainWindow):
+    # Signals for thread-safe UI updates
+    apply_style_signal = pyqtSignal(str)
+    update_panel_signal = pyqtSignal(object, bool)
+    
     def __init__(self, data_manager, parent=None):
         """Initialize the modern main window with enhanced styling."""
         super().__init__(parent)
         self.data_manager = data_manager
         self.is_dark_mode = True  # Default to dark mode
+        self.theme_changing = False  # Flag to prevent multiple theme changes
+        
+        # Connect signals for thread-safe updates
+        self.apply_style_signal.connect(self.apply_style_safely)
+        self.update_panel_signal.connect(self.update_panel_safely)
         
         # Window setup
         self.setWindowTitle("SharpSight Investment System")
@@ -217,85 +268,131 @@ class MainWindow(QMainWindow):
             """)
         
     def toggle_theme(self):
-        """Toggle between light and dark mode with smooth transition."""
+        """Toggle between light and dark mode using worker thread."""
+        # Prevent multiple theme changes at once
+        if self.theme_changing:
+            return
+            
+        self.theme_changing = True
+        self.theme_button.setEnabled(False)
+        self.theme_button.setText("Changing...")
+        
+        # Toggle the mode
         self.is_dark_mode = not self.is_dark_mode
         
-        # Update button text and icon
-        if self.is_dark_mode:
-            self.theme_button.setText("Light Mode")
-            try:
-                theme_icon = QIcon(resource_path("frontend/gui/icons/yellow_sun.png"))
-                if not theme_icon.isNull():
-                    self.theme_button.setIcon(theme_icon)
-            except:
-                pass
-        else:
-            self.theme_button.setText("Dark Mode")
-            try:
-                theme_icon = QIcon(resource_path("frontend/gui/icons/black_sun.png"))
-                if not theme_icon.isNull():
-                    self.theme_button.setIcon(theme_icon)
-            except:
-                pass
+        # Create and start worker thread
+        self.theme_thread = QThread()
+        self.theme_worker = ThemeWorker(self, self.is_dark_mode)
+        self.theme_worker.moveToThread(self.theme_thread)
         
-        # Apply new theme
-        self.apply_modern_theme()
+        # Connect signals
+        self.theme_thread.started.connect(self.theme_worker.run)
+        self.theme_worker.finished.connect(self.on_theme_change_finished)
+        self.theme_worker.finished.connect(self.theme_thread.quit)
+        self.theme_worker.finished.connect(self.theme_worker.deleteLater)
+        self.theme_thread.finished.connect(self.theme_thread.deleteLater)
         
-        # Update all panels
-        if hasattr(self.input_panel, 'set_theme'):
-            self.input_panel.set_theme(self.is_dark_mode)
-        if hasattr(self.dashboard_panel, 'set_theme'):
-            self.dashboard_panel.set_theme(self.is_dark_mode)
-        if hasattr(self.recommendation_panel, 'set_theme'):
-            self.recommendation_panel.set_theme(self.is_dark_mode)
+        # Start the thread
+        self.theme_thread.start()
         
-        # Force update all widgets
-        self.update_all_widgets()
-        
-        # Update message box styles for any future dialogs
-        self.update_message_box_styles()
-        logger.info(f"Theme toggled to {'dark' if self.is_dark_mode else 'light'} mode")
+    def apply_style_safely(self, style):
+        """Apply style safely on main thread."""
+        try:
+            self.setStyleSheet(style)
+            # Update header elements
+            self.update_header_styling()
+        except Exception as e:
+            logger.error(f"Error applying style: {e}")
     
+    def update_panel_safely(self, panel, is_dark_mode):
+        """Update panel theme safely on main thread."""
+        try:
+            if hasattr(panel, 'set_theme'):
+                panel.set_theme(is_dark_mode)
+        except Exception as e:
+            logger.error(f"Error updating panel theme: {e}")
+    
+    def update_header_styling(self):
+        """Update header styling for current theme."""
+        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
+        
+        if hasattr(self, 'title_label'):
+            self.title_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {colors['text_primary']};
+                    font-size: 28px;
+                    font-weight: 700;
+                    margin: 0;
+                }}
+            """)
+            
+        if hasattr(self, 'subtitle_label'):
+            self.subtitle_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {colors['text_secondary']};
+                    font-size: 14px;
+                    font-weight: 400;
+                    margin: 0;
+                }}
+            """)
+    
+    def on_theme_change_finished(self):
+        """Handle theme change completion."""
+        try:
+            # Update button text and icon
+            if self.is_dark_mode:
+                self.theme_button.setText("Light Mode")
+                try:
+                    theme_icon = QIcon(resource_path("frontend/gui/icons/yellow_sun.png"))
+                    if not theme_icon.isNull():
+                        self.theme_button.setIcon(theme_icon)
+                except:
+                    pass
+            else:
+                self.theme_button.setText("Dark Mode")
+                try:
+                    theme_icon = QIcon(resource_path("frontend/gui/icons/black_sun.png"))
+                    if not theme_icon.isNull():
+                        self.theme_button.setIcon(theme_icon)
+                except:
+                    pass
+            
+            # Re-enable button and reset flag
+            self.theme_button.setEnabled(True)
+            self.theme_changing = False
+            
+            # Force a gentle refresh of the UI
+            QTimer.singleShot(100, self.gentle_ui_refresh)
+            
+            logger.info(f"Theme toggled to {'dark' if self.is_dark_mode else 'light'} mode")
+            
+        except Exception as e:
+            logger.error(f"Error finishing theme change: {e}")
+            self.theme_button.setEnabled(True)
+            self.theme_changing = False
+    
+    def gentle_ui_refresh(self):
+        """Gently refresh the UI without blocking."""
+        try:
+            # Process any pending events
+            QApplication.processEvents()
+            
+            # Update the main window
+            self.update()
+            
+            # Update tabs if they exist
+            if hasattr(self, 'tabs'):
+                self.tabs.update()
+                
+        except Exception as e:
+            logger.error(f"Error in gentle UI refresh: {e}")
+        
     def update_message_box_styles(self):
         """Update message box styling for current theme."""
         colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
         
         # Store the current theme colors for message boxes
         self._current_theme_colors = colors
-        
-    def update_all_widgets(self):
-        """Recursively update all widget styles with better performance."""
-        # Get the current complete style
-        complete_style = ModernStyles.get_complete_style(self.is_dark_mode)
-        
-        # Apply to main window
-        self.setStyleSheet(complete_style)
-        
-        # Force application to process events and update styles
-        QApplication.instance().processEvents()
-        
-        # Update specific widgets that might need manual refresh
-        if hasattr(self, 'tabs'):
-            self.tabs.setStyleSheet("")  # Clear
-            self.tabs.setStyleSheet(complete_style)  # Reapply
-            
-        # Recursively update all child widgets
-        self._update_widget_recursive(self)
-    
-    def _update_widget_recursive(self, widget):
-        """Recursively update widget styles."""
-        try:
-            # Update the widget itself
-            widget.update()
-            widget.repaint()
-            
-            # Update all children
-            for child in widget.findChildren(QWidget):
-                if child is not widget:  # Avoid infinite recursion
-                    child.update()
-                    child.repaint()
-        except Exception as e:
-            print(f"Error updating widget styles: {e}")
             
     def update_dashboard(self):
         """Refresh the dashboard and recommendations."""
