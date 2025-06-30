@@ -46,29 +46,30 @@ class RecommendationPanel(QWidget):
         controls_frame = QFrame()
         controls_layout = QHBoxLayout(controls_frame)
         controls_layout.setContentsMargins(12, 8, 12, 8)  # Minimal padding
-        controls_layout.setSpacing(12)
+        controls_layout.setSpacing(16)  # Increased spacing between elements
         
         # Filter section - compact
         filter_label = QLabel("Show:")
         filter_label.setProperty("class", "label")
         self.filter_combo = QComboBox()
         self.filter_combo.addItems(["All Orders", "Buy Orders", "Sell Orders"])
-        self.filter_combo.setMinimumWidth(100)  # Smaller width
-        self.filter_combo.setMaximumHeight(28)  # Compact height
+        self.filter_combo.setMinimumWidth(120)  # Increased width
+        self.filter_combo.setMaximumHeight(32)  # Slightly taller
         self.filter_combo.currentIndexChanged.connect(self.update_recommendations)
         
-        # Trade count section - compact
+        # Trade count section - compact with better sizing
         self.trade_count_label = QLabel("📊 Total: 0")
         self.trade_count_label.setProperty("class", "metric")
-        self.trade_count_label.setMaximumHeight(28)  # Match combo height
+        self.trade_count_label.setMaximumHeight(32)  # Match combo height
+        self.trade_count_label.setMinimumWidth(100)  # Ensure minimum width
         
-        # Export button - compact
+        # Export button - better sizing
         export_button = QPushButton("📊 Export CSV")
         export_button.setProperty("class", "primary")
         export_button.clicked.connect(self.export_to_csv)
         export_button.setToolTip("Export trading history to CSV file")
-        export_button.setMaximumHeight(28)  # Compact height
-        export_button.setMaximumWidth(120)  # Compact width
+        export_button.setMaximumHeight(32)  # Consistent height
+        export_button.setMinimumWidth(140)  # Ensure text fits
         
         controls_layout.addWidget(filter_label)
         controls_layout.addWidget(self.filter_combo)
@@ -80,7 +81,7 @@ class RecommendationPanel(QWidget):
         main_layout.addWidget(controls_frame, stretch=0)
         
     def create_maximized_table_section(self, main_layout):
-        """Create maximized table section with minimal chrome."""
+        """Create maximized table section with equal column widths."""
         # Table without group box for maximum space
         self.table = QTableWidget()
         self.table.setColumnCount(11)  # Same columns
@@ -98,18 +99,17 @@ class RecommendationPanel(QWidget):
             "Signal Strength" # How strong the signal was
         ])
         
-        # Optimized table settings for compact display
-        self.table.horizontalHeader().setStretchLastSection(True)
+        # Configure table for equal column widths
+        self.table.horizontalHeader().setStretchLastSection(False)  # Don't stretch last section
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.verticalHeader().setVisible(False)  # Hide row numbers for space
-        self.table.verticalHeader().setDefaultSectionSize(24)  # Compact row height
-        self.table.horizontalHeader().setDefaultSectionSize(80)  # Compact column width
+        self.table.verticalHeader().setDefaultSectionSize(28)  # Better row height for readability
         
-        # Set specific compact column widths
-        column_widths = [90, 60, 50, 70, 50, 80, 80, 70, 80, 80, 80]
-        for i, width in enumerate(column_widths):
-            self.table.setColumnWidth(i, width)
+        # Set equal column widths - they will resize with window
+        header = self.table.horizontalHeader()
+        for i in range(11):
+            header.setSectionResizeMode(i, header.ResizeMode.Stretch)
         
         # Give maximum stretch to table
         main_layout.addWidget(self.table, stretch=1)
@@ -258,28 +258,28 @@ class RecommendationPanel(QWidget):
             msg.exec()
         
     def apply_styles(self):
-        """Apply compact styling optimized for no-scroll layout."""
+        """Apply styling with better font sizes and button sizing."""
         style = ModernStyles.get_complete_style(self.is_dark_mode)
         
-        # Add compact-specific table styling
+        # Add improved styling with better fonts and button sizing
         colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
         
         additional_styles = f"""
-            /* Compact table with tighter spacing */
+            /* Improved table with better font size */
             QTableWidget {{
                 background-color: {colors['surface']};
                 color: {colors['text_primary']};
                 border: 1px solid {colors['border_light']};
                 border-radius: 8px;
                 gridline-color: {colors['border_light']};
-                font-size: 10px;  /* Smaller font for more data */
+                font-size: 13px;  /* Increased from 10px */
                 selection-background-color: {colors['selected']};
                 alternate-background-color: {'#2A2A3E' if self.is_dark_mode else '#E5E7EB'};
             }}
             
             QTableWidget::item {{
                 border: none;
-                padding: 4px 3px;  /* Very compact padding */
+                padding: 6px 4px;  /* Better padding for readability */
                 border-bottom: 1px solid {colors['border_light']};
             }}
             
@@ -297,9 +297,9 @@ class RecommendationPanel(QWidget):
                 color: {colors['text_primary']};
                 border: none;
                 border-bottom: 2px solid {colors['border']};
-                padding: 6px 3px;  /* Compact header padding */
+                padding: 8px 4px;  /* Better header padding */
                 font-weight: 600;
-                font-size: 9px;  /* Smaller header font */
+                font-size: 12px;  /* Increased from 9px */
                 text-transform: uppercase;
                 letter-spacing: 0.3px;
             }}
@@ -308,16 +308,46 @@ class RecommendationPanel(QWidget):
                 background-color: {colors['hover']};
             }}
             
-            /* Compact controls styling */
+            /* Better control styling with proper font sizes */
             QComboBox {{
-                font-size: 11px;
-                padding: 4px 8px;
+                font-size: 13px;  /* Increased from 11px */
+                padding: 6px 12px;  /* Better padding */
+                min-height: 18px;
             }}
             
             QLabel[class="caption"] {{
-                font-size: 10px;
+                font-size: 12px;  /* Increased from 10px */
                 color: {colors['text_muted']};
                 font-style: italic;
+            }}
+            
+            /* Better button styling with proper text sizing */
+            QPushButton[class="primary"] {{
+                font-size: 13px;  /* Explicit font size */
+                padding: 8px 16px;  /* Better padding */
+                min-height: 20px;
+                min-width: 120px;  /* Ensure button is wide enough */
+                border-radius: 6px;
+                font-weight: 600;
+            }}
+            
+            /* Better metric label styling */
+            QLabel[class="metric"] {{
+                font-size: 13px;  /* Increased font size */
+                font-weight: 600;
+                padding: 8px 12px;  /* Better padding */
+                background-color: {colors['surface']};
+                border: 1px solid {colors['border_light']};
+                border-radius: 6px;
+                color: {colors['text_primary']};
+                text-align: center;
+            }}
+            
+            /* Better label styling */
+            QLabel[class="label"] {{
+                font-size: 14px;  /* Increased font size */
+                font-weight: 600;
+                color: {colors['text_primary']};
             }}
         """
         
@@ -325,30 +355,30 @@ class RecommendationPanel(QWidget):
         self.setStyleSheet(complete_style)
         
     def get_message_box_style(self):
-        """Return compact QMessageBox stylesheet."""
+        """Return improved QMessageBox stylesheet."""
         colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
         return f"""
             QMessageBox {{ 
                 background-color: {colors['primary']}; 
                 color: {colors['text_primary']}; 
-                font-size: 12px;
+                font-size: 13px;  /* Increased font size */
                 border-radius: 8px;
             }}
             QMessageBox QLabel {{ 
                 color: {colors['text_primary']}; 
                 padding: 12px;
-                font-size: 11px;
+                font-size: 12px;  /* Increased font size */
             }}
             QMessageBox QPushButton {{ 
                 background-color: {colors['accent']}; 
                 color: white; 
                 border: none;
                 border-radius: 4px;
-                padding: 6px 12px; 
+                padding: 8px 16px;  /* Better padding */
                 font-weight: 600;
-                min-width: 60px;
+                min-width: 80px;
                 margin: 2px;
-                font-size: 10px;
+                font-size: 12px;  /* Increased font size */
             }}
             QMessageBox QPushButton:hover {{ 
                 background-color: {colors['accent_hover']}; 
@@ -363,7 +393,7 @@ class RecommendationPanel(QWidget):
         logger.debug(f"Applied theme: {'dark' if is_dark_mode else 'light'}")
         
     def update_recommendations(self):
-        """Update the table with trade history using compact display."""
+        """Update the table with trade history using improved display."""
         try:
             orders = get_orders()
             if not orders:
@@ -528,7 +558,6 @@ class RecommendationPanel(QWidget):
                     if self.table.item(row, col):
                         self.table.item(row, col).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             
-            # Don't auto-resize columns to maintain compact display
             logger.info(f"Updated recommendations with {len(orders_df)} orders")
             
         except Exception as e:
@@ -563,17 +592,7 @@ class RecommendationPanel(QWidget):
             return -1
 
     def on_window_resize(self, size):
-        """Handle window resize events for responsive table."""
-        # Adjust table column widths based on available space
-        if hasattr(self, 'table'):
-            width = size.width()
-            if width < 1200:
-                # Make columns even more compact on smaller screens
-                compact_widths = [70, 50, 40, 60, 40, 70, 70, 60, 70, 70, 70]
-                for i, width in enumerate(compact_widths):
-                    self.table.setColumnWidth(i, width)
-            else:
-                # Standard compact widths for larger screens
-                standard_widths = [90, 60, 50, 70, 50, 80, 80, 70, 80, 80, 80]
-                for i, width in enumerate(standard_widths):
-                    self.table.setColumnWidth(i, width)
+        """Handle window resize events - columns will auto-resize due to stretch mode."""
+        # With stretch mode enabled, columns automatically resize
+        # This method can be used for other resize-related adjustments if needed
+        pass

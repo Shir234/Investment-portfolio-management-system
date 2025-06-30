@@ -1,3 +1,4 @@
+# input_panel.py
 import os
 import pandas as pd
 from datetime import datetime, date
@@ -5,14 +6,16 @@ from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdi
                              QDateEdit, QPushButton, QComboBox, QMessageBox,
                              QDoubleSpinBox, QSpinBox, QDialog, QTableWidget, QTableWidgetItem,
                              QCheckBox, QFrame, QGridLayout, QSpacerItem, QSizePolicy,
-                             QGroupBox, QProgressBar, QToolButton)
-from PyQt6.QtCore import QDate, Qt, QThread, QObject, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve, QSize
+                             QGroupBox, QProgressBar, QToolButton, QScrollArea)
+from PyQt6.QtCore import QDate, Qt, QThread, QObject, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QPalette, QColor, QIcon
 from frontend.logging_config import get_logger
 from frontend.data.trading_connector import execute_trading_strategy, get_order_history_df, log_trading_orders
 from backend.trading_logic_new import get_orders, get_portfolio_history
 from frontend.gui.styles import ModernStyles
 from frontend.utils import resource_path
+from .wheel_disabled_widgets import WheelDisabledSpinBox, WheelDisabledDateEdit, WheelDisabledComboBox
+
 
 # Set up logging
 logger = get_logger(__name__)
@@ -204,9 +207,262 @@ class TradeConfirmationDialog(QDialog):
         return widget
 
     def apply_styles(self):
-        """Apply modern styling to the dialog."""
+        """Apply modern styling to the panel with darker label backgrounds."""
         style = ModernStyles.get_complete_style(self.is_dark_mode)
-        self.setStyleSheet(style)
+        
+        # Add custom styles for the dark label frames
+        colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
+        
+        # Additional styles for label frames and input frames with reduced spacing
+        additional_styles = f"""
+            /* Label Frame Styling - Darker background for labels with reduced height */
+            QFrame[class="label-frame"] {{
+                background-color: {'#252538' if self.is_dark_mode else '#9CA3AF'};
+                border: 1px solid {colors['border']};
+                border-bottom: none;
+                border-top-left-radius: 6px;  /* Reduced from 8px */
+                border-top-right-radius: 6px;  /* Reduced from 8px */
+            }}
+            
+            /* Input Frame Styling - Matches the surface color with reduced spacing */
+            QFrame[class="input-frame"] {{
+                background-color: {colors['surface']};
+                border: 1px solid {colors['border']};
+                border-top: none;
+                border-bottom-left-radius: 6px;  /* Reduced from 8px */
+                border-bottom-right-radius: 6px;  /* Reduced from 8px */
+            }}
+            
+            /* Label separator line */
+            QFrame[class="label-separator"] {{
+                color: {colors['border_light']};
+                background-color: {colors['border_light']};
+                max-width: 1px;
+                margin: 2px 0px;  /* Reduced from 4px 0px */
+            }}
+            
+            /* Dark label text styling with smaller font */
+            QLabel[class="label-dark"] {{
+                color: {'#FFFFFF' if self.is_dark_mode else '#FFFFFF'};
+                font-size: 13px;  /* Reduced from 14px */
+                font-weight: 600;
+                font-family: 'Segoe UI';
+                background-color: transparent;
+                border: none;
+            }}
+            
+            /* Input field styling with visible borders and reduced padding */
+            QLineEdit[class="input-field"], 
+            QSpinBox[class="input-field"], 
+            QDateEdit[class="input-field"], 
+            QComboBox[class="input-field"] {{
+                border: 2px solid {colors['border_light']};
+                border-radius: 6px;  /* Reduced from 6px to match other updates */
+                background-color: {'#3A3A54' if self.is_dark_mode else '#F8FAFC'};
+                padding: 8px 10px;  /* Reduced from 10px 12px */
+                font-size: 13px;  /* Reduced from 14px */
+                color: {colors['text_primary']};
+                margin: 1px;  /* Reduced from 2px */
+            }}
+            
+            QLineEdit[class="input-field"]:focus, 
+            QSpinBox[class="input-field"]:focus, 
+            QDateEdit[class="input-field"]:focus, 
+            QComboBox[class="input-field"]:focus {{
+                border: 2px solid {colors['accent']};
+                background-color: {'#404060' if self.is_dark_mode else '#FFFFFF'};
+            }}
+            
+            QLineEdit[class="input-field"]:hover, 
+            QSpinBox[class="input-field"]:hover, 
+            QDateEdit[class="input-field"]:hover, 
+            QComboBox[class="input-field"]:hover {{
+                border: 2px solid {colors['accent_hover']};
+            }}
+            
+            /* Dropdown styling for combo box and date edit with reduced size */
+            QComboBox[class="input-field"]::drop-down {{
+                border: none;
+                border-left: 1px solid {colors['border']};
+                border-radius: 0px 4px 4px 0px;  /* Reduced radius */
+                background-color: {colors['secondary']};
+                width: 18px;  /* Reduced from 20px */
+            }}
+            
+            QComboBox[class="input-field"]::drop-down:hover {{
+                background-color: {colors['accent']};
+            }}
+            
+            QComboBox[class="input-field"]::down-arrow {{
+                border-left: 3px solid transparent;  /* Smaller arrow */
+                border-right: 3px solid transparent;
+                border-top: 5px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+            }}
+            
+            QDateEdit[class="input-field"]::drop-down {{
+                border: none;
+                border-left: 1px solid {colors['border']};
+                border-radius: 0px 4px 4px 0px;  /* Reduced radius */
+                background-color: {colors['secondary']};
+                width: 18px;  /* Reduced from 20px */
+            }}
+            
+            QDateEdit[class="input-field"]::drop-down:hover {{
+                background-color: {colors['accent']};
+            }}
+            
+            QDateEdit[class="input-field"]::down-arrow {{
+                border-left: 3px solid transparent;  /* Smaller arrow */
+                border-right: 3px solid transparent;
+                border-top: 5px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+            }}
+            
+            /* SpinBox buttons styling with reduced size */
+            QSpinBox[class="input-field"]::up-button, QSpinBox[class="input-field"]::down-button {{
+                border: none;
+                background-color: {colors['secondary']};
+                width: 18px;  /* Reduced from 20px */
+            }}
+            
+            QSpinBox[class="input-field"]::up-button:hover, QSpinBox[class="input-field"]::down-button:hover {{
+                background-color: {colors['accent']};
+            }}
+            
+            QSpinBox[class="input-field"]::up-arrow {{
+                border-left: 3px solid transparent;  /* Smaller arrow */
+                border-right: 3px solid transparent;
+                border-bottom: 5px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+            }}
+            
+            QSpinBox[class="input-field"]::down-arrow {{
+                border-left: 3px solid transparent;  /* Smaller arrow */
+                border-right: 3px solid transparent;
+                border-top: 5px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+            }}
+            
+            /* Enhanced button styling with visible borders and reduced padding */
+            QPushButton {{
+                border: 2px solid transparent;
+                border-radius: 6px;  /* Reduced from 8px */
+                padding: 8px 18px;  /* Reduced from 12px 24px */
+                font-weight: 600;
+                font-size: 13px;  /* Reduced from 14px */
+                min-height: 16px;  /* Reduced from 20px */
+            }}
+            
+            QPushButton[class="primary"] {{
+                background-color: {colors['accent']};
+                color: white;
+                border: 2px solid {colors['accent']};
+            }}
+            
+            QPushButton[class="primary"]:hover {{
+                background-color: {colors['accent_hover']};
+                border: 2px solid {colors['accent_hover']};
+            }}
+            
+            QPushButton[class="primary"]:pressed {{
+                background-color: {colors['accent_pressed']};
+                border: 2px solid {colors['accent_pressed']};
+            }}
+            
+            QPushButton[class="danger"] {{
+                background-color: {colors['danger']};
+                color: white;
+                border: 2px solid {colors['danger']};
+            }}
+            
+            QPushButton[class="danger"]:hover {{
+                background-color: #DC2626;
+                border: 2px solid #DC2626;
+            }}
+            
+            QPushButton[class="danger"]:pressed {{
+                background-color: #B91C1C;
+                border: 2px solid #B91C1C;
+            }}
+            
+            QPushButton[class="secondary"] {{
+                background-color: {colors['secondary']};
+                color: {colors['text_primary']};
+                border: 2px solid {colors['border']};
+            }}
+            
+            QPushButton[class="secondary"]:hover {{
+                background-color: {colors['hover']};
+                border: 2px solid {colors['accent']};
+            }}
+            
+            QPushButton[class="success"] {{
+                background-color: {colors['success']};
+                color: white;
+                border: 2px solid {colors['success']};
+            }}
+            
+            QPushButton[class="success"]:hover {{
+                background-color: #059669;
+                border: 2px solid #059669;
+            }}
+            
+            /* Enhanced Metrics Styling with reduced padding */
+            QLabel[class="metric"] {{
+                font-size: 15px;  /* Reduced from 16px */
+                font-weight: 600;
+                padding: 12px 16px;  /* Reduced from 16px 20px */
+                background-color: {colors['surface']};
+                border: 2px solid {colors['border_light']};
+                border-radius: 8px;  /* Reduced from 10px */
+                color: {colors['text_primary']};
+                text-align: center;
+                margin: 2px;  /* Reduced from 4px */
+            }}
+            
+            /* Base metric style with border */
+            QLabel[class~="metric"] {{
+                font-size: 15px;  /* Reduced from 16px */
+                font-weight: 600;
+                padding: 12px 16px;  /* Reduced from 16px 20px */
+                background-color: {colors['surface']};
+                border: 2px solid {colors['border_light']};
+                border-radius: 8px;  /* Reduced from 10px */
+                color: {colors['text_primary']};
+                text-align: center;
+                margin: 2px;  /* Reduced from 4px */
+            }}
+            
+            /* Success metric styling */
+            QLabel[class~="metric-success"] {{
+                color: {colors['success']};
+                border: 2px solid {colors['success']};
+                background-color: {'rgba(16, 185, 129, 0.1)' if self.is_dark_mode else 'rgba(16, 185, 129, 0.05)'};
+            }}
+            
+            /* Warning metric styling */
+            QLabel[class~="metric-warning"] {{
+                color: {colors['warning']};
+                border: 2px solid {colors['warning']};
+                background-color: {'rgba(245, 158, 11, 0.1)' if self.is_dark_mode else 'rgba(245, 158, 11, 0.05)'};
+            }}
+            
+            /* Danger metric styling */
+            QLabel[class~="metric-danger"] {{
+                color: {colors['danger']};
+                border: 2px solid {colors['danger']};
+                background-color: {'rgba(239, 68, 68, 0.1)' if self.is_dark_mode else 'rgba(239, 68, 68, 0.05)'};
+            }}
+        """
+        
+        # Combine all styles
+        complete_style = style + additional_styles
+        self.setStyleSheet(complete_style)
 
     def accept_selected(self):
         """Collect selected orders and accept the dialog."""
@@ -219,7 +475,7 @@ class TradeConfirmationDialog(QDialog):
         self.accept()
 
 class InputPanel(QWidget):
-    """Compact panel for user inputs and financial metrics display - no scroll area."""
+    """Modern panel for user inputs and financial metrics display."""
     def __init__(self, data_manager, parent=None):
         super().__init__(parent)
         self.data_manager = data_manager
@@ -234,196 +490,201 @@ class InputPanel(QWidget):
         logger.info("InputPanel initialized")
 
     def init_ui(self):
-        """Initialize the compact UI components without scroll area."""
-        # Main layout - no scroll area
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)  # Reduced margins
-        layout.setSpacing(16)  # Reduced spacing
+        """Initialize the modern UI components with tighter spacing."""
+        # Create scroll area for better responsiveness
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        # Create content widget
+        content_widget = QWidget()
+        layout = QVBoxLayout(content_widget)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)  # Reduced from 16
 
-        # Create main sections with optimized spacing
-        self.create_compact_configuration_section(layout)
-        self.create_compact_action_buttons(layout)
-        self.create_compact_status_section(layout)
-        self.create_compact_metrics_section(layout)
+        # Create main sections
+        self.create_configuration_section(layout)
+        self.create_action_buttons(layout)
+        self.create_status_section(layout)
+        self.create_metrics_section(layout)
 
-        # Add minimal stretch to keep everything compact
-        layout.addStretch(1)
+        # Add stretch to push everything to the top
+        layout.addStretch()
+
+        # Set content widget to scroll area
+        scroll.setWidget(content_widget)
+        
+        # Main layout for this panel
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(scroll)
 
         self.apply_styles()
         self.update_financial_metrics(0, 0)
 
-    def create_compact_configuration_section(self, main_layout):
-        """Create a more compact configuration section using grid layout."""
+    def create_configuration_section(self, main_layout):
+        """Create the configuration input section with darker label backgrounds."""
         config_group = QGroupBox("Strategy Configuration")
-        config_layout = QGridLayout(config_group)
-        config_layout.setContentsMargins(16, 20, 16, 16)  # Reduced padding
-        config_layout.setSpacing(12)  # Reduced spacing
-        config_layout.setColumnStretch(1, 1)  # Make input column stretch
+        config_layout = QVBoxLayout(config_group)
+        config_layout.setContentsMargins(16, 20, 16, 20)  # Reduced from (20, 30, 20, 30)
+        config_layout.setSpacing(10)  # Reduced from 15
 
-        # Row 0: Investment Amount
+        # Investment Amount - with darker label background
+        investment_container = QFrame()
+        investment_layout = QVBoxLayout(investment_container)
+        investment_layout.setContentsMargins(0, 0, 0, 0)
+        investment_layout.setSpacing(0)
+        
+        # Dark label background frame
+        investment_label_frame = QFrame()
+        investment_label_frame.setProperty("class", "label-frame")
+        investment_label_frame.setFixedHeight(28)  # Reduced from 35
+        investment_label_layout = QHBoxLayout(investment_label_frame)
+        investment_label_layout.setContentsMargins(10, 6, 10, 6)  # Reduced from (12, 8, 12, 8)
+        
         investment_label = QLabel("Investment Amount ($):")
-        investment_label.setProperty("class", "label")
+        investment_label.setProperty("class", "label-dark")
+        investment_label_layout.addWidget(investment_label)
+        investment_label_layout.addStretch()
+        
+        # Input field
+        investment_input_frame = QFrame()
+        investment_input_frame.setProperty("class", "input-frame")
+        investment_input_layout = QHBoxLayout(investment_input_frame)
+        investment_input_layout.setContentsMargins(10, 8, 10, 8)  # Reduced from (12, 12, 12, 12)
+        
         self.investment_input = QLineEdit("10000")
         self.investment_input.setPlaceholderText("Enter amount (e.g., 10000)")
         self.investment_input.setToolTip("Enter the initial investment amount in USD")
         self.investment_input.setProperty("class", "input-field")
+        investment_input_layout.addWidget(self.investment_input)
         
-        config_layout.addWidget(investment_label, 0, 0)
-        config_layout.addWidget(self.investment_input, 0, 1)
+        investment_layout.addWidget(investment_label_frame)
+        investment_layout.addWidget(investment_input_frame)
+        config_layout.addWidget(investment_container)
 
-        # Row 1: Risk Level
+        # Risk Level - with darker label background
+        risk_container = QFrame()
+        risk_layout = QVBoxLayout(risk_container)
+        risk_layout.setContentsMargins(0, 0, 0, 0)
+        risk_layout.setSpacing(0)
+        
+        # Dark label background frame
+        risk_label_frame = QFrame()
+        risk_label_frame.setProperty("class", "label-frame")
+        risk_label_frame.setFixedHeight(28)  # Reduced from 35
+        risk_label_layout = QHBoxLayout(risk_label_frame)
+        risk_label_layout.setContentsMargins(10, 6, 10, 6)  # Reduced from (12, 8, 12, 8)
+        
         risk_label = QLabel("Risk Level (0-10):")
-        risk_label.setProperty("class", "label")
-        self.risk_input = QSpinBox()
+        risk_label.setProperty("class", "label-dark")
+        risk_label_layout.addWidget(risk_label)
+        risk_label_layout.addStretch()
+        
+        # Input field
+        risk_input_frame = QFrame()
+        risk_input_frame.setProperty("class", "input-frame")
+        risk_input_layout = QHBoxLayout(risk_input_frame)
+        risk_input_layout.setContentsMargins(10, 8, 10, 8)  # Reduced from (12, 12, 12, 12)
+        
+        #self.risk_input = QSpinBox()
+        self.risk_input = WheelDisabledSpinBox()
         self.risk_input.setRange(0, 10)
         self.risk_input.setValue(0)
         self.risk_input.setToolTip("Set risk level (0 = low risk, 10 = high risk)")
         self.risk_input.setProperty("class", "input-field")
+        risk_input_layout.addWidget(self.risk_input)
         
-        config_layout.addWidget(risk_label, 1, 0)
-        config_layout.addWidget(self.risk_input, 1, 1)
+        risk_layout.addWidget(risk_label_frame)
+        risk_layout.addWidget(risk_input_frame)
+        config_layout.addWidget(risk_container)
 
-        # Row 2: Date Range (side by side)
-        date_label = QLabel("Date Range:")
-        date_label.setProperty("class", "label")
-        
-        date_container = QWidget()
-        date_layout = QHBoxLayout(date_container)
+        # Date Range - with darker label backgrounds
+        date_container = QFrame()
+        date_layout = QVBoxLayout(date_container)
         date_layout.setContentsMargins(0, 0, 0, 0)
-        date_layout.setSpacing(8)
+        date_layout.setSpacing(0)
         
-        self.start_date_input = QDateEdit()
+        # Dark labels background frame
+        date_label_frame = QFrame()
+        date_label_frame.setProperty("class", "label-frame")
+        date_label_frame.setFixedHeight(28)  # Reduced from 35
+        date_label_layout = QHBoxLayout(date_label_frame)
+        date_label_layout.setContentsMargins(10, 6, 10, 6)  # Reduced from (12, 8, 12, 8)
+        
+        start_label = QLabel("Start Date:")
+        start_label.setProperty("class", "label-dark")
+        end_label = QLabel("End Date:")
+        end_label.setProperty("class", "label-dark")
+        
+        date_label_layout.addWidget(start_label)
+        date_label_layout.addWidget(end_label)
+        
+        # Date inputs frame
+        date_input_frame = QFrame()
+        date_input_frame.setProperty("class", "input-frame")
+        date_input_layout = QHBoxLayout(date_input_frame)
+        date_input_layout.setContentsMargins(10, 8, 10, 8)  # Reduced from (12, 12, 12, 12)
+        date_input_layout.setSpacing(8)  # Reduced from 10
+        
+        #self.start_date_input = QDateEdit()
+        self.start_date_input = WheelDisabledDateEdit()
         self.start_date_input.setCalendarPopup(True)
         self.start_date_input.setDisplayFormat("yyyy-MM-dd")
         self.start_date_input.dateChanged.connect(self.update_end_date_minimum)
         self.start_date_input.setProperty("class", "input-field")
         
-        self.end_date_input = QDateEdit()
+        #self.end_date_input = QDateEdit()
+        self.end_date_input = WheelDisabledDateEdit()
         self.end_date_input.setCalendarPopup(True)
         self.end_date_input.setDisplayFormat("yyyy-MM-dd")
         self.end_date_input.setProperty("class", "input-field")
         
-        date_layout.addWidget(QLabel("Start:"))
-        date_layout.addWidget(self.start_date_input)
-        date_layout.addWidget(QLabel("End:"))
-        date_layout.addWidget(self.end_date_input)
+        date_input_layout.addWidget(self.start_date_input)
+        date_input_layout.addWidget(self.end_date_input)
         
-        config_layout.addWidget(date_label, 2, 0)
-        config_layout.addWidget(date_container, 2, 1)
+        date_layout.addWidget(date_label_frame)
+        date_layout.addWidget(date_input_frame)
+        config_layout.addWidget(date_container)
 
-        # Row 3: Trading Mode
+        # Trading Mode - with darker label background
+        mode_container = QFrame()
+        mode_layout = QVBoxLayout(mode_container)
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+        mode_layout.setSpacing(0)
+        
+        # Dark label background frame
+        mode_label_frame = QFrame()
+        mode_label_frame.setProperty("class", "label-frame")
+        mode_label_frame.setFixedHeight(28)  # Reduced from 35
+        mode_label_layout = QHBoxLayout(mode_label_frame)
+        mode_label_layout.setContentsMargins(10, 6, 10, 6)  # Reduced from (12, 8, 12, 8)
+        
         mode_label = QLabel("Trading Mode:")
-        mode_label.setProperty("class", "label")
-        self.mode_combo = QComboBox()
+        mode_label.setProperty("class", "label-dark")
+        mode_label_layout.addWidget(mode_label)
+        mode_label_layout.addStretch()
+        
+        # Input field
+        mode_input_frame = QFrame()
+        mode_input_frame.setProperty("class", "input-frame")
+        mode_input_layout = QHBoxLayout(mode_input_frame)
+        mode_input_layout.setContentsMargins(10, 8, 10, 8)  # Reduced from (12, 12, 12, 12)
+        
+        #self.mode_combo = QComboBox()
+        self.mode_combo = WheelDisabledComboBox()
         self.mode_combo.addItems(["Automatic", "Semi-Automatic"])
         self.mode_combo.setCurrentText("Automatic")
         self.mode_combo.setToolTip("Automatic: Execute trades automatically\nSemi-Automatic: Confirm trades manually")
         self.mode_combo.setProperty("class", "input-field")
+        mode_input_layout.addWidget(self.mode_combo)
         
-        config_layout.addWidget(mode_label, 3, 0)
-        config_layout.addWidget(self.mode_combo, 3, 1)
+        mode_layout.addWidget(mode_label_frame)
+        mode_layout.addWidget(mode_input_frame)
+        config_layout.addWidget(mode_container)
 
         main_layout.addWidget(config_group)
-
-    def create_compact_action_buttons(self, main_layout):
-        """Create compact action buttons section."""
-        button_frame = QFrame()
-        button_layout = QHBoxLayout(button_frame)
-        button_layout.setContentsMargins(0, 0, 0, 0)
-        button_layout.setSpacing(12)
-
-        # Execute button with icon
-        self.execute_button = QPushButton("Execute Strategy")
-        self.execute_button.setProperty("class", "primary")
-        self.execute_button.clicked.connect(self.execute_strategy)
-        self.execute_button.setMinimumHeight(40)  # Reduced height
-        
-        # Try to load execute icon
-        try:
-            execute_icon = QIcon(resource_path("frontend/gui/icons/portfolio.png"))
-            if not execute_icon.isNull():
-                self.execute_button.setIcon(execute_icon)
-        except:
-            pass
-
-        # Reset button with icon
-        self.reset_button = QPushButton("Reset Portfolio")
-        self.reset_button.setProperty("class", "danger")
-        self.reset_button.clicked.connect(self.reset_portfolio)
-        self.reset_button.setMinimumHeight(40)  # Reduced height
-        
-        # Try to load reset icon
-        try:
-            reset_icon = QIcon(resource_path("frontend/gui/icons/history.png"))
-            if not reset_icon.isNull():
-                self.reset_button.setIcon(reset_icon)
-        except:
-            pass
-
-        button_layout.addWidget(self.execute_button, 2)
-        button_layout.addWidget(self.reset_button, 1)
-
-        main_layout.addWidget(button_frame)
-
-    def create_compact_status_section(self, main_layout):
-        """Create compact status section."""
-        status_group = QGroupBox("Status")
-        status_layout = QVBoxLayout(status_group)
-        status_layout.setContentsMargins(16, 20, 16, 12)  # Reduced padding
-        status_layout.setSpacing(8)
-
-        self.status_label = QLabel("Ready to execute strategy")
-        self.status_label.setProperty("class", "metric")
-        status_layout.addWidget(self.status_label)
-
-        # Progress bar (hidden by default)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        self.progress_bar.setTextVisible(True)
-        self.progress_bar.setMaximumHeight(20)  # Compact progress bar
-        status_layout.addWidget(self.progress_bar)
-
-        main_layout.addWidget(status_group)
-
-    def create_compact_metrics_section(self, main_layout):
-        """Create compact financial metrics section using horizontal layout."""
-        metrics_group = QGroupBox("Portfolio Overview")
-        metrics_layout = QHBoxLayout(metrics_group)  # Changed to horizontal
-        metrics_layout.setContentsMargins(16, 20, 16, 12)  # Reduced padding
-        metrics_layout.setSpacing(12)
-
-        # Create metric cards in horizontal layout
-        self.cash_label = QLabel("Liquid Cash: N/A")
-        self.cash_label.setProperty("class", "metric")
-        self.cash_label.setWordWrap(True)
-        self.cash_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        self.portfolio_label = QLabel("Portfolio Value: N/A")
-        self.portfolio_label.setProperty("class", "metric")
-        self.portfolio_label.setWordWrap(True)
-        self.portfolio_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        self.total_label = QLabel("Total Value: N/A")
-        self.total_label.setProperty("class", "metric")
-        self.total_label.setWordWrap(True)
-        self.total_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # Add widgets horizontally with equal stretch
-        metrics_layout.addWidget(self.cash_label, 1)
-        metrics_layout.addWidget(self.portfolio_label, 1)
-        metrics_layout.addWidget(self.total_label, 1)
-
-        main_layout.addWidget(metrics_group)
-
-    def on_window_resize(self, size):
-        """Handle window resize events for responsive layout."""
-        # Adjust layout based on window size
-        width = size.width()
-        
-        # If window is very narrow, stack metrics vertically
-        if width < 1200 and hasattr(self, 'metrics_layout'):
-            # This could be implemented to switch layout orientation
-            pass
 
     def set_default_values(self):
         """Set default values based on data availability."""
@@ -495,37 +756,154 @@ class InputPanel(QWidget):
             except Exception as e:
                 logger.error(f"Error setting date constraints: {e}")
 
+    def create_action_buttons(self, main_layout):
+        """Create the action buttons section with smaller, more compact buttons."""
+        button_frame = QFrame()
+        button_layout = QHBoxLayout(button_frame)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(8)  # Reduced from 10
+
+        # Execute button with smaller size
+        self.execute_button = QPushButton("Execute Strategy")
+        self.execute_button.setProperty("class", "primary")
+        self.execute_button.clicked.connect(self.execute_strategy)
+        self.execute_button.setMinimumHeight(32)  # Reduced from 40
+        self.execute_button.setMaximumHeight(32)  # Force consistent height
+        
+        # Try to load execute icon
+        try:
+            execute_icon = QIcon(resource_path("frontend/gui/icons/portfolio.png"))
+            if not execute_icon.isNull():
+                self.execute_button.setIcon(execute_icon)
+        except:
+            pass
+
+        # Reset button with smaller size
+        self.reset_button = QPushButton("Reset Portfolio")
+        self.reset_button.setProperty("class", "danger")
+        self.reset_button.clicked.connect(self.reset_portfolio)
+        self.reset_button.setMinimumHeight(32)  # Reduced from 40
+        self.reset_button.setMaximumHeight(32)  # Force consistent height
+        
+        # Try to load reset icon
+        try:
+            reset_icon = QIcon(resource_path("frontend/gui/icons/history.png"))
+            if not reset_icon.isNull():
+                self.reset_button.setIcon(reset_icon)
+        except:
+            pass
+
+        button_layout.addWidget(self.execute_button, 2)
+        button_layout.addWidget(self.reset_button, 1)
+
+        main_layout.addWidget(button_frame)
+
+    def create_status_section(self, main_layout):
+        """Create a more compact status section."""
+        status_group = QGroupBox("Status")
+        status_layout = QVBoxLayout(status_group)
+        status_layout.setContentsMargins(16, 16, 16, 12)  # Reduced from (16, 20, 16, 16)
+        status_layout.setSpacing(6)  # Reduced from 8
+
+        self.status_label = QLabel("Ready to execute strategy")
+        self.status_label.setProperty("class", "status-text")  # New smaller class
+        status_layout.addWidget(self.status_label)
+
+        # Progress bar (hidden by default) - make it smaller
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setMaximumHeight(16)  # Smaller progress bar
+        status_layout.addWidget(self.progress_bar)
+
+        main_layout.addWidget(status_group)
+
+    def create_metrics_section(self, main_layout):
+        """Create a more compact financial metrics section."""
+        metrics_group = QGroupBox("Portfolio Overview")
+        metrics_layout = QGridLayout(metrics_group)
+        metrics_layout.setContentsMargins(16, 16, 16, 12)  # Reduced from (16, 20, 16, 16)
+        metrics_layout.setSpacing(8)  # Reduced from 12
+
+        # Set column stretch for responsive layout
+        metrics_layout.setColumnStretch(0, 1)
+        metrics_layout.setColumnStretch(1, 1)
+        metrics_layout.setColumnStretch(2, 1)
+
+        # Create smaller metric cards
+        self.cash_label = QLabel("Liquid Cash: N/A")
+        self.cash_label.setProperty("class", "metric-compact")  # New compact class
+        self.cash_label.setWordWrap(True)
+        self.cash_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        self.portfolio_label = QLabel("Portfolio Value: N/A")
+        self.portfolio_label.setProperty("class", "metric-compact")  # New compact class
+        self.portfolio_label.setWordWrap(True)
+        self.portfolio_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        self.total_label = QLabel("Total Value: N/A")
+        self.total_label.setProperty("class", "metric-compact")  # New compact class
+        self.total_label.setWordWrap(True)
+        self.total_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Add widgets with proper spacing
+        metrics_layout.addWidget(self.cash_label, 0, 0)
+        metrics_layout.addWidget(self.portfolio_label, 0, 1)
+        metrics_layout.addWidget(self.total_label, 0, 2)
+
+        main_layout.addWidget(metrics_group)
+
+    # Updated apply_styles method for input_panel.py
+
     def apply_styles(self):
-        """Apply modern styling to the compact panel."""
+        """Apply modern styling to the panel with compact elements."""
         style = ModernStyles.get_complete_style(self.is_dark_mode)
         
-        # Add compact-specific styles
+        # Add custom styles for the dark label frames and compact elements
         colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
         
+        # Additional styles for compact layout
         additional_styles = f"""
-            /* Compact label styling */
-            QLabel[class="label"] {{
-                color: {colors['text_primary']};
-                font-size: 13px;  /* Smaller font */
+            /* Label Frame Styling - Darker background for labels */
+            QFrame[class="label-frame"] {{
+                background-color: {'#252538' if self.is_dark_mode else '#9CA3AF'};
+                border: 1px solid {colors['border']};
+                border-bottom: none;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+            }}
+            
+            /* Input Frame Styling - Matches the surface color */
+            QFrame[class="input-frame"] {{
+                background-color: {colors['surface']};
+                border: 1px solid {colors['border']};
+                border-top: none;
+                border-bottom-left-radius: 6px;
+                border-bottom-right-radius: 6px;
+            }}
+            
+            /* Dark label text styling */
+            QLabel[class="label-dark"] {{
+                color: {'#FFFFFF' if self.is_dark_mode else '#FFFFFF'};
+                font-size: 13px;
                 font-weight: 600;
-                margin-bottom: 4px;  /* Reduced margin */
+                font-family: 'Segoe UI';
                 background-color: transparent;
                 border: none;
             }}
             
-            /* Compact input field styling */
+            /* Input field styling with visible borders */
             QLineEdit[class="input-field"], 
             QSpinBox[class="input-field"], 
             QDateEdit[class="input-field"], 
             QComboBox[class="input-field"] {{
-                border: 1px solid {colors['border_light']};
+                border: 2px solid {colors['border_light']};
                 border-radius: 6px;
-                background-color: {colors['surface']};
-                padding: 8px 10px;  /* Reduced padding */
-                font-size: 13px;  /* Smaller font */
+                background-color: {'#3A3A54' if self.is_dark_mode else '#F8FAFC'};
+                padding: 8px 10px;
+                font-size: 13px;
                 color: {colors['text_primary']};
                 margin: 1px;
-                min-height: 16px;  /* Reduced height */
             }}
             
             QLineEdit[class="input-field"]:focus, 
@@ -533,46 +911,192 @@ class InputPanel(QWidget):
             QDateEdit[class="input-field"]:focus, 
             QComboBox[class="input-field"]:focus {{
                 border: 2px solid {colors['accent']};
+                background-color: {'#404060' if self.is_dark_mode else '#FFFFFF'};
             }}
             
-            /* Compact metrics styling */
-            QLabel[class="metric"] {{
-                font-size: 14px;  /* Smaller font */
+            QLineEdit[class="input-field"]:hover, 
+            QSpinBox[class="input-field"]:hover, 
+            QDateEdit[class="input-field"]:hover, 
+            QComboBox[class="input-field"]:hover {{
+                border: 2px solid {colors['accent_hover']};
+            }}
+            
+            /* Compact Button Styling */
+            QPushButton {{
+                border: 2px solid transparent;
+                border-radius: 6px;
+                padding: 6px 14px;  /* Reduced padding for smaller buttons */
                 font-weight: 600;
-                padding: 12px 16px;  /* Reduced padding */
+                font-size: 12px;  /* Smaller font for compact buttons */
+                min-height: 14px;  /* Reduced min-height */
+            }}
+            
+            QPushButton[class="primary"] {{
+                background-color: {colors['accent']};
+                color: white;
+                border: 2px solid {colors['accent']};
+            }}
+            
+            QPushButton[class="primary"]:hover {{
+                background-color: {colors['accent_hover']};
+                border: 2px solid {colors['accent_hover']};
+            }}
+            
+            QPushButton[class="primary"]:pressed {{
+                background-color: {colors['accent_pressed']};
+                border: 2px solid {colors['accent_pressed']};
+            }}
+            
+            QPushButton[class="danger"] {{
+                background-color: {colors['danger']};
+                color: white;
+                border: 2px solid {colors['danger']};
+            }}
+            
+            QPushButton[class="danger"]:hover {{
+                background-color: #DC2626;
+                border: 2px solid #DC2626;
+            }}
+            
+            QPushButton[class="danger"]:pressed {{
+                background-color: #B91C1C;
+                border: 2px solid #B91C1C;
+            }}
+            
+            /* Compact Status Text Styling */
+            QLabel[class="status-text"] {{
+                font-size: 13px;  /* Smaller status text */
+                font-weight: 500;
+                padding: 8px 12px;  /* Reduced padding */
                 background-color: {colors['surface']};
                 border: 1px solid {colors['border_light']};
-                border-radius: 8px;
+                border-radius: 6px;
                 color: {colors['text_primary']};
                 text-align: center;
-                margin: 2px;
             }}
             
-            /* Compact group box styling */
-            QGroupBox {{
-                background-color: {colors['surface']};
-                border: 1px solid {colors['border_light']};
-                border-radius: 10px;
-                margin: 4px 0;  /* Reduced margin */
-                padding-top: 18px;  /* Reduced padding */
+            /* Compact Metrics Styling */
+            QLabel[class="metric-compact"] {{
+                font-size: 13px;  /* Smaller metric font */
                 font-weight: 600;
-                font-size: 13px;  /* Smaller font */
+                padding: 8px 12px;  /* Reduced padding for compact metrics */
+                background-color: {colors['surface']};
+                border: 1px solid {colors['border_light']};  /* Thinner border */
+                border-radius: 6px;  /* Smaller radius */
                 color: {colors['text_primary']};
+                text-align: center;
+                margin: 1px;  /* Minimal margin */
             }}
             
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 6px 12px;  /* Reduced padding */
-                background-color: {colors['surface']};
+            /* Compact metric success styling */
+            QLabel[class~="metric-compact"][class~="metric-success"] {{
+                color: {colors['success']};
+                border: 1px solid {colors['success']};
+                background-color: {'rgba(16, 185, 129, 0.1)' if self.is_dark_mode else 'rgba(16, 185, 129, 0.05)'};
+            }}
+            
+            /* Compact metric warning styling */
+            QLabel[class~="metric-compact"][class~="metric-warning"] {{
+                color: {colors['warning']};
+                border: 1px solid {colors['warning']};
+                background-color: {'rgba(245, 158, 11, 0.1)' if self.is_dark_mode else 'rgba(245, 158, 11, 0.05)'};
+            }}
+            
+            /* Compact metric danger styling */
+            QLabel[class~="metric-compact"][class~="metric-danger"] {{
+                color: {colors['danger']};
+                border: 1px solid {colors['danger']};
+                background-color: {'rgba(239, 68, 68, 0.1)' if self.is_dark_mode else 'rgba(239, 68, 68, 0.05)'};
+            }}
+            
+            /* Smaller Progress Bar */
+            QProgressBar {{
+                background-color: {colors['secondary']};
                 border: 1px solid {colors['border_light']};
-                border-radius: 5px;
-                color: {colors['accent']};
-                font-weight: 600;
-                font-size: 12px;  /* Smaller font */
+                border-radius: 6px;
+                text-align: center;
+                font-weight: 500;
+                font-size: 11px;  /* Smaller progress bar font */
+                color: {colors['text_primary']};
+                min-height: 16px;  /* Smaller progress bar height */
+            }}
+            
+            QProgressBar::chunk {{
+                background-color: {colors['accent']};
+                border-radius: 4px;
+                margin: 1px;
+            }}
+            
+            /* Dropdown styling for combo box and date edit */
+            QComboBox[class="input-field"]::drop-down {{
+                border: none;
+                border-left: 1px solid {colors['border']};
+                border-radius: 0px 4px 4px 0px;
+                background-color: {colors['secondary']};
+                width: 18px;
+            }}
+            
+            QComboBox[class="input-field"]::drop-down:hover {{
+                background-color: {colors['accent']};
+            }}
+            
+            QComboBox[class="input-field"]::down-arrow {{
+                border-left: 3px solid transparent;
+                border-right: 3px solid transparent;
+                border-top: 5px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+            }}
+            
+            QDateEdit[class="input-field"]::drop-down {{
+                border: none;
+                border-left: 1px solid {colors['border']};
+                border-radius: 0px 4px 4px 0px;
+                background-color: {colors['secondary']};
+                width: 18px;
+            }}
+            
+            QDateEdit[class="input-field"]::drop-down:hover {{
+                background-color: {colors['accent']};
+            }}
+            
+            QDateEdit[class="input-field"]::down-arrow {{
+                border-left: 3px solid transparent;
+                border-right: 3px solid transparent;
+                border-top: 5px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+            }}
+            
+            /* SpinBox buttons styling */
+            QSpinBox[class="input-field"]::up-button, QSpinBox[class="input-field"]::down-button {{
+                border: none;
+                background-color: {colors['secondary']};
+                width: 18px;
+            }}
+            
+            QSpinBox[class="input-field"]::up-button:hover, QSpinBox[class="input-field"]::down-button:hover {{
+                background-color: {colors['accent']};
+            }}
+            
+            QSpinBox[class="input-field"]::up-arrow {{
+                border-left: 3px solid transparent;
+                border-right: 3px solid transparent;
+                border-bottom: 5px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
+            }}
+            
+            QSpinBox[class="input-field"]::down-arrow {{
+                border-left: 3px solid transparent;
+                border-right: 3px solid transparent;
+                border-top: 5px solid {colors['text_primary']};
+                width: 0px;
+                height: 0px;
             }}
         """
         
+        # Combine all styles
         complete_style = style + additional_styles
         self.setStyleSheet(complete_style)
 
@@ -708,6 +1232,7 @@ class InputPanel(QWidget):
 
         return investment_amount, risk_level, start_date, end_date
 
+
     def update_financial_metrics(self, cash=0, portfolio_value=0):
         """Update financial metrics display with color coding."""
         self.cash_label.setText(f"Liquid Cash: ${cash:,.2f}")
@@ -715,10 +1240,12 @@ class InputPanel(QWidget):
         total_value = cash + portfolio_value
         self.total_label.setText(f"Total Value: ${total_value:,.2f}")
         
-        # Color coding based on performance
+        # Reset all labels to base metric class first
         self.cash_label.setProperty("class", "metric")
         self.portfolio_label.setProperty("class", "metric")
+        self.total_label.setProperty("class", "metric")
         
+        # Apply color coding based on performance
         if total_value > 10000:  # Assuming 10k initial
             self.total_label.setProperty("class", "metric metric-success")
         elif total_value < 9500:
@@ -726,10 +1253,10 @@ class InputPanel(QWidget):
         else:
             self.total_label.setProperty("class", "metric metric-warning")
         
-        # Force style refresh
-        for label in [self.cash_label, self.portfolio_label, self.total_label]:
-            label.style().unpolish(label)
-            label.style().polish(label)
+        # Force style refresh by reapplying stylesheet
+        current_style = self.styleSheet()
+        self.setStyleSheet("")
+        self.setStyleSheet(current_style)
         
         logger.debug(f"Updated financial metrics: Cash=${cash:,.2f}, Portfolio=${portfolio_value:,.2f}")
 

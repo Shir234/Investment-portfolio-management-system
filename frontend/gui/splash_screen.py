@@ -134,7 +134,7 @@ class SplashScreen(QWidget):
         self.setGraphicsEffect(self.opacity_effect)
         
         self.animation = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.animation.setDuration(1500)  # Smooth 1.5 second fade
+        self.animation.setDuration(3000)  # Smooth 1.5 second fade
         self.animation.setStartValue(1)
         self.animation.setEndValue(0)
         self.animation.finished.connect(lambda: self.finish_fade(next_window))
