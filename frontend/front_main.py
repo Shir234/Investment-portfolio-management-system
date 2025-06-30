@@ -19,7 +19,9 @@ base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(base_dir)
 sys.path.append(os.path.join(base_dir, 'backend'))
 
-from PyQt6.QtWidgets import QApplication, QFileDialog, QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QToolButton, QMessageBox
+from PyQt6.QtWidgets import (QApplication, QFileDialog, QDialog, QVBoxLayout, QLabel, 
+                             QPushButton, QHBoxLayout, QToolButton, QMessageBox, QTableWidget, 
+                             QTableWidgetItem, QHeaderView)
 from PyQt6.QtGui import QPalette, QColor, QIcon
 from PyQt6.QtCore import Qt
 
@@ -95,33 +97,33 @@ class HelpDialog(QDialog):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("CSV File Help")
-        self.setFixedSize(500, 350)
+        self.setFixedSize(517, 350)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
         self.setup_ui()
 
     def setup_ui(self):
+        """Set up the UI for the HelpDialog with a table for CSV requirements."""
         layout = QVBoxLayout(self)
         layout.setSpacing(20)
         layout.setContentsMargins(30, 30, 30, 30)
 
+        # Title
         title = QLabel("CSV File Requirements")
         title.setProperty("class", "title")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        instructions = QLabel(
-            "Please select the <b>all_tickers_results.csv</b> file to begin.\n\n"
-            "<b>Required Columns</b>:\n"
-            "Date, Ticker, Close, Buy, Sell, Actual_Sharpe, Best_Prediction\n\n"
-            "<b>Example Row</b>:\n"
-            "2021-10-14,WBD,25.26,-1.0,-1.0,-2.789610324596968,-1.8321122673517407\n\n"
-            "A sample file is available in the 'data/' folder."
-        )
-        instructions.setProperty("class", "subtitle")
-        instructions.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        instructions.setWordWrap(True)
-        layout.addWidget(instructions)
+        # Table for required columns and example row
+        self._setup_table(layout)
 
+        # Sample file note
+        sample_note = QLabel("File located in 'data\\all_tickers_results.csv'.")
+        sample_note.setProperty("class", "subtitle")
+        sample_note.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        sample_note.setWordWrap(True)
+        layout.addWidget(sample_note)
+
+        # Close button
         close_button = QPushButton("Close")
         close_button.clicked.connect(self.accept)
         layout.addWidget(close_button)
@@ -138,6 +140,57 @@ class HelpDialog(QDialog):
         screen = QApplication.primaryScreen().geometry()
         self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
 
+    def _setup_table(self, layout):
+        """Set up the table displaying CSV required columns and example row, optimized to fit dialog width."""
+        table = QTableWidget(1, 7)  # 1 row, 7 columns
+        table.setHorizontalHeaderLabels([
+            "Date", "Ticker", "Close", "Buy", "Sell", 
+            "Actual_Sharpe", "Best_Prediction"
+        ])
+        
+        # Populate example row with truncated values for long numbers
+        example_data = [
+            "2021-10-14", "WBD", "25.26", "-1.0", "-1.0", 
+            "-2.7896", "-1.8321"  # Truncated for display
+        ]
+        for col, value in enumerate(example_data):
+            item = QTableWidgetItem(value)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # Read-only
+            table.setItem(0, col, item)
+
+        # Table properties
+        table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        table.setFixedHeight(80)  # 2 rows (header + 1 data row) at ~40px each
+        table.setShowGrid(True)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setMaximumSectionSize(100)  # Cap column width
+        table.verticalHeader().setVisible(False)
+        table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: {ModernStyles.COLORS['dark']['surface']};
+                color: {ModernStyles.COLORS['dark']['text_primary']};
+                border: 1px solid {ModernStyles.COLORS['dark']['border']};
+                border-radius: 6px;
+                font-size: 9px;
+            }}
+            QTableWidget::item {{
+                background-color: {ModernStyles.COLORS['dark']['surface']};
+                border: none;
+                padding: 5px;
+            }}
+            QHeaderView::section {{
+                background-color: {ModernStyles.COLORS['dark']['secondary']};
+                color: {ModernStyles.COLORS['dark']['text_primary']};
+                font-size: 10px;
+                font-weight: bold;
+                border: none;
+                padding: 5px;
+            }}
+        """)
+        
+        layout.addWidget(table)
+
 class StarterDialog(QDialog):
     def __init__(self):
         super().__init__()
@@ -147,6 +200,7 @@ class StarterDialog(QDialog):
         self.setup_ui()
 
     def setup_ui(self):
+        """Set up the UI for the StarterDialog."""
         logger.info("Setting up StarterDialog")
         layout = QVBoxLayout(self)
         layout.setSpacing(20)
@@ -158,13 +212,13 @@ class StarterDialog(QDialog):
         layout.addWidget(title)
 
         subtitle = QLabel("Investment Portfolio Management System")
-        subtitle.setProperty("class", "subtitle-large")  # Changed class name
+        subtitle.setProperty("class", "subtitle-large")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
         prompt = QLabel("Please select 'all_tickers_results.csv' to begin.")
-        prompt.setProperty("class", "prompt")  # Changed class name
+        prompt.setProperty("class", "prompt")
         prompt.setAlignment(Qt.AlignmentFlag.AlignCenter)
         prompt.setWordWrap(True)
         layout.addWidget(prompt)
@@ -175,7 +229,7 @@ class StarterDialog(QDialog):
         help_button = QToolButton()
         help_button.setText("?")
         help_button.setFixedSize(32, 32)
-        help_button.setProperty("class", "help-button")  # Changed class name
+        help_button.setProperty("class", "help-button")
         help_button.clicked.connect(self.show_help)
         button_layout.addWidget(help_button)
 
@@ -245,6 +299,7 @@ class StarterDialog(QDialog):
         self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
 
     def show_help(self):
+        """Show the HelpDialog for CSV file requirements."""
         logger.info("Help button clicked")
         help_dialog = HelpDialog()
         help_dialog.exec()
@@ -259,7 +314,7 @@ def show_modern_message_box(icon, title, text, buttons=QMessageBox.StandardButto
     
     # Apply modern styling if available
     try:
-        colors = ModernStyles.COLORS['dark']  # Default to dark for startup dialogs
+        colors = ModernStyles.COLORS['dark']
         msg.setStyleSheet(f"""
             QMessageBox {{
                 background-color: {colors['primary']};
@@ -299,6 +354,7 @@ def show_modern_message_box(icon, title, text, buttons=QMessageBox.StandardButto
     return msg.exec()
 
 def main():
+    """Main function to initialize and run the application."""
     logger.info("Starting main function")
     app = QApplication(sys.argv)
     logger.info("QApplication initialized")

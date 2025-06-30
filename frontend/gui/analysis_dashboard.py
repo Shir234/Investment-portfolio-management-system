@@ -2,9 +2,9 @@ import matplotlib
 import os
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QComboBox, QGroupBox, QListWidget, QListWidgetItem,
-                             QPushButton, QMessageBox, QFrame, QToolTip)
-from PyQt6.QtCore import Qt, QEvent, QPoint
-from PyQt6.QtGui import QCursor
+                             QPushButton, QMessageBox, QFrame, QToolTip, QLayout, QGridLayout, QSizePolicy)
+from PyQt6.QtCore import Qt, QEvent, QPoint, QSize, QRect
+from PyQt6.QtGui import QCursor, QFontMetrics, QFont
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
@@ -18,20 +18,105 @@ from frontend.gui.styles import ModernStyles
 # Configure logging
 logger = get_logger(__name__)
 
+class FlowLayout(QLayout):
+    """A layout that arranges widgets in a flowing grid, wrapping to new rows as needed."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._items = []
+        self.setContentsMargins(2, 2, 2, 2)
+        self._spacing = 5
+
+    def addItem(self, item):
+        """Add an item to the layout."""
+        self._items.append(item)
+
+    def count(self):
+        """Return the number of items in the layout."""
+        return len(self._items)
+
+    def itemAt(self, index):
+        """Return the item at the given index."""
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index):
+        """Remove and return the item at the given index."""
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):
+        """Return the directions in which the layout can expand."""
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        """Return whether the layout has height for width."""
+        return True
+
+    def heightForWidth(self, width):
+        """Return the preferred height for the given width."""
+        return self._do_layout(QRect(0, 0, width, 0), False)
+
+    def setGeometry(self, rect):
+        """Set the geometry of the layout."""
+        super().setGeometry(rect)
+        self._do_layout(rect, True)
+
+    def sizeHint(self):
+        """Return the preferred size of the layout."""
+        return self.minimumSize()
+
+    def minimumSize(self):
+        """Return the minimum size of the layout."""
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        size += QSize(2 * self.contentsMargins().left(), 2 * self.contentsMargins().top())
+        return size
+
+    def _do_layout(self, rect, apply_geometry):
+        """Perform the layout calculations."""
+        x = rect.x()
+        y = rect.y()
+        line_height = 0
+        max_height = rect.height()
+        for item in self._items:
+            wid = item.widget()
+            if wid is None:
+                continue
+            item_size = item.sizeHint()
+            item_width = item_size.width()
+            item_height = item_size.height()
+            space_x = self._spacing
+            space_y = self._spacing
+            next_x = x + item_width + space_x
+            if next_x - space_x > rect.right() and line_height > 0:
+                x = rect.x()
+                y = y + line_height + space_y
+                next_x = x + item_width + space_x
+                line_height = 0
+            if y + item_height <= rect.y() + max_height:
+                if apply_geometry:
+                    item.setGeometry(QRect(QPoint(x, y), QSize(item_width, item_height)))
+                x = next_x
+                line_height = max(line_height, item_height)
+        return y + line_height - rect.y()
+
 class CustomFigureCanvas(FigureCanvas):
     """Custom canvas to handle hover tooltips for plots."""
     def __init__(self, figure, parent=None, get_tooltip_text=None):
         super().__init__(figure)
         self.setParent(parent)
-        self.get_tooltip_text = get_tooltip_text  # Callback to get tooltip text
-        self.setMouseTracking(True)  # Enable mouse tracking for hover events
+        self.get_tooltip_text = get_tooltip_text
+        self.setMouseTracking(True)
 
     def enterEvent(self, event):
         """Show tooltip at the current mouse cursor position."""
         if self.get_tooltip_text:
             tooltip_text = self.get_tooltip_text()
             if tooltip_text:
-                pos = QCursor.pos() + QPoint(10, 10)  # Offset from cursor
+                pos = QCursor.pos() + QPoint(10, 10)
                 QToolTip.showText(pos, tooltip_text, self)
         super().enterEvent(event)
 
@@ -44,15 +129,15 @@ class CustomComboBox(QComboBox):
     """Custom QComboBox to show tooltip with plot description on hover."""
     def __init__(self, parent=None, get_tooltip_text=None):
         super().__init__(parent)
-        self.get_tooltip_text = get_tooltip_text  # Callback to get tooltip text
-        self.setMouseTracking(True)  # Enable mouse tracking for hover events
+        self.get_tooltip_text = get_tooltip_text
+        self.setMouseTracking(True)
 
     def enterEvent(self, event):
         """Show tooltip at the current mouse cursor position."""
         if self.get_tooltip_text:
             tooltip_text = self.get_tooltip_text()
             if tooltip_text:
-                pos = QCursor.pos() + QPoint(10, 10)  # Offset from cursor
+                pos = QCursor.pos() + QPoint(10, 10)
                 QToolTip.showText(pos, tooltip_text, self)
         super().enterEvent(event)
 
@@ -66,31 +151,21 @@ class AnalysisDashboard(QWidget):
         super().__init__(parent)
         self.data_manager = data_manager
         self.is_dark_mode = True
-        self.ticker_colors = {}  # Cache ticker colors for consistency
-        self.selected_tickers_order = []  # Track the order of selected tickers
+        self.ticker_colors = {}
+        self.selected_tickers_order = []
         
         # Define plot descriptions for tooltips
         self.plot_descriptions = {
-            "Portfolio Performance": "Shows the portfolio value over time compared to the S&P 500 benchmark.",
-            "Sharpe Ratio Box Plot": "Displays the distribution of predicted and actual Sharpe ratios for selected tickers.",
-            "Sharpe Prediction Error": "Plots the difference between actual and predicted Sharpe ratios over time.",
-            "Portfolio Drawdown": "Illustrates the portfolio's percentage decline from its peak value, with -10% and -20% thresholds.",
-            "Cumulative Returns by Ticker": "Shows normalized cumulative returns for selected tickers compared to the S&P 500.",
-            "Profit/Loss by Ticker": "Bar plot of profit or loss for each ticker based on trade history."
+            "Predicted vs Actual Sharpe": "Plots predicted Sharpe ratios as solid lines and actual Sharpe ratios as dots over time.",
+            "Profit over Std Dev": "Shows profit divided by average annual standard deviation of portfolio value over rolling one-year periods.",
+            "Portfolio Value Over Time": "Displays the portfolio value over time compared to the S&P 500 benchmark.",
+            "Buy/Sell Distribution": "Pie chart showing the distribution of buy and sell transactions in the current portfolio."
         }
         
-        # Define a more distinguishable color palette
+        # Define a distinguishable color palette
         self.color_palette = [
-            '#1f77b4',  # Blue
-            '#87ceeb',  # Light blue
-            '#ff7f0e',  # Orange
-            '#2ca02c',  # Green
-            '#d62728',  # Red
-            '#9467bd',  # Purple
-            '#8c564b',  # Brown
-            '#e377c2',  # Pink
-            '#7f7f7f',  # Gray
-            '#bcbd22',  # Olive
+            '#1f77b4', '#87ceeb', '#ff7f0e', '#2ca02c', '#d62728',
+            '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22'
         ]
         
         # Select available font
@@ -100,10 +175,10 @@ class AnalysisDashboard(QWidget):
         if not font_family:
             font_family = ['sans-serif']
         
-        # Set initial matplotlib style
         self._configure_matplotlib_style()
         
         logger.debug(f"Using font family: {font_family}")
+        self.setAutoFillBackground(True)  # Ensure widget background is rendered
         self.setup_ui()
         logger.info("AnalysisDashboard initialized")
 
@@ -154,9 +229,11 @@ class AnalysisDashboard(QWidget):
         main_layout.setContentsMargins(24, 24, 24, 24)
         main_layout.setSpacing(24)
 
-        # Left sidebar for ticker selection
-        ticker_container = QFrame()
-        ticker_layout = QVBoxLayout(ticker_container)
+        # Left sidebar for ticker selection and legend
+        self.ticker_container = QFrame()
+        self.ticker_container.setFixedWidth(200)  # Lock sidebar width
+        self.ticker_container.setStyleSheet(f"background-color: {'#212121' if self.is_dark_mode else '#f5f5f5'};")
+        ticker_layout = QVBoxLayout(self.ticker_container)
         ticker_layout.setContentsMargins(0, 0, 0, 0)
         ticker_layout.setSpacing(8)
         
@@ -166,7 +243,8 @@ class AnalysisDashboard(QWidget):
         
         self.ticker_list = QListWidget()
         self.ticker_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
-        self.ticker_list.setMaximumWidth(200)  # Fixed width for sidebar
+        self.ticker_list.setMaximumWidth(200)
+        self.ticker_list.setMinimumHeight(300)  # Ensure ticker list doesn't shrink
         self.ticker_list.setProperty("class", "dropdown-input")
         if self.data_manager.data is not None and not self.data_manager.data.empty:
             tickers = sorted(self.data_manager.data['Ticker'].unique())
@@ -178,22 +256,44 @@ class AnalysisDashboard(QWidget):
         self.ticker_list.itemSelectionChanged.connect(self.update_selected_tickers)
         ticker_layout.addWidget(self.ticker_list)
 
-        self.selected_tickers_layout = QHBoxLayout()
-        self.selected_tickers_layout.setSpacing(5)
+        # Selected tickers header (label and clear button)
+        self.selected_tickers_header = QHBoxLayout()
+        self.selected_tickers_header.setSpacing(5)
         self.selected_tickers_label = QLabel("Selected:")
-        self.selected_tickers_layout.addWidget(self.selected_tickers_label)
-        self.selected_tickers_buttons = {}
-        self.selected_tickers_layout.addStretch()
-
+        self.selected_tickers_header.addWidget(self.selected_tickers_label)
+        self.selected_tickers_header.addStretch()
         self.clear_tickers_button = QPushButton("Clear All")
         self.clear_tickers_button.clicked.connect(self.clear_all_tickers)
         self.clear_tickers_button.setProperty("class", "secondary")
         self.clear_tickers_button.setMaximumHeight(30)
-        self.selected_tickers_layout.addWidget(self.clear_tickers_button)
+        self.selected_tickers_header.addWidget(self.clear_tickers_button)
+        ticker_layout.addLayout(self.selected_tickers_header)
 
-        ticker_layout.addLayout(self.selected_tickers_layout)
-        ticker_layout.addStretch()  # Push content to top of sidebar
-        main_layout.addWidget(ticker_container, stretch=0)
+        # Selected tickers area with QVBoxLayout
+        self.selected_tickers_widget = QWidget()
+        self.selected_tickers_widget.setProperty("class", "selected-tickers")
+        self.selected_tickers_layout = QVBoxLayout(self.selected_tickers_widget)
+        self.selected_tickers_layout.setContentsMargins(2, 2, 2, 2)
+        self.selected_tickers_layout.setSpacing(2)
+        self.selected_tickers_layout.setAlignment(Qt.AlignmentFlag.AlignTop)  # Stack from top
+        self.selected_tickers_buttons = {}
+        ticker_layout.addWidget(self.selected_tickers_widget)
+
+        # Legend area with QGridLayout
+        self.legend_widget = QWidget()
+        self.legend_widget.setFixedHeight(100)  # Lock legend area height
+        self.legend_layout = QGridLayout(self.legend_widget)
+        self.legend_layout.setContentsMargins(2, 2, 2, 2)
+        self.legend_layout.setSpacing(2)
+        self.legend_layout.setRowStretch(0, 1)
+        self.legend_layout.setRowStretch(1, 1)
+        self.legend_layout.setRowStretch(2, 1)
+        self.legend_layout.setRowStretch(3, 1)
+        self.legend_layout.setRowStretch(4, 1)
+        ticker_layout.addWidget(self.legend_widget)
+        
+        ticker_layout.addStretch()
+        main_layout.addWidget(self.ticker_container, stretch=0)
 
         # Right side: graph type and plot canvas
         right_layout = QVBoxLayout()
@@ -208,7 +308,6 @@ class AnalysisDashboard(QWidget):
         
         graph_label = QLabel("Graph Type:")
         graph_label.setProperty("class", "dropdown-label")
-        # Add tooltip to the label itself
         graph_label.setMouseTracking(True)
         graph_label.enterEvent = lambda event: self._show_label_tooltip(event, graph_label)
         graph_label.leaveEvent = lambda event: QToolTip.hideText()
@@ -216,17 +315,15 @@ class AnalysisDashboard(QWidget):
         
         self.graph_combo = CustomComboBox(get_tooltip_text=self.get_current_plot_description)
         self.graph_combo.addItems([
-            "Portfolio Performance",
-            "Sharpe Ratio Box Plot",
-            "Sharpe Prediction Error",
-            "Portfolio Drawdown",
-            "Cumulative Returns by Ticker",
-            "Profit/Loss by Ticker"
+            "Predicted vs Actual Sharpe",
+            "Profit over Std Dev",
+            "Portfolio Value Over Time",
+            "Buy/Sell Distribution"
         ])
         self.graph_combo.currentIndexChanged.connect(self.change_graph_type)
         self.graph_combo.setProperty("class", "dropdown-input")
         graph_layout.addWidget(self.graph_combo)
-        graph_layout.addStretch()  # Align to left
+        graph_layout.addStretch()
         right_layout.addWidget(graph_container)
 
         # Chart area
@@ -242,6 +339,7 @@ class AnalysisDashboard(QWidget):
         main_layout.addLayout(right_layout, stretch=1)
         self.set_theme(self.is_dark_mode)
         self.update_visualizations()
+        logger.debug("UI setup completed for AnalysisDashboard")
 
     def _show_label_tooltip(self, event, label):
         """Show tooltip for the graph type label."""
@@ -266,18 +364,17 @@ class AnalysisDashboard(QWidget):
         logger.debug(f"Changed graph type to: {self.graph_combo.currentText()}")
 
     def set_theme(self, is_dark_mode):
-        """Apply the specified theme to the dashboard."""
+        """Apply the specified theme to the dashboard, ensuring consistent background colors."""
         self.is_dark_mode = is_dark_mode
         
-        # Configure matplotlib styling
         self._configure_matplotlib_style()
-        
-        # Update figure colors
         self._update_figure_colors()
 
-        # Apply modern styling
         style = ModernStyles.get_complete_style(self.is_dark_mode)
         colors = ModernStyles.COLORS['dark' if self.is_dark_mode else 'light']
+        
+        # Set main widget background to match ticker_container
+        self.setStyleSheet(f"background-color: {colors['surface']};")
         
         additional_styles = f"""
             QLabel[class="dropdown-label"] {{
@@ -362,21 +459,58 @@ class AnalysisDashboard(QWidget):
                 background-color: {colors['hover']};
                 border: 2px solid {colors['accent']};
             }}
+            QLabel[class="legend-label"] {{
+                color: {colors['text_primary']};
+                font-size: 9px;
+                font-family: 'Segoe UI';
+                margin: 0px;
+                padding: 0px;
+            }}
+            QWidget[class="legend-item"] {{
+                margin: 0px;
+                padding: 0px;
+                max-height: 18px;
+            }}
+            QWidget[class="selected-tickers"] {{
+                background-color: transparent;
+                border: none;
+            }}
+            QPushButton[class="ticker-button"] {{
+                color: white;
+                border: none;
+                padding: 1px 4px;
+                border-radius: 4px;
+                font-size: 9px;
+                font-weight: bold;
+                min-height: 14px;
+                max-height: 14px;
+                margin: 0px;
+            }}
+            QPushButton[class="ticker-button"]:hover {{
+                opacity: 0.8;
+            }}
         """
         complete_style = style + additional_styles
         self.setStyleSheet(complete_style)
-
-        # Update canvas stylesheet
+        self.selected_tickers_widget.setStyleSheet(f"""
+            QWidget[class="selected-tickers"] {{
+                background-color: transparent;
+                border: none;
+            }}
+        """)
+        self.ticker_container.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors['surface']};
+                border: none;
+            }}
+        """)
         self.chart_canvas.setStyleSheet(f"""
             background-color: {colors['surface']};
             border: none;
         """)
-
-        # Update ticker button colors
-        self._update_ticker_button_colors()
-        
         self.selected_tickers_label.setStyleSheet(f"color: {colors['text_primary']}; font-size: 12px; font-weight: 500;")
         
+        self._update_ticker_button_colors()
         self.update_visualizations()
         logger.debug(f"Applied theme: {'dark' if is_dark_mode else 'light'}")
 
@@ -389,19 +523,22 @@ class AnalysisDashboard(QWidget):
         self.ticker_colors = self._get_ticker_colors(self.selected_tickers_order)
         
         for ticker, button in self.selected_tickers_buttons.items():
-            if ticker in self.ticker_colors:
+            if ticker in self.ticker_colors and button:
                 color_info = self.ticker_colors[ticker]
                 button_style = f"""
-                    QPushButton {{
+                    QPushButton[class="ticker-button"] {{
                         background-color: {color_info['hex']}; 
                         color: white; 
                         border: none; 
-                        padding: 4px 8px; 
+                        padding: 1px 4px; 
                         border-radius: 4px; 
-                        font-size: 11px;
+                        font-size: 9px;
                         font-weight: bold;
+                        min-height: 14px;
+                        max-height: 14px;
+                        margin: 0px;
                     }} 
-                    QPushButton:hover {{
+                    QPushButton[class="ticker-button"]:hover {{
                         background-color: {color_info['hover']};
                     }}
                 """
@@ -428,14 +565,13 @@ class AnalysisDashboard(QWidget):
         }
 
     def _get_ticker_colors(self, tickers):
-        """Get consistent colors for tickers using the improved color palette."""
+        """Get consistent colors for tickers using the color palette."""
         if not tickers:
             return {}
         
         ticker_colors = {}
         for idx, ticker in enumerate(tickers):
             color_hex = self.color_palette[idx % len(self.color_palette)]
-            # Convert hex to RGB (0-1 range for matplotlib)
             rgb = tuple(int(color_hex[i:i+2], 16) / 255.0 for i in (1, 3, 5))
             hover_color = self.adjust_color_brightness(color_hex, 0.8)
             
@@ -447,11 +583,143 @@ class AnalysisDashboard(QWidget):
         
         return ticker_colors
 
+    def _update_legend(self):
+        """Clear and update the legend in a 5x2 grid below selected tickers."""
+        while self.legend_layout.count():
+            item = self.legend_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                while item.layout().count():
+                    sub_item = item.layout().takeAt(0)
+                    if sub_item.widget():
+                        sub_item.widget().deleteLater()
+                item.layout().deleteLater()
+
+        graph_type = self.graph_combo.currentText()
+        theme_colors = self._get_theme_colors()
+
+        if graph_type == "Predicted vs Actual Sharpe":
+            for idx, ticker in enumerate(self.selected_tickers_order[:5]):
+                if ticker in self.ticker_colors:
+                    color_hex = self.ticker_colors[ticker]['hex']
+                    row = idx
+                    legend_widget = QWidget()
+                    legend_widget.setProperty("class", "legend-item")
+                    legend_widget.setFixedHeight(18)
+                    legend_item = QHBoxLayout(legend_widget)
+                    legend_item.setContentsMargins(1, 0, 1, 0)
+                    legend_item.setSpacing(1)
+                    color_square = QLabel()
+                    color_square.setFixedSize(8, 8)
+                    color_square.setStyleSheet(f"background-color: {color_hex}; border: none;")
+                    legend_item.addWidget(color_square)
+                    label = QLabel(f"{ticker} Predicted")
+                    label.setProperty("class", "legend-label")
+                    legend_item.addWidget(label)
+                    legend_item.addStretch()
+                    self.legend_layout.addWidget(legend_widget, row, 0)
+                    
+                    legend_widget_actual = QWidget()
+                    legend_widget_actual.setProperty("class", "legend-item")
+                    legend_widget_actual.setFixedHeight(18)
+                    legend_item_actual = QHBoxLayout(legend_widget_actual)
+                    legend_item_actual.setContentsMargins(1, 0, 1, 0)
+                    legend_item_actual.setSpacing(1)
+                    color_square_actual = QLabel()
+                    color_square_actual.setFixedSize(8, 8)
+                    color_square_actual.setStyleSheet(f"background-color: {color_hex}; border: none;")
+                    legend_item_actual.addWidget(color_square_actual)
+                    label_actual = QLabel(f"{ticker} Actual")
+                    label_actual.setProperty("class", "legend-label")
+                    legend_item_actual.addWidget(label_actual)
+                    legend_item_actual.addStretch()
+                    self.legend_layout.addWidget(legend_widget_actual, row, 1)
+
+        elif graph_type == "Profit over Std Dev":
+            legend_widget = QWidget()
+            legend_widget.setProperty("class", "legend-item")
+            legend_widget.setFixedHeight(18)
+            legend_item = QHBoxLayout(legend_widget)
+            legend_item.setContentsMargins(1, 0, 1, 0)
+            legend_item.setSpacing(1)
+            color_square = QLabel()
+            color_square.setFixedSize(8, 8)
+            color_square.setStyleSheet("background-color: #2196F3; border: none;")
+            legend_item.addWidget(color_square)
+            label = QLabel("Profit / Std Dev")
+            label.setProperty("class", "legend-label")
+            legend_item.addWidget(label)
+            legend_item.addStretch()
+            self.legend_layout.addWidget(legend_widget, 0, 0)
+
+        elif graph_type == "Portfolio Value Over Time":
+            legend_widget = QWidget()
+            legend_widget.setProperty("class", "legend-item")
+            legend_widget.setFixedHeight(18)
+            legend_item = QHBoxLayout(legend_widget)
+            legend_item.setContentsMargins(1, 0, 1, 0)
+            legend_item.setSpacing(1)
+            color_square = QLabel()
+            color_square.setFixedSize(8, 8)
+            color_square.setStyleSheet("background-color: #2196F3; border: none;")
+            legend_item.addWidget(color_square)
+            label = QLabel("Portfolio Value")
+            label.setProperty("class", "legend-label")
+            legend_item.addWidget(label)
+            legend_item.addStretch()
+            self.legend_layout.addWidget(legend_widget, 0, 0)
+            
+            if self.data_manager.data is not None and 'Ticker' in self.data_manager.data and 'SPY' in self.data_manager.data['Ticker'].values:
+                legend_widget_spy = QWidget()
+                legend_widget_spy.setProperty("class", "legend-item")
+                legend_widget_spy.setFixedHeight(18)
+                legend_item_spy = QHBoxLayout(legend_widget_spy)
+                legend_item_spy.setContentsMargins(1, 0, 1, 0)
+                legend_item_spy.setSpacing(1)
+                color_square_spy = QLabel()
+                color_square_spy.setFixedSize(8, 8)
+                color_square_spy.setStyleSheet("background-color: #F59E0B; border: none;")
+                legend_item_spy.addWidget(color_square_spy)
+                label_spy = QLabel("S&P 500")
+                label_spy.setProperty("class", "legend-label")
+                legend_item_spy.addWidget(label_spy)
+                legend_item_spy.addStretch()
+                self.legend_layout.addWidget(legend_widget_spy, 0, 1)
+
+        elif graph_type == "Buy/Sell Distribution":
+            for idx, (label_text, color) in enumerate(zip(['Buy', 'Sell'], ['#2196F3', '#F59E0B'])):
+                legend_widget = QWidget()
+                legend_widget.setProperty("class", "legend-item")
+                legend_widget.setFixedHeight(18)
+                legend_item = QHBoxLayout(legend_widget)
+                legend_item.setContentsMargins(1, 0, 1, 0)
+                legend_item.setSpacing(1)
+                color_square = QLabel()
+                color_square.setFixedSize(8, 8)
+                color_square.setStyleSheet(f"background-color: {color}; border: none;")
+                legend_item.addWidget(color_square)
+                label = QLabel(label_text)
+                label.setProperty("class", "legend-label")
+                legend_item.addWidget(label)
+                legend_item.addStretch()
+                self.legend_layout.addWidget(legend_widget, 0, idx)
+
     def update_selected_tickers(self):
-        """Update the display of selected tickers with consistent colors."""
+        """Update the display of selected tickers in a vertical layout with dynamic sizing."""
+        # Clear existing buttons in the layout and dictionary
+        while self.selected_tickers_layout.count():
+            item = self.selected_tickers_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.selected_tickers_buttons.clear()  # Clear dictionary to avoid stale references
+        logger.debug("Cleared selected tickers layout and buttons dictionary")
+
+        # Get selected tickers
         selected_items = self.ticker_list.selectedItems()
         selected_tickers = [item.text() for item in selected_items]
 
+        # Enforce 5-ticker limit
         if len(selected_tickers) > 5:
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Icon.Warning)
@@ -464,58 +732,62 @@ class AnalysisDashboard(QWidget):
                 item.setSelected(False)
             selected_tickers = selected_tickers[:5]
 
-        # Update the order of selected tickers
-        # Maintain existing order and add new ones at the end
+        # Update ticker order
         new_order = []
         for ticker in self.selected_tickers_order:
             if ticker in selected_tickers:
                 new_order.append(ticker)
-        
-        # Add newly selected tickers
         for ticker in selected_tickers:
             if ticker not in new_order:
                 new_order.append(ticker)
         
-        self.selected_tickers_order = new_order
+        self.selected_tickers_order = new_order[:5]  # Ensure max 5 tickers
+        logger.debug(f"Updated selected tickers order: {self.selected_tickers_order}")
 
-        # Remove buttons for unselected tickers
-        for ticker in list(self.selected_tickers_buttons.keys()):
-            if ticker not in selected_tickers:
-                button = self.selected_tickers_buttons.pop(ticker)
-                button.deleteLater()
-
-        # Update cached ticker colors based on new order
+        # Update ticker colors
         self.ticker_colors = self._get_ticker_colors(self.selected_tickers_order)
 
-        # Add buttons for newly selected tickers
-        for ticker in selected_tickers:
-            if ticker not in self.selected_tickers_buttons:
-                color_info = self.ticker_colors.get(ticker, {'hex': '#1f77b4', 'hover': '#184f8d'})
-                
-                button = QPushButton(ticker)
-                button.setFixedHeight(25)
-                button.clicked.connect(lambda _, t=ticker: self.remove_ticker(t))
-                
-                button_style = f"""
-                    QPushButton {{
-                        background-color: {color_info['hex']}; 
-                        color: white; 
-                        border: none; 
-                        padding: 4px 8px; 
-                        border-radius: 4px; 
-                        font-size: 11px;
-                        font-weight: bold;
-                    }} 
-                    QPushButton:hover {{
-                        background-color: {color_info['hover']};
-                    }}
-                """
-                button.setStyleSheet(button_style)
-                self.selected_tickers_layout.insertWidget(self.selected_tickers_layout.count()-2, button)
-                self.selected_tickers_buttons[ticker] = button
+        # Add buttons for selected tickers
+        font = QFont("Segoe UI", 9)
+        font_metrics = QFontMetrics(font)
+        for ticker in self.selected_tickers_order:
+            color_info = self.ticker_colors.get(ticker, {'hex': '#1f77b4', 'hover': '#184f8d'})
+            
+            button = QPushButton(ticker)
+            button.setProperty("class", "ticker-button")
+            button.setFixedHeight(14)
+            button.setMinimumWidth(0)  # Allow shrinking
+            button.setMaximumWidth(190)  # Cap at container width
+            button.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+            button.setVisible(True)
+            button.clicked.connect(lambda _, t=ticker: self.remove_ticker(t))
+            
+            button_style = f"""
+                QPushButton[class="ticker-button"] {{
+                    background-color: {color_info['hex']}; 
+                    color: white; 
+                    border: none; 
+                    padding: 1px 4px; 
+                    border-radius: 4px; 
+                    font-size: 9px;
+                    font-weight: bold;
+                    min-height: 14px;
+                    max-height: 14px;
+                    margin: 0px;
+                }} 
+                QPushButton[class="ticker-button"]:hover {{
+                    background-color: {color_info['hover']};
+                }}
+            """
+            button.setStyleSheet(button_style)
+            self.selected_tickers_layout.addWidget(button)
+            self.selected_tickers_buttons[ticker] = button
+            text_width = font_metrics.horizontalAdvance(ticker) + 10
+            logger.debug(f"Added ticker button: {ticker}, color {color_info['hex']}, width {text_width}")
 
+        self._update_legend()
         self.update_visualizations()
-        logger.debug(f"Selected tickers: {selected_tickers}")
+        logger.debug(f"Selected tickers displayed: {self.selected_tickers_order}")
 
     def adjust_color_brightness(self, hex_color, factor):
         """Adjust the brightness of a hex color for hover effect."""
@@ -529,6 +801,7 @@ class AnalysisDashboard(QWidget):
         for item in self.ticker_list.findItems(ticker, Qt.MatchFlag.MatchExactly):
             item.setSelected(False)
         self.update_selected_tickers()
+        logger.debug(f"Removed ticker: {ticker}")
 
     def clear_all_tickers(self):
         """Clear all selected tickers."""
@@ -577,18 +850,14 @@ class AnalysisDashboard(QWidget):
             self.chart_canvas.draw()
             return
 
-        if graph_type == "Portfolio Performance":
-            self.plot_portfolio_performance()
-        elif graph_type == "Sharpe Ratio Box Plot":
-            self.plot_sharpe_box_plot(self.selected_tickers_order)
-        elif graph_type == "Sharpe Prediction Error":
-            self.plot_sharpe_prediction_error(self.selected_tickers_order)
-        elif graph_type == "Portfolio Drawdown":
-            self.plot_portfolio_drawdown()
-        elif graph_type == "Cumulative Returns by Ticker":
-            self.plot_cumulative_returns(self.selected_tickers_order)
-        elif graph_type == "Profit/Loss by Ticker":
-            self.plot_profit_loss_by_ticker()
+        if graph_type == "Predicted vs Actual Sharpe":
+            self.plot_predicted_vs_actual_sharpe(self.selected_tickers_order)
+        elif graph_type == "Profit over Std Dev":
+            self.plot_profit_over_std_dev()
+        elif graph_type == "Portfolio Value Over Time":
+            self.plot_portfolio_value()
+        elif graph_type == "Buy/Sell Distribution":
+            self.plot_buy_sell_distribution()
 
         self.chart_canvas.draw()
 
@@ -597,7 +866,100 @@ class AnalysisDashboard(QWidget):
         self.update_visualizations()
         logger.info("Dashboard updated")
 
-    def plot_portfolio_performance(self):
+    def plot_predicted_vs_actual_sharpe(self, selected_tickers):
+        """Plot predicted Sharpe as solid lines and actual Sharpe as dots over time."""
+        ax = self.chart_fig.add_subplot(111)
+        theme_colors = self._get_theme_colors()
+        
+        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
+        if data is None or data.empty:
+            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center',
+                    verticalalignment='center', color=theme_colors['text'])
+            return
+
+        data['date'] = pd.to_datetime(data['date'], utc=True)
+        data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
+
+        if not selected_tickers:
+            ax.text(0.5, 0.5, 'Select at least one ticker', horizontalalignment='center',
+                    verticalalignment='center', color=theme_colors['text'])
+            return
+
+        data = data[data['Ticker'].isin(selected_tickers)]
+        if data.empty:
+            ax.text(0.5, 0.5, 'No data for selected tickers', horizontalalignment='center',
+                    verticalalignment='center', color=theme_colors['text'])
+            return
+
+        colors = [self.ticker_colors[ticker]['rgb'] for ticker in selected_tickers if ticker in self.ticker_colors]
+
+        for idx, ticker in enumerate(selected_tickers):
+            ticker_data = data[data['Ticker'] == ticker].sort_values('date')
+            if not ticker_data.empty:
+                ax.plot(ticker_data['date'], ticker_data['Best_Prediction'],
+                        label=f'{ticker} Predicted', color=colors[idx], linewidth=2.0)
+                actual_data = ticker_data[ticker_data['Actual_Sharpe'] != -1.0]
+                if not actual_data.empty:
+                    ax.scatter(actual_data['date'], actual_data['Actual_Sharpe'],
+                               label=f'{ticker} Actual', color=colors[idx], s=50)
+
+        ax.set_title('Predicted vs Actual Sharpe Ratios', pad=10, color=theme_colors['text'])
+        ax.set_xlabel('Date', color=theme_colors['text'])
+        ax.set_ylabel('Sharpe Ratio', color=theme_colors['text'])
+        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
+        ax.set_facecolor(theme_colors['surface'])
+        
+        self.chart_fig.tight_layout()
+
+    def plot_profit_over_std_dev(self):
+        """Plot profit divided by annual standard deviation over rolling one-year periods."""
+        ax = self.chart_fig.add_subplot(111)
+        theme_colors = self._get_theme_colors()
+        
+        portfolio_history = get_portfolio_history()
+        if not portfolio_history:
+            ax.text(0.5, 0.5, 'No portfolio history available', horizontalalignment='center',
+                    verticalalignment='center', color=theme_colors['text'])
+            return
+
+        df = pd.DataFrame(portfolio_history)
+        df['date'] = pd.to_datetime(df['date'], utc=True)
+        df = df[(df['date'] >= self.start_date) & (df['date'] <= self.end_date)]
+        if df.empty:
+            ax.text(0.5, 0.5, 'No portfolio history in date range', horizontalalignment='center',
+                    verticalalignment='center', color=theme_colors['text'])
+            return
+
+        ratios = []
+        dates = []
+        window_days = 365
+        df = df.sort_values('date')
+        
+        for i in range(len(df) - window_days):
+            period = df.iloc[i:i + window_days]
+            if len(period) == window_days:
+                profit = period['value'].iloc[-1] - period['value'].iloc[0]
+                daily_returns = period['value'].pct_change().dropna()
+                annual_std = daily_returns.std() * np.sqrt(252) if not daily_returns.empty else np.nan
+                ratio = profit / annual_std if annual_std != 0 and not np.isnan(annual_std) else np.nan
+                ratios.append(ratio)
+                dates.append(period['date'].iloc[-1])
+
+        if not ratios or np.isnan(ratios).all():
+            ax.text(0.5, 0.5, 'Insufficient data for one-year periods', horizontalalignment='center',
+                    verticalalignment='center', color=theme_colors['text'])
+            return
+
+        ax.plot(dates, ratios, label='Profit / Std Dev', color='#2196F3', linewidth=2.0)
+        ax.set_title('Profit over Annual Std Dev (Rolling One-Year)', pad=10, color=theme_colors['text'])
+        ax.set_xlabel('Date', color=theme_colors['text'])
+        ax.set_ylabel('Profit / Std Dev', color=theme_colors['text'])
+        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
+        ax.set_facecolor(theme_colors['surface'])
+        
+        self.chart_fig.tight_layout()
+
+    def plot_portfolio_value(self):
         """Plot portfolio value over time with S&P 500 benchmark."""
         ax = self.chart_fig.add_subplot(111)
         theme_colors = self._get_theme_colors()
@@ -616,8 +978,7 @@ class AnalysisDashboard(QWidget):
                     verticalalignment='center', color=theme_colors['text'])
             return
 
-        ax.plot(df['date'], df['value'], label='Portfolio Value', color='#2196F3', linewidth=2)
-        # Add S&P 500 benchmark if available
+        ax.plot(df['date'], df['value'], label='Portfolio Value', color='#2196F3', linewidth=2.0)
         if self.data_manager.data is not None and 'Ticker' in self.data_manager.data and 'SPY' in self.data_manager.data['Ticker'].values:
             sp500_data = self.data_manager.data[self.data_manager.data['Ticker'] == 'SPY'].copy()
             sp500_data['date'] = pd.to_datetime(sp500_data['date'], utc=True)
@@ -626,219 +987,16 @@ class AnalysisDashboard(QWidget):
                 sp500_data['value'] = sp500_data['Close'] / sp500_data['Close'].iloc[0] * df['value'].iloc[0]
                 ax.plot(sp500_data['date'], sp500_data['value'], label='S&P 500', color='#F59E0B', linestyle='--', linewidth=1.5)
 
-        ax.set_title('Portfolio Performance', pad=10, color=theme_colors['text'])
+        ax.set_title('Portfolio Value Over Time', pad=10, color=theme_colors['text'])
         ax.set_xlabel('Date', color=theme_colors['text'])
         ax.set_ylabel('Value ($)', color=theme_colors['text'])
-        ax.legend(loc='best', frameon=True, facecolor=theme_colors['legend_bg'])
         ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
         ax.set_facecolor(theme_colors['surface'])
         
         self.chart_fig.tight_layout()
 
-    def plot_sharpe_box_plot(self, selected_tickers):
-        """Plot box plot of predicted and actual Sharpe ratios."""
-        ax = self.chart_fig.add_subplot(111)
-        theme_colors = self._get_theme_colors()
-        
-        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
-        if data is None or data.empty:
-            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center',
-                    verticalalignment='center', color=theme_colors['text'])
-            return
-
-        data['date'] = pd.to_datetime(data['date'], utc=True)
-        data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
-
-        if not selected_tickers:
-            ax.text(0.5, 0.5, 'Select at least one ticker', horizontalalignment='center',
-                    verticalalignment='center', color=theme_colors['text'])
-            return
-
-        data = data[data['Ticker'].isin(selected_tickers)]
-        if data.empty:
-            ax.text(0.5, 0.5, 'No data for selected tickers', horizontalalignment='center',
-                    verticalalignment='center', color=theme_colors['text'])
-            return
-
-        # Use cached ticker colors in selection order
-        colors = [self.ticker_colors[ticker]['rgb'] for ticker in selected_tickers if ticker in self.ticker_colors]
-
-        # Prepare data for box plot
-        plot_data = []
-        labels = []
-        color_list = []
-        for idx, ticker in enumerate(selected_tickers):
-            ticker_data = data[data['Ticker'] == ticker]
-            predicted = ticker_data['Best_Prediction'].dropna()
-            actual = ticker_data[ticker_data['Actual_Sharpe'] != -1.0]['Actual_Sharpe'].dropna()
-            if not predicted.empty:
-                plot_data.append(predicted)
-                labels.append(f'{ticker} Pred.')
-                color_list.append(colors[idx % len(colors)])
-            if not actual.empty:
-                plot_data.append(actual)
-                labels.append(f'{ticker} Actual')
-                color_list.append(colors[idx % len(colors)])
-
-        if not plot_data:
-            ax.text(0.5, 0.5, 'No valid Sharpe data available', horizontalalignment='center',
-                    verticalalignment='center', color=theme_colors['text'])
-            return
-
-        # Create box plot
-        box = ax.boxplot(plot_data, patch_artist=True, vert=True, labels=labels)
-        for patch, color in zip(box['boxes'], color_list):
-            patch.set_facecolor(color)
-            patch.set_alpha(0.7)
-        for median in box['medians']:
-            median.set_color(theme_colors['text'])
-            median.set_linewidth(2)
-
-        ax.set_title('Sharpe Ratio Box Plot', pad=10, color=theme_colors['text'])
-        ax.set_ylabel('Sharpe Ratio', color=theme_colors['text'])
-        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
-        ax.set_facecolor(theme_colors['surface'])
-        
-        self.chart_fig.tight_layout()
-
-    def plot_sharpe_prediction_error(self, selected_tickers):
-        """Plot prediction error (Actual - Predicted Sharpe) over time."""
-        ax = self.chart_fig.add_subplot(111)
-        theme_colors = self._get_theme_colors()
-        
-        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
-        if data is None or data.empty:
-            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center',
-                    verticalalignment='center', color=theme_colors['text'])
-            return
-
-        data['date'] = pd.to_datetime(data['date'], utc=True)
-        data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
-
-        if not selected_tickers:
-            ax.text(0.5, 0.5, 'Select at least one ticker', horizontalalignment='center',
-                    verticalalignment='center', color=theme_colors['text'])
-            return
-
-        data = data[data['Ticker'].isin(selected_tickers)]
-        if data.empty:
-            ax.text(0.5, 0.5, 'No data for selected tickers', horizontalalignment='center',
-                    verticalalignment='center', color=theme_colors['text'])
-            return
-
-        # Use cached ticker colors in selection order
-        colors = [self.ticker_colors[ticker]['rgb'] for ticker in selected_tickers if ticker in self.ticker_colors]
-
-        for idx, ticker in enumerate(selected_tickers):
-            ticker_data = data[data['Ticker'] == ticker].copy()
-            ticker_data = ticker_data[ticker_data['Actual_Sharpe'] != -1.0]
-            if not ticker_data.empty:
-                ticker_data['error'] = ticker_data['Actual_Sharpe'] - ticker_data['Best_Prediction']
-                ax.plot(ticker_data['date'], ticker_data['error'],
-                        label=f'{ticker} Error', color=colors[idx], linewidth=2.0)
-
-        ax.axhline(0, color='#F44336', linestyle='--', label='Zero Error')
-        ax.set_title('Sharpe Ratio Prediction Error', pad=10, color=theme_colors['text'])
-        ax.set_xlabel('Date', color=theme_colors['text'])
-        ax.set_ylabel('Actual - Predicted Sharpe', color=theme_colors['text'])
-        ax.legend(loc='best', frameon=True, facecolor=theme_colors['legend_bg'])
-        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
-        ax.set_facecolor(theme_colors['surface'])
-        
-        self.chart_fig.tight_layout()
-
-    def plot_portfolio_drawdown(self):
-        """Plot portfolio drawdown with threshold lines."""
-        ax = self.chart_fig.add_subplot(111)
-        theme_colors = self._get_theme_colors()
-        
-        portfolio_history = get_portfolio_history()
-        if not portfolio_history:
-            ax.text(0.5, 0.5, 'No portfolio history available', horizontalalignment='center',
-                    verticalalignment='center', color=theme_colors['text'])
-            return
-
-        df = pd.DataFrame(portfolio_history)
-        df['date'] = pd.to_datetime(df['date'], utc=True)
-        df = df[(df['date'] >= self.start_date) & (df['date'] <= self.end_date)]
-        if df.empty:
-            ax.text(0.5, 0.5, 'No portfolio history in date range', horizontalalignment='center',
-                    verticalalignment='center', color=theme_colors['text'])
-            return
-
-        df['peak'] = df['value'].cummax()
-        df['drawdown'] = (df['value'] - df['peak']) / df['peak'] * 100
-
-        ax.plot(df['date'], df['drawdown'], label='Drawdown (%)', color='#F44336', linewidth=2)
-        ax.fill_between(df['date'], df['drawdown'], 0, color='#F44336', alpha=0.2)
-        ax.axhline(-10, color='#F59E0B', linestyle='--', label='-10% Threshold', alpha=0.5)
-        ax.axhline(-20, color='#EF4444', linestyle='--', label='-20% Threshold', alpha=0.5)
-        ax.set_title('Portfolio Drawdown', pad=10, color=theme_colors['text'])
-        ax.set_xlabel('Date', color=theme_colors['text'])
-        ax.set_ylabel('Drawdown (%)', color=theme_colors['text'])
-        ax.legend(loc='best', frameon=True, facecolor=theme_colors['legend_bg'])
-        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
-        ax.set_facecolor(theme_colors['surface'])
-        
-        self.chart_fig.tight_layout()
-
-    def plot_cumulative_returns(self, selected_tickers):
-        """Plot normalized cumulative returns with S&P 500 benchmark."""
-        ax = self.chart_fig.add_subplot(111)
-        theme_colors = self._get_theme_colors()
-        
-        data = self.data_manager.data.copy() if self.data_manager.data is not None else None
-        if data is None or data.empty:
-            ax.text(0.5, 0.5, 'No market data available', horizontalalignment='center',
-                    verticalalignment='center', color=theme_colors['text'])
-            return
-
-        data['date'] = pd.to_datetime(data['date'], utc=True)
-        data = data[(data['date'] >= self.start_date) & (data['date'] <= self.end_date)]
-
-        if not selected_tickers:
-            ax.text(0.5, 0.5, 'Select at least one ticker', horizontalalignment='center',
-                    verticalalignment='center', color=theme_colors['text'])
-            return
-
-        data = data[data['Ticker'].isin(selected_tickers)]
-        if data.empty:
-            ax.text(0.5, 0.5, 'No data for selected tickers', horizontalalignment='center',
-                    verticalalignment='center', color=theme_colors['text'])
-            return
-
-        # Use cached ticker colors in selection order
-        colors = [self.ticker_colors[ticker]['rgb'] for ticker in selected_tickers if ticker in self.ticker_colors]
-
-        for idx, ticker in enumerate(selected_tickers):
-            ticker_data = data[data['Ticker'] == ticker].sort_values('date')
-            if not ticker_data.empty:
-                returns = ticker_data['Close'].pct_change().fillna(0)
-                cumulative = (1 + returns).cumprod() * 100
-                ax.plot(ticker_data['date'], cumulative, label=f'{ticker} Returns',
-                        color=colors[idx], linewidth=2.0)
-
-        # Add S&P 500 benchmark
-        if 'SPY' in self.data_manager.data['Ticker'].values:
-            sp500_data = self.data_manager.data[self.data_manager.data['Ticker'] == 'SPY'].copy()
-            sp500_data['date'] = pd.to_datetime(sp500_data['date'], utc=True)
-            sp500_data = sp500_data[(sp500_data['date'] >= self.start_date) & (sp500_data['date'] <= self.end_date)]
-            if not sp500_data.empty:
-                returns = sp500_data['Close'].pct_change().fillna(0)
-                cumulative = (1 + returns).cumprod() * 100
-                ax.plot(sp500_data['date'], cumulative, label='S&P 500 Returns', color='#F59E0B', linestyle='--', linewidth=1.5)
-
-        ax.set_title('Cumulative Returns by Ticker (Normalized)', pad=10, color=theme_colors['text'])
-        ax.set_xlabel('Date', color=theme_colors['text'])
-        ax.set_ylabel('Cumulative Return (%)', color=theme_colors['text'])
-        ax.legend(loc='best', frameon=True, facecolor=theme_colors['legend_bg'])
-        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
-        ax.set_facecolor(theme_colors['surface'])
-        
-        self.chart_fig.tight_layout()
-
-    def plot_profit_loss_by_ticker(self):
-        """Plot profit/loss by ticker as a bar plot."""
+    def plot_buy_sell_distribution(self):
+        """Plot pie chart of buy vs sell transactions in the current portfolio."""
         ax = self.chart_fig.add_subplot(111)
         theme_colors = self._get_theme_colors()
         
@@ -857,29 +1015,13 @@ class AnalysisDashboard(QWidget):
                     verticalalignment='center', color=theme_colors['text'])
             return
 
-        # Calculate profit/loss by ticker
-        profits = orders_df.groupby('ticker').apply(
-            lambda x: (
-                -x[x['action'] == 'buy']['investment_amount'].sum() +
-                x[x['action'] == 'sell']['investment_amount'].sum() -
-                x['transaction_cost'].sum()
-            )
-        ).reset_index(name='profit_loss')
+        action_counts = orders_df['action'].value_counts()
+        labels = action_counts.index
+        sizes = action_counts.values
+        colors = ['#2196F3', '#F59E0B']
 
-        # Use cached ticker colors in order of profits['ticker']
-        selected_tickers = profits['ticker'].tolist()
-        # Update ticker colors for profit/loss plot to match selected order
-        self.ticker_colors = self._get_ticker_colors(selected_tickers)
-        colors = [self.ticker_colors[ticker]['rgb'] for ticker in selected_tickers if ticker in self.ticker_colors]
-
-        # Convert colors to list to avoid UserWarning
-        sns.barplot(data=profits, x='ticker', y='profit_loss', hue='ticker', legend=False, ax=ax, palette=colors)
-        ax.axhline(0, color='#F44336', linestyle='--', label='Break-even')
-        ax.set_title('Profit/Loss by Ticker', pad=10, color=theme_colors['text'])
-        ax.set_xlabel('Ticker', color=theme_colors['text'])
-        ax.set_ylabel('Profit/Loss ($)', color=theme_colors['text'])
-        ax.legend(loc='best', frameon=True, facecolor=theme_colors['legend_bg'])
-        ax.grid(True, linestyle='--', alpha=0.5, color=theme_colors['grid'])
+        ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
+        ax.set_title('Buy/Sell Distribution', pad=10, color=theme_colors['text'])
         ax.set_facecolor(theme_colors['surface'])
         
         self.chart_fig.tight_layout()
