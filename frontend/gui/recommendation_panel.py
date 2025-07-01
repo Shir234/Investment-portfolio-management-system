@@ -58,13 +58,13 @@ class RecommendationPanel(QWidget):
         self.filter_combo.currentIndexChanged.connect(self.update_recommendations)
         
         # Trade count section - compact with better sizing
-        self.trade_count_label = QLabel("📊 Total: 0")
+        self.trade_count_label = QLabel("Total Orders: 0")
         self.trade_count_label.setProperty("class", "metric")
         self.trade_count_label.setMaximumHeight(32)  # Match combo height
         self.trade_count_label.setMinimumWidth(100)  # Ensure minimum width
         
         # Export button - better sizing
-        export_button = QPushButton("📊 Export CSV")
+        export_button = QPushButton("Export to CSV")
         export_button.setProperty("class", "primary")
         export_button.clicked.connect(self.export_to_csv)
         export_button.setToolTip("Export trading history to CSV file")
@@ -136,6 +136,8 @@ class RecommendationPanel(QWidget):
             if not orders:
                 msg = QMessageBox()
                 msg.setIcon(QMessageBox.Icon.Information)
+                msg.setParent(self)
+                msg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
                 msg.setWindowTitle("No Data")
                 msg.setText("No trading history to export.")
                 msg.setStandardButtons(QMessageBox.StandardButton.Ok)
@@ -156,6 +158,8 @@ class RecommendationPanel(QWidget):
             if orders_df.empty:
                 msg = QMessageBox()
                 msg.setIcon(QMessageBox.Icon.Information)
+                msg.setParent(self)
+                msg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
                 msg.setWindowTitle("No Data")
                 msg.setText(f"No {filter_type.lower()} to export.")
                 msg.setStandardButtons(QMessageBox.StandardButton.Ok)
@@ -239,6 +243,8 @@ class RecommendationPanel(QWidget):
             # Show compact success message
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Icon.Information)
+            msg.setParent(self)
+            msg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
             msg.setWindowTitle("Export Successful")
             msg.setText(f"Exported {len(export_data)} records to:\n{os.path.basename(file_path)}")
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
@@ -251,6 +257,8 @@ class RecommendationPanel(QWidget):
             logger.error(f"Error exporting to CSV: {e}", exc_info=True)
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Icon.Critical)
+            msg.setParent(self)
+            msg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
             msg.setWindowTitle("Export Failed")
             msg.setText(f"Failed to export:\n{str(e)[:100]}...")
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
@@ -398,7 +406,7 @@ class RecommendationPanel(QWidget):
             orders = get_orders()
             if not orders:
                 self.table.setRowCount(0)
-                self.trade_count_label.setText("📊 Total: 0")
+                self.trade_count_label.setText("Total Orders: 0")
                 self.status_label.setText("No trading history available.")
                 logger.info("No orders found")
                 return
@@ -413,7 +421,7 @@ class RecommendationPanel(QWidget):
                 orders_df = orders_df[orders_df['action'] == 'sell']
             
             self.table.setRowCount(len(orders_df))
-            self.trade_count_label.setText(f"📊 Total: {len(orders_df)}")
+            self.trade_count_label.setText(f"Total: {len(orders_df)}")
             
             if len(orders_df) == 0:
                 self.status_label.setText(f"No {filter_type.lower()} found.")

@@ -1156,11 +1156,14 @@ class InputPanel(QWidget):
 
     def show_message_box(self, icon, title, text, buttons=QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel):
         """Show a modern styled message box."""
-        msg = QMessageBox()
+        msg = QMessageBox(self)  # Set parent to ensure proper stacking
         msg.setIcon(icon)
         msg.setWindowTitle(title)
         msg.setText(text)
         msg.setStandardButtons(buttons)
+        
+        # Set window flags to keep on top
+        msg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         
         # Apply modern styling
         colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']

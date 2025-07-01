@@ -410,11 +410,14 @@ class MainWindow(QMainWindow):
     def show_success_message(self, title, message):
         """Show a success message with modern styling."""
         from PyQt6.QtWidgets import QMessageBox
-        msg = QMessageBox()
+        msg = QMessageBox(self)  # Set parent
         msg.setIcon(QMessageBox.Icon.Information)
         msg.setWindowTitle(title)
         msg.setText(message)
         msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        
+        # Set window flags to keep on top
+        msg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         
         # Apply modern styling to message box
         colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
@@ -449,11 +452,14 @@ class MainWindow(QMainWindow):
     def show_error_message(self, title, message):
         """Show an error message with modern styling."""
         from PyQt6.QtWidgets import QMessageBox
-        msg = QMessageBox()
+        msg = QMessageBox(self)  # Set parent
         msg.setIcon(QMessageBox.Icon.Critical)
         msg.setWindowTitle(title)
         msg.setText(message)
         msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        
+        # Set window flags to keep on top
+        msg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         
         # Apply modern styling to message box
         colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
@@ -488,11 +494,14 @@ class MainWindow(QMainWindow):
     def show_warning_message(self, title, message):
         """Show a warning message with modern styling."""
         from PyQt6.QtWidgets import QMessageBox
-        msg = QMessageBox()
+        msg = QMessageBox(self)  # Set parent
         msg.setIcon(QMessageBox.Icon.Warning)
         msg.setWindowTitle(title)
         msg.setText(message)
         msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        # Set window flags to keep on top
+        msg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         
         # Apply modern styling to message box
         colors = ModernStyles.COLORS['dark'] if self.is_dark_mode else ModernStyles.COLORS['light']
