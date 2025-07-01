@@ -1,7 +1,7 @@
 import os
 import sys
-from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QApplication, QFrame, QLabel
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QThread, QObject, pyqtSignal, QTimer
+from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QApplication, QFrame, QLabel
 from PyQt6.QtGui import QIcon
 from frontend.utils import resource_path
 from frontend.logging_config import get_logger
@@ -87,6 +87,13 @@ class MainWindow(QMainWindow):
         # Create the UI
         self.setup_ui()
         self.apply_modern_theme()
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+        QTimer.singleShot(1000, self.remove_always_on_top)
+    
+    def remove_always_on_top(self):
+        """Remove the always on top flag after window is established."""
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)
+        self.show()  # Re-show the window with updated flags
         
     def setup_ui(self):
         """Setup the modern UI with better layout and spacing."""
@@ -105,8 +112,7 @@ class MainWindow(QMainWindow):
         
         # Initialize panels with modern styling
         self.initialize_panels()
-
-        
+    
     def create_header(self, main_layout):
         """Create a modern header with title and controls."""
         header_frame = QFrame()

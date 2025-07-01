@@ -100,6 +100,9 @@ class HelpDialog(QDialog):
         self.setFixedSize(517, 350)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
         self.setup_ui()
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowCloseButtonHint)
+        self.raise_()
+        self.activateWindow()
 
     def setup_ui(self):
         """Set up the UI for the HelpDialog with a table for CSV requirements."""
@@ -198,6 +201,9 @@ class StarterDialog(QDialog):
         self.setFixedSize(520, 300)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
         self.setup_ui()
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowCloseButtonHint)
+        self.raise_()
+        self.activateWindow()
 
     def setup_ui(self):
         """Set up the UI for the StarterDialog."""
@@ -353,6 +359,24 @@ def show_modern_message_box(icon, title, text, buttons=QMessageBox.StandardButto
     
     return msg.exec()
 
+def force_window_to_front(window):
+    """Force a window to appear in front and be activated."""
+    window.show()
+    window.raise_()
+    window.activateWindow()
+    
+    # For Windows OS - additional activation
+    if sys.platform.startswith('win'):
+        try:
+            import ctypes
+            from ctypes import wintypes
+            
+            hwnd = int(window.winId())
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            ctypes.windll.user32.BringWindowToTop(hwnd)
+        except Exception:
+            pass  # Fallback if ctypes fails
+
 def main():
     """Main function to initialize and run the application."""
     logger.info("Starting main function")
@@ -434,6 +458,8 @@ def main():
         splash = SplashScreen()
         logger.info("SplashScreen created")
         splash.show()
+        splash.raise_()  # Bring to front
+        splash.activateWindow()  # Activate window
     except Exception as e:
         logger.warning(f"Could not create splash screen: {e}")
         splash = None
@@ -448,6 +474,8 @@ def main():
             splash.finish(window)
         else:
             window.show()
+            window.raise_()  # Bring to front
+            window.activateWindow()  # Activate window
             
         logger.info("Application fully loaded")
         

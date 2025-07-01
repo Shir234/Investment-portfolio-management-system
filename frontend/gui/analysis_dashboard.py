@@ -737,87 +737,103 @@ class AnalysisDashboard(QWidget):
 
     def update_selected_tickers(self):
         """Update the display of selected tickers in a vertical layout with dynamic sizing."""
-        # Clear existing buttons in the layout and dictionary
-        while self.selected_tickers_layout.count():
-            item = self.selected_tickers_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self.selected_tickers_buttons.clear()  # Clear dictionary to avoid stale references
-        logger.debug("Cleared selected tickers layout and buttons dictionary")
+        if hasattr(self, '_updating_tickers') and self._updating_tickers:
+            return
+        self._updating_tickers = True
 
-        # Get selected tickers
-        selected_items = self.ticker_list.selectedItems()
-        selected_tickers = [item.text() for item in selected_items]
+        try:
+            # Clear existing buttons in the layout and dictionary
+            while self.selected_tickers_layout.count():
+                item = self.selected_tickers_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            self.selected_tickers_buttons.clear()  # Clear dictionary to avoid stale references
+            logger.debug("Cleared selected tickers layout and buttons dictionary")
 
-        # Enforce 5-ticker limit
-        if len(selected_tickers) > 5:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setWindowTitle("Selection Limit")
-            msg.setText("Please select up to 5 tickers only.")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.setStyleSheet(self.get_message_box_style())
-            msg.exec()
-            for item in selected_items[5:]:
-                item.setSelected(False)
-            selected_tickers = selected_tickers[:5]
+            # Get selected tickers
+            selected_items = self.ticker_list.selectedItems()
+            selected_tickers = [item.text() for item in selected_items]
 
-        # Update ticker order
-        new_order = []
-        for ticker in self.selected_tickers_order:
-            if ticker in selected_tickers:
-                new_order.append(ticker)
-        for ticker in selected_tickers:
-            if ticker not in new_order:
-                new_order.append(ticker)
+            # Enforce 5-ticker limit
+            if len(selected_tickers) > 5:
+                msg = QMessageBox(self)  # Set parent
+                msg.setIcon(QMessageBox.Icon.Warning)
+                msg.setWindowTitle("Selection Limit")
+                msg.setText("Please select up to 5 tickers only.")
+                msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+                msg.setStyleSheet(self.get_message_box_style())
+                msg.exec()
+                
+                # Deselect excess items and prevent double processing
+                for item in selected_items[5:]:
+                    item.setSelected(False)
+                selected_tickers = selected_tickers[:5]
+                
+                # Update the selected_items list to match the corrected selection
+                selected_items = [item for item in selected_items if item.text() in selected_tickers]
+
+            # Update ticker order
+            new_order = []
+            for ticker in self.selected_tickers_order:
+                if ticker in selected_tickers:
+                    new_order.append(ticker)
+            for ticker in selected_tickers:
+                if ticker not in new_order:
+                    new_order.append(ticker)
+            
+            self.selected_tickers_order = new_order[:5]  # Ensure max 5 tickers
+            logger.debug(f"Updated selected tickers order: {self.selected_tickers_order}")
+
+            # Update ticker colors
+            self.ticker_colors = self._get_ticker_colors(self.selected_tickers_order)
+
+            # Add buttons for selected tickers
+            font = QFont("Segoe UI", 9)
+            font_metrics = QFontMetrics(font)
+            for ticker in self.selected_tickers_order:
+                color_info = self.ticker_colors.get(ticker, {'hex': '#1f77b4', 'hover': '#184f8d'})
+                
+                button = QPushButton(ticker)
+                button.setProperty("class", "ticker-button")
+                button.setFixedHeight(14)
+                button.setMinimumWidth(0)  # Allow shrinking
+                button.setMaximumWidth(190)  # Cap at container width
+                button.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+                button.setVisible(True)
+                button.clicked.connect(lambda _, t=ticker: self.remove_ticker(t))
+                
+                button_style = f"""
+                    QPushButton[class="ticker-button"] {{
+                        background-color: {color_info['hex']}; 
+                        color: white; 
+                        border: none; 
+                        padding: 1px 4px; 
+                        border-radius: 4px; 
+                        font-size: 9px;
+                        font-weight: bold;
+                        min-height: 14px;
+                        max-height: 14px;
+                        margin: 0px;
+                    }} 
+                    QPushButton[class="ticker-button"]:hover {{
+                        background-color: {color_info['hover']};
+                    }}
+                """
+                button.setStyleSheet(button_style)
+                self.selected_tickers_layout.addWidget(button)
+                self.selected_tickers_buttons[ticker] = button
+                text_width = font_metrics.horizontalAdvance(ticker) + 10
+                logger.debug(f"Added ticker button: {ticker}, color {color_info['hex']}, width {text_width}")
+
+            self._update_legend()
+            self.update_visualizations()
+            logger.debug(f"Selected tickers displayed: {self.selected_tickers_order}")
         
-        self.selected_tickers_order = new_order[:5]  # Ensure max 5 tickers
-        logger.debug(f"Updated selected tickers order: {self.selected_tickers_order}")
+        finally:
+            # ADD THIS TO RESET THE FLAG:
+            self._updating_tickers = False
 
-        # Update ticker colors
-        self.ticker_colors = self._get_ticker_colors(self.selected_tickers_order)
-
-        # Add buttons for selected tickers
-        font = QFont("Segoe UI", 9)
-        font_metrics = QFontMetrics(font)
-        for ticker in self.selected_tickers_order:
-            color_info = self.ticker_colors.get(ticker, {'hex': '#1f77b4', 'hover': '#184f8d'})
-            
-            button = QPushButton(ticker)
-            button.setProperty("class", "ticker-button")
-            button.setFixedHeight(14)
-            button.setMinimumWidth(0)  # Allow shrinking
-            button.setMaximumWidth(190)  # Cap at container width
-            button.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-            button.setVisible(True)
-            button.clicked.connect(lambda _, t=ticker: self.remove_ticker(t))
-            
-            button_style = f"""
-                QPushButton[class="ticker-button"] {{
-                    background-color: {color_info['hex']}; 
-                    color: white; 
-                    border: none; 
-                    padding: 1px 4px; 
-                    border-radius: 4px; 
-                    font-size: 9px;
-                    font-weight: bold;
-                    min-height: 14px;
-                    max-height: 14px;
-                    margin: 0px;
-                }} 
-                QPushButton[class="ticker-button"]:hover {{
-                    background-color: {color_info['hover']};
-                }}
-            """
-            button.setStyleSheet(button_style)
-            self.selected_tickers_layout.addWidget(button)
-            self.selected_tickers_buttons[ticker] = button
-            text_width = font_metrics.horizontalAdvance(ticker) + 10
-            logger.debug(f"Added ticker button: {ticker}, color {color_info['hex']}, width {text_width}")
-
-        self._update_legend()
-        self.update_visualizations()
-        logger.debug(f"Selected tickers displayed: {self.selected_tickers_order}")
 
     def adjust_color_brightness(self, hex_color, factor):
         """Adjust the brightness of a hex color for hover effect."""
@@ -843,12 +859,34 @@ class AnalysisDashboard(QWidget):
     def get_message_box_style(self):
         """Get stylesheet for message boxes."""
         colors = ModernStyles.COLORS['dark' if self.is_dark_mode else 'light']
-        return (
-            f"QMessageBox {{ background-color: {colors['surface']}; color: {colors['text_primary']}; }}"
-            f"QMessageBox QLabel {{ color: {colors['text_primary']}; }}"
-            f"QPushButton {{ background-color: {colors['accent']}; color: white; border: none; padding: 5px; border-radius: 3px; }}"
-            f"QPushButton:hover {{ background-color: {colors['accent_hover']}; }}"
-        )
+        return f"""
+            QMessageBox {{
+                background-color: {colors['primary']};
+                color: {colors['text_primary']};
+                font-size: 14px;
+                border: 1px solid {colors['border']};
+                border-radius: 8px;
+                padding: 16px;
+            }}
+            QMessageBox QLabel {{
+                color: {colors['text_primary']};
+                padding: 12px;
+                font-size: 13px;
+            }}
+            QMessageBox QPushButton {{
+                background-color: {colors['accent']};
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: 600;
+                min-width: 80px;
+                margin: 4px;
+            }}
+            QMessageBox QPushButton:hover {{
+                background-color: {colors['accent_hover']};
+            }}
+        """
 
     def calculate_win_rate_over_time(self):
         """Calculate win rate over time from both completed trades and open positions."""

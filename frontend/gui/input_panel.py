@@ -66,6 +66,9 @@ class TradeConfirmationDialog(QDialog):
         self.selected_orders = []
         self.is_dark_mode = getattr(parent, 'is_dark_mode', True)
         self.setup_ui()
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        self.raise_()
+        self.activateWindow()
 
     def setup_ui(self):
         """Configure the modern dialog UI."""

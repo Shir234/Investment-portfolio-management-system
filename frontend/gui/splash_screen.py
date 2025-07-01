@@ -7,7 +7,7 @@ class SplashScreen(QWidget):
     def __init__(self):
         super().__init__()
         # Remove window frame and stay on top
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
         # Create main layout
@@ -76,6 +76,9 @@ class SplashScreen(QWidget):
             (screen.width() - self.width()) // 2,
             (screen.height() - self.height()) // 2
         )
+
+        self.raise_()
+        self.activateWindow()
         
     def apply_modern_style(self, is_dark=True):
         """Apply modern styling to the splash screen."""
@@ -134,7 +137,7 @@ class SplashScreen(QWidget):
         self.setGraphicsEffect(self.opacity_effect)
         
         self.animation = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.animation.setDuration(3000)  # Smooth 1.5 second fade
+        self.animation.setDuration(2000)  # Smooth 1.5 second fade
         self.animation.setStartValue(1)
         self.animation.setEndValue(0)
         self.animation.finished.connect(lambda: self.finish_fade(next_window))
