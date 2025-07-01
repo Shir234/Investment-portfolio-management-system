@@ -729,7 +729,7 @@ class InputPanel(QWidget):
         self.end_date_input.setDate(QDate(2023, 12, 22))
 
     def set_date_constraints(self):
-        """Set date constraints based on available data in the CSV file."""
+        """Set date constraints based on available data in the CSV file AND existing trades."""
         if self.data_manager and self.data_manager.data is not None:
             try:
                 # Try different possible column names for dates
@@ -741,23 +741,152 @@ class InputPanel(QWidget):
                 
                 if date_column:
                     dates = pd.to_datetime(self.data_manager.data[date_column])
-                    min_date = dates.min().date()
-                    max_date = dates.max().date()
+                    dataset_min_date = dates.min().date()
+                    dataset_max_date = dates.max().date()
+                    
+                    # Get the minimum allowable date based on existing trades
+                    min_allowable_date = self.get_minimum_allowable_date(dataset_min_date)
                     
                     # Convert Python dates to QDate
-                    q_min_date = QDate(min_date.year, min_date.month, min_date.day)
-                    q_max_date = QDate(max_date.year, max_date.month, max_date.day)
+                    q_min_date = QDate(min_allowable_date.year, min_allowable_date.month, min_allowable_date.day)
+                    q_max_date = QDate(dataset_max_date.year, dataset_max_date.month, dataset_max_date.day)
                     
-                    # Set date ranges
+                    # Set date ranges - start date cannot go before last traded date
                     self.start_date_input.setDateRange(q_min_date, q_max_date)
                     self.end_date_input.setDateRange(q_min_date, q_max_date)
                     
-                    logger.info(f"Set date constraints: {min_date} to {max_date}")
+                    # Update tooltips to explain the constraints
+                    self.update_date_constraint_tooltips(min_allowable_date, dataset_max_date)
+                    
+                    logger.info(f"Set date constraints: minimum allowable={min_allowable_date}, max={dataset_max_date}")
                 else:
                     logger.warning("No date column found for setting constraints")
                     
             except Exception as e:
                 logger.error(f"Error setting date constraints: {e}")
+
+    def get_minimum_allowable_date(self, dataset_min_date):
+        """
+        Get the minimum allowable trading date based on existing trade history.
+        If there are existing trades, can only trade AFTER the last traded date.
+        If no trades exist, can start from dataset minimum.
+        """
+        try:
+            # Try to get existing orders
+            orders = get_orders()
+            
+            if orders:
+                # Find the latest trade date
+                order_dates = []
+                for order in orders:
+                    if 'date' in order:
+                        order_date = order['date']
+                        if isinstance(order_date, str):
+                            order_date = pd.to_datetime(order_date, utc=True)
+                        elif isinstance(order_date, pd.Timestamp):
+                            order_date = order_date if order_date.tz else order_date.tz_localize('UTC')
+                        order_dates.append(order_date)
+                
+                if order_dates:
+                    latest_trade_date = max(order_dates)
+                    # Can only trade AFTER the last traded date (add 1 day)
+                    min_allowable_date = (latest_trade_date + pd.Timedelta(days=1)).date()
+                    
+                    # Ensure it's not before dataset minimum
+                    min_allowable_date = max(min_allowable_date, dataset_min_date)
+                    
+                    logger.info(f"Found existing trades. Latest trade: {latest_trade_date.date()}, min allowable: {min_allowable_date}")
+                    return min_allowable_date
+            
+            # No existing trades, can start from dataset minimum
+            logger.info(f"No existing trades found. Using dataset minimum: {dataset_min_date}")
+            return dataset_min_date
+            
+        except Exception as e:
+            logger.error(f"Error getting minimum allowable date: {e}")
+            return dataset_min_date
+
+    def update_date_constraint_tooltips(self, min_allowable_date, max_date):
+        """Update tooltips to explain date constraints clearly."""
+        try:
+            # Check if there are existing orders to determine message
+            orders = get_orders()
+            
+            if orders:
+                # Find latest trade date for tooltip
+                latest_trade = None
+                for order in orders:
+                    if 'date' in order:
+                        order_date = order['date']
+                        if isinstance(order_date, str):
+                            order_date = pd.to_datetime(order_date, utc=True)
+                        elif isinstance(order_date, pd.Timestamp):
+                            order_date = order_date if order_date.tz else order_date.tz_localize('UTC')
+                        if latest_trade is None or order_date > latest_trade:
+                            latest_trade = order_date
+                
+                if latest_trade:
+                    start_tooltip = (f"Select strategy start date\n"
+                                f"Cannot trade on dates before {min_allowable_date}\n"
+                                f"Last trade was executed on: {latest_trade.date()}\n"
+                                f"Available range: {min_allowable_date} to {max_date}")
+                    
+                    end_tooltip = (f"Select strategy end date\n"
+                                f"Must be after start date\n"
+                                f"Available range: {min_allowable_date} to {max_date}")
+                else:
+                    start_tooltip = f"Select strategy start date\nAvailable range: {min_allowable_date} to {max_date}"
+                    end_tooltip = f"Select strategy end date\nAvailable range: {min_allowable_date} to {max_date}"
+            else:
+                start_tooltip = f"Select strategy start date\nAvailable range: {min_allowable_date} to {max_date}"
+                end_tooltip = f"Select strategy end date\nAvailable range: {min_allowable_date} to {max_date}"
+
+            self.start_date_input.setToolTip(start_tooltip)
+            self.end_date_input.setToolTip(end_tooltip)
+            
+        except Exception as e:
+            logger.error(f"Error updating date constraint tooltips: {e}")
+
+    def refresh_date_constraints_after_trade(self):
+        """Refresh date constraints after a trade has been executed."""
+        try:
+            # Recalculate and apply date constraints
+            self.set_date_constraints()
+            
+            # Get the new minimum allowable date
+            if self.data_manager and self.data_manager.data is not None:
+                date_column = None
+                for col in ['Date', 'date', 'DATE']:
+                    if col in self.data_manager.data.columns:
+                        date_column = col
+                        break
+                
+                if date_column:
+                    dates = pd.to_datetime(self.data_manager.data[date_column])
+                    dataset_min_date = dates.min().date()
+                    min_allowable_date = self.get_minimum_allowable_date(dataset_min_date)
+                    
+                    # Update start date to the minimum allowable date
+                    q_min_date = QDate(min_allowable_date.year, min_allowable_date.month, min_allowable_date.day)
+                    self.start_date_input.setDate(q_min_date)
+                    
+                    # If end date is before minimum allowable, update it too
+                    if self.end_date_input.date().toPyDate() < min_allowable_date:
+                        # Set end date to a reasonable default (e.g., 30 days after min allowable)
+                        default_end = min_allowable_date + pd.Timedelta(days=30).to_pytimedelta()
+                        
+                        # Make sure it doesn't exceed dataset maximum
+                        dataset_max_date = dates.max().date()
+                        if default_end > dataset_max_date:
+                            default_end = dataset_max_date
+                        
+                        q_end_date = QDate(default_end.year, default_end.month, default_end.day)
+                        self.end_date_input.setDate(q_end_date)
+                    
+                    logger.info(f"Refreshed date constraints after trade. New minimum: {min_allowable_date}")
+            
+        except Exception as e:
+            logger.error(f"Error refreshing date constraints after trade: {e}")
 
     def create_action_buttons(self, main_layout):
         """Create the action buttons section with smaller, more compact buttons."""
@@ -1198,7 +1327,7 @@ class InputPanel(QWidget):
         return msg.exec()
 
     def validate_inputs(self):
-        """Validate user inputs with better error messages."""
+        """Validate user inputs with timeline protection checks."""
         try:
             investment_amount = float(self.investment_input.text().replace(',', ''))
             if investment_amount <= 0:
@@ -1236,8 +1365,69 @@ class InputPanel(QWidget):
             )
             return None
 
+        # NEW: Timeline protection validation
+        timeline_validation = self.validate_timeline_constraints(start_date, end_date)
+        if not timeline_validation[0]:
+            self.show_message_box(
+                QMessageBox.Icon.Warning,
+                "Timeline Constraint Violation",
+                timeline_validation[1],
+                QMessageBox.StandardButton.Ok
+            )
+            return None
+
         return investment_amount, risk_level, start_date, end_date
 
+    def validate_timeline_constraints(self, start_date, end_date):
+        """
+        Validate that the selected dates don't violate timeline constraints.
+        Returns (is_valid, error_message)
+        """
+        try:
+            # Get existing orders
+            orders = get_orders()
+            
+            if not orders:
+                return True, "No timeline constraints - no previous trades"
+            
+            # Find all traded dates
+            traded_dates = set()
+            latest_trade_date = None
+            
+            for order in orders:
+                if 'date' in order:
+                    order_date = order['date']
+                    if isinstance(order_date, str):
+                        order_date = pd.to_datetime(order_date, utc=True)
+                    elif isinstance(order_date, pd.Timestamp):
+                        order_date = order_date if order_date.tz else order_date.tz_localize('UTC')
+                    
+                    trade_date = order_date.date()
+                    traded_dates.add(trade_date)
+                    
+                    if latest_trade_date is None or trade_date > latest_trade_date:
+                        latest_trade_date = trade_date
+            
+            if latest_trade_date:
+                # Check if trying to trade before the last traded date
+                if start_date <= latest_trade_date:
+                    return False, (f"Cannot trade on or before {latest_trade_date}.\n"
+                                f"You have already executed trades up to this date.\n"
+                                f"Please select a start date after {latest_trade_date}.")
+                
+                # Check if the date range includes any previously traded dates
+                current_date = start_date
+                while current_date <= end_date:
+                    if current_date in traded_dates:
+                        return False, (f"Cannot trade on {current_date} - already traded on this date.\n"
+                                    f"Please select a date range that doesn't include previously traded dates.")
+                    current_date += pd.Timedelta(days=1).to_pytimedelta()
+            
+            return True, "Timeline constraints validated successfully"
+            
+        except Exception as e:
+            logger.error(f"Error validating timeline constraints: {e}")
+            return False, f"Error validating timeline constraints: {e}"
 
     def update_financial_metrics(self, cash=0, portfolio_value=0):
         """Update financial metrics display with color coding."""
@@ -1376,6 +1566,10 @@ class InputPanel(QWidget):
             if hasattr(self.main_window, 'update_dashboard'):
                 self.main_window.update_dashboard()
             
+            # NEW: Refresh date constraints after successful trade
+            if orders:  # Only if trades were actually executed
+                self.refresh_date_constraints_after_trade()
+            
             # Show success message
             self.show_message_box(
                 QMessageBox.Icon.Information,
@@ -1386,6 +1580,46 @@ class InputPanel(QWidget):
                 QMessageBox.StandardButton.Ok
             )
             logger.info("Strategy execution completed successfully")
+
+    def handle_semi_auto_result(self, success, result):
+        """Handle semi-automatic trade execution results."""
+        self.execute_button.setEnabled(True)
+        self.hide_progress()
+        
+        if not success:
+            self.show_message_box(
+                QMessageBox.Icon.Critical,
+                "Trade Execution Failed",
+                f"Failed to execute selected trades:\n\n{result.get('warning_message', 'Unknown error')}",
+                QMessageBox.StandardButton.Ok
+            )
+            logger.error(f"Trade execution failed: {result.get('warning_message')}")
+            return
+
+        portfolio_value = result.get('portfolio_value', 0)
+        cash = result.get('cash', 0)
+        orders = result.get('orders', [])
+
+        self.update_financial_metrics(cash, portfolio_value)
+        log_trading_orders()
+        
+        if hasattr(self.main_window, 'update_dashboard'):
+            self.main_window.update_dashboard()
+        
+        # NEW: Refresh date constraints after successful trade
+        if orders:  # Only if trades were actually executed
+            self.refresh_date_constraints_after_trade()
+            
+        # Show success message
+        self.show_message_box(
+            QMessageBox.Icon.Information,
+            "Trades Executed Successfully",
+            f"Selected trades executed successfully!\n\n"
+            f"Orders completed: {len(orders)}\n"
+            f"Current portfolio value: ${(cash + portfolio_value):,.2f}",
+            QMessageBox.StandardButton.Ok
+        )
+        logger.info("Semi-automatic strategy execution completed successfully")
 
     def execute_selected_trades(self, selected_orders):
         """Execute selected trades from semi-automatic mode."""
