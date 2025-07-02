@@ -14,47 +14,13 @@ from frontend.data.trading_connector import execute_trading_strategy, get_order_
 from backend.trading_logic_new import get_orders, get_portfolio_history
 from frontend.gui.styles import ModernStyles
 from frontend.utils import resource_path
-from .wheel_disabled_widgets import WheelDisabledSpinBox, WheelDisabledDateEdit, WheelDisabledComboBox
+from frontend.gui.wheel_disabled_widgets import WheelDisabledSpinBox, WheelDisabledDateEdit, WheelDisabledComboBox
+from frontend.gui.semi_automated_manager import SemiAutomatedManager
+from frontend.gui.worker import Worker
 
 
 # Set up logging
 logger = get_logger(__name__)
-
-class Worker(QObject):
-    """Worker class to run execute_trading_strategy in a background thread."""
-    finished = pyqtSignal(bool, dict)  # success, result
-    error = pyqtSignal(str)  # error message
-    progress = pyqtSignal(str)  # progress message
-
-    def __init__(self, investment_amount, risk_level, start_date, end_date, data_manager, mode, reset_state, selected_orders=None):
-        super().__init__()
-        self.investment_amount = investment_amount
-        self.risk_level = risk_level
-        self.start_date = start_date
-        self.end_date = end_date
-        self.data_manager = data_manager
-        self.mode = mode
-        self.reset_state = reset_state
-        self.selected_orders = selected_orders
-
-    def run(self):
-        """Execute the trading strategy in the background."""
-        try:
-            self.progress.emit("Initializing strategy...")
-            success, result = execute_trading_strategy(
-                investment_amount=self.investment_amount,
-                risk_level=self.risk_level,
-                start_date=self.start_date,
-                end_date=self.end_date,
-                data_manager=self.data_manager,
-                mode=self.mode,
-                reset_state=self.reset_state,
-                selected_orders=self.selected_orders
-            )
-            self.finished.emit(success, result)
-        except Exception as e:
-            logger.error(f"Error in Worker.run: {e}", exc_info=True)
-            self.error.emit(str(e))
 
 class TradeConfirmationDialog(QDialog):
     """Modern dialog for confirming trades in semi-automatic mode."""
@@ -689,6 +655,47 @@ class InputPanel(QWidget):
 
         main_layout.addWidget(config_group)
 
+        # Window Size (only for semi-automatic)
+        window_container = QFrame()
+        window_layout = QVBoxLayout(window_container)
+        window_layout.setContentsMargins(0, 0, 0, 0)
+        window_layout.setSpacing(0)
+
+        window_label_frame = QFrame()
+        window_label_frame.setProperty("class", "label-frame")
+        window_label_frame.setFixedHeight(28)
+        window_label_layout = QHBoxLayout(window_label_frame)
+        window_label_layout.setContentsMargins(10, 6, 10, 6)
+
+        window_label = QLabel("Window Size (days):")
+        window_label.setProperty("class", "label-dark")
+        window_label_layout.addWidget(window_label)
+        window_label_layout.addStretch()
+
+        window_input_frame = QFrame()
+        window_input_frame.setProperty("class", "input-frame")
+        window_input_layout = QHBoxLayout(window_input_frame)
+        window_input_layout.setContentsMargins(10, 8, 10, 8)
+
+        self.window_size_input = WheelDisabledSpinBox()
+        self.window_size_input.setRange(3, 7)
+        self.window_size_input.setValue(5)
+        self.window_size_input.setToolTip("Number of days per trading window (3-7 days recommended)")
+        self.window_size_input.setProperty("class", "input-field")
+        window_input_layout.addWidget(self.window_size_input)
+
+        window_layout.addWidget(window_label_frame)
+        window_layout.addWidget(window_input_frame)
+        config_layout.addWidget(window_container)
+
+        # Hide/show based on mode selection
+        def on_mode_change():
+            is_semi_auto = self.mode_combo.currentText() == "Semi-Automatic"
+            window_container.setVisible(is_semi_auto)
+
+        self.mode_combo.currentTextChanged.connect(on_mode_change)
+        on_mode_change()  # Set initial visibility
+
     def set_default_values(self):
         """Set default values based on data availability."""
         try:
@@ -984,8 +991,6 @@ class InputPanel(QWidget):
         metrics_layout.addWidget(self.total_label, 0, 2)
 
         main_layout.addWidget(metrics_group)
-
-    # Updated apply_styles method for input_panel.py
 
     def apply_styles(self):
         """Apply modern styling to the panel with compact elements."""
@@ -1469,7 +1474,7 @@ class InputPanel(QWidget):
         self.status_label.setText("Ready to execute strategy")
 
     def execute_strategy(self):
-        """Execute the trading strategy with modern UI feedback."""
+        """Execute the trading strategy with enhanced semi-automated mode."""
         inputs = self.validate_inputs()
         if inputs is None:
             return
@@ -1494,11 +1499,52 @@ class InputPanel(QWidget):
                 logger.info("User cancelled execution due to short date range")
                 return
 
+        # Handle semi-automatic mode differently
+        if mode == "semi-automatic":
+            self._execute_windowed_semi_automatic(investment_amount, risk_level, start_date, end_date)
+        else:
+            self._execute_automatic_mode(investment_amount, risk_level, start_date, end_date)
+    
+    def _execute_windowed_semi_automatic(self, investment_amount, risk_level, start_date, end_date):
+        """Execute windowed semi-automatic trading with proper portfolio state management."""
+        # Check if date range is too long for semi-automatic
+        date_diff = (end_date - start_date).days
+        
+        if date_diff > 30:  # More than 30 days
+            result = self.show_message_box(
+                QMessageBox.Icon.Warning,
+                "Long Date Range for Semi-Automatic",
+                f"The selected date range is {date_diff} days long.\n"
+                f"Semi-automatic mode works best with shorter periods (≤30 days).\n\n"
+                f"This will create approximately {date_diff // 5} trading windows.\n"
+                f"Would you like to proceed or reduce the date range?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if result == QMessageBox.StandardButton.No:
+                logger.info("User cancelled semi-automatic execution due to long date range")
+                return
+        
+        # FIXED: Reset portfolio state before starting semi-automated trading
+        try:
+            if os.path.exists(self.portfolio_state_file):
+                os.remove(self.portfolio_state_file)
+                logger.info("Reset portfolio state for fresh semi-automated trading")
+        except Exception as e:
+            logger.warning(f"Could not reset portfolio state: {e}")
+        
+        # Create and start semi-automated manager
+        self.semi_auto_manager = SemiAutomatedManager(self, self.main_window)
+        self.semi_auto_manager.start_windowed_trading(
+            investment_amount, risk_level, start_date, end_date
+        )
+
+    def _execute_automatic_mode(self, investment_amount, risk_level, start_date, end_date):
+        """Execute automatic mode (existing logic)."""
         # Show progress and disable controls
         self.execute_button.setEnabled(False)
         self.show_progress("Initializing trading strategy...")
 
-        # Set up worker and thread
+        # Set up worker and thread (existing logic)
         self.thread = QThread()
         self.worker = Worker(
             investment_amount=investment_amount,
@@ -1506,7 +1552,7 @@ class InputPanel(QWidget):
             start_date=start_date,
             end_date=end_date,
             data_manager=self.data_manager,
-            mode=mode,
+            mode="automatic",
             reset_state=True,
             selected_orders=None
         )
@@ -1621,6 +1667,38 @@ class InputPanel(QWidget):
         )
         logger.info("Semi-automatic strategy execution completed successfully")
 
+    def handle_window_semi_auto_result(self, success, result):
+        """Handle semi-automatic trade execution results for windowed trading."""
+        self.execute_button.setEnabled(True)
+        self.hide_progress()
+        
+        if not success:
+            self.show_message_box(
+                QMessageBox.Icon.Critical,
+                "Window Trade Execution Failed",
+                f"Failed to execute selected trades for this window:\n\n{result.get('warning_message', 'Unknown error')}",
+                QMessageBox.StandardButton.Ok
+            )
+            logger.error(f"Window trade execution failed: {result.get('warning_message')}")
+            return
+
+        portfolio_value = result.get('portfolio_value', 0)
+        cash = result.get('cash', 0)
+        orders = result.get('orders', [])
+
+        # Update financial metrics to show current state
+        self.update_financial_metrics(cash, portfolio_value)
+        
+        # Log the orders but don't call log_trading_orders() as it might interfere
+        logger.info(f"Window completed: {len(orders)} orders executed, Cash=${cash:,.2f}, Portfolio=${portfolio_value:,.2f}")
+        
+        # Update dashboard if available
+        if hasattr(self.main_window, 'update_dashboard'):
+            self.main_window.update_dashboard()
+        
+        # The SemiAutomatedManager will handle moving to the next window
+        return success, result
+
     def execute_selected_trades(self, selected_orders):
         """Execute selected trades from semi-automatic mode."""
         # Re-run strategy with selected orders
@@ -1716,21 +1794,71 @@ class InputPanel(QWidget):
         
         if result == QMessageBox.StandardButton.Yes:
             try:
+                # IMPORTANT: Reset the in-memory orders list FIRST
+                from backend.trading_logic_new import reset_portfolio_for_semi_auto
+                reset_portfolio_for_semi_auto()
+                
                 if os.path.exists(self.portfolio_state_file):
                     os.remove(self.portfolio_state_file)
                     logger.debug(f"Deleted {self.portfolio_state_file}")
                 
-                self.update_financial_metrics()
+                # Reset financial metrics to default values
+                investment_amount = float(self.investment_input.text().replace(',', ''))
+                self.update_financial_metrics(investment_amount, investment_amount)
                 
+                # IMPORTANT: Refresh date constraints to allow trading from dataset beginning
+                self.set_date_constraints()
+                
+                # Force update the start date to dataset minimum after constraints are reset
+                if self.data_manager.data is not None and not self.data_manager.data.empty:
+                    try:
+                        # Get dataset start date
+                        date_column = None
+                        for col in ['Date', 'date', 'DATE']:
+                            if col in self.data_manager.data.columns:
+                                date_column = col
+                                break
+                        
+                        if date_column:
+                            dates = pd.to_datetime(self.data_manager.data[date_column])
+                            dataset_min_date = dates.min().date()
+                            dataset_max_date = dates.max().date()
+                            
+                            # Explicitly set the start date to dataset minimum
+                            q_min_date = QDate(dataset_min_date.year, dataset_min_date.month, dataset_min_date.day)
+                            q_max_date = QDate(dataset_max_date.year, dataset_max_date.month, dataset_max_date.day)
+                            
+                            # Force set the start date to the beginning of dataset
+                            self.start_date_input.setDate(q_min_date)
+                            self.end_date_input.setDate(q_max_date)
+                            
+                            logger.info(f"Reset start date to dataset minimum: {dataset_min_date}")
+                        else:
+                            # Fallback if no date column found
+                            self.set_default_values()
+                    except Exception as e:
+                        logger.error(f"Error setting reset dates: {e}")
+                        self.set_default_values()
+                else:
+                    # No data available, use fallback
+                    self.set_default_values()
+                
+                # Update date tooltips to reflect the reset state
+                self.update_date_tooltips()
+                
+                # Update dashboard and recommendations
                 if hasattr(self.main_window, 'update_dashboard'):
                     self.main_window.update_dashboard()
                 
                 self.show_message_box(
                     QMessageBox.Icon.Information,
                     "Portfolio Reset",
-                    "Portfolio has been reset successfully.",
+                    "Portfolio has been reset successfully.\n\n"
+                    "You can now trade from the beginning of the dataset.",
                     QMessageBox.StandardButton.Ok
                 )
+                
+                logger.info("Portfolio reset completed - date constraints refreshed")
                 
             except Exception as e:
                 logger.error(f"Error resetting portfolio: {e}")
@@ -1740,55 +1868,6 @@ class InputPanel(QWidget):
                     f"Failed to reset portfolio:\n\n{e}",
                     QMessageBox.StandardButton.Ok
                 )
-
-    # Additional utility methods for compatibility and functionality
-    def update_date_constraints(self):
-        """Set minimum dates based on existing trades and dataset."""
-        try:
-            orders = get_orders()
-            
-            # Get dataset dates
-            if self.data_manager.data is not None and not self.data_manager.data.empty:
-                # Try different possible column names for dates
-                date_column = None
-                for col in ['Date', 'date', 'DATE']:
-                    if col in self.data_manager.data.columns:
-                        date_column = col
-                        break
-                
-                if date_column:
-                    dates = pd.to_datetime(self.data_manager.data[date_column])
-                    dataset_start = dates.min()
-                    dataset_end = dates.max()
-                else:
-                    dataset_start = pd.Timestamp(datetime(2021, 1, 1), tz='UTC')
-                    dataset_end = pd.Timestamp(datetime(2023, 12, 31), tz='UTC')
-            else:
-                dataset_start = pd.Timestamp(datetime(2021, 1, 1), tz='UTC')
-                dataset_end = pd.Timestamp(datetime(2023, 12, 31), tz='UTC')
-
-            if orders:
-                order_dates = pd.to_datetime([order['date'] for order in orders], utc=True)
-                latest_trade_date = order_dates.max()
-                min_date = latest_trade_date + pd.Timedelta(days=1)
-            else:
-                min_date = dataset_start
-
-            max_date = dataset_end
-
-            self.start_date_input.setMinimumDate(QDate(min_date.year, min_date.month, min_date.day))
-            self.start_date_input.setMaximumDate(QDate(max_date.year, max_date.month, max_date.day))
-            self.end_date_input.setMinimumDate(QDate(min_date.year, min_date.month, min_date.day))
-            self.end_date_input.setMaximumDate(QDate(max_date.year, max_date.month, max_date.day))
-
-            self.start_date_input.setToolTip(
-                f"Select a date between {min_date.date()} and {max_date.date()}"
-            )
-            self.end_date_input.setToolTip(
-                f"Select a date after start date and before {max_date.date()}"
-            )
-        except Exception as e:
-            logger.error(f"Error updating date constraints: {e}")
 
     def get_current_settings(self):
         """Get current input panel settings as a dictionary."""
