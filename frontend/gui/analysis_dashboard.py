@@ -156,7 +156,7 @@ class AnalysisDashboard(QWidget):
         
         # Define plot descriptions for tooltips
         self.plot_descriptions = {
-            "Predicted vs Actual Sharpe": "Plots predicted Sharpe ratios as solid lines and actual Sharpe ratios as dots over time.",
+            "Predicted vs Actual Sharpe": "Plots predicted Sharpe ratios as dots over and actual Sharpe ratios as solid lines time.",
             "Profit over Std Dev": "Shows profit divided by average annual standard deviation of portfolio value over rolling one-year periods.",
             "Portfolio Value Over Time": "Displays the portfolio value over time compared to the S&P 500 benchmark.",
             "Buy/Sell Distribution": "Pie chart showing the distribution of buy and sell transactions in the current portfolio.",
@@ -164,9 +164,17 @@ class AnalysisDashboard(QWidget):
         }
         
         # Define a distinguishable color palette
+        # self.color_palette = [
+        #     '#1f77b4', '#87ceeb', '#ff7f0e', '#2ca02c', '#d62728',
+        #     '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22'
+        # ]
+        # Define a highly distinguishable color palette with good contrast
         self.color_palette = [
-            '#1f77b4', '#87ceeb', '#ff7f0e', '#2ca02c', '#d62728',
-            '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22'
+            '#E53E3E',  # Red - high contrast
+            '#38A169',  # Green - distinct from red
+            '#3182CE',  # Blue - but darker than before
+            '#D69E2E',  # Orange/Gold - warm color
+            '#805AD5'   # Purple - cool contrast
         ]
         
         # Select available font
@@ -313,9 +321,10 @@ class AnalysisDashboard(QWidget):
         graph_label.enterEvent = lambda event: self._show_label_tooltip(event, graph_label)
         graph_label.leaveEvent = lambda event: QToolTip.hideText()
         graph_layout.addWidget(graph_label)
-        
+
         self.graph_combo = CustomComboBox(get_tooltip_text=self.get_current_plot_description)
         self.graph_combo.addItems([
+            "Select Graph Type",
             "Predicted vs Actual Sharpe",
             "Profit over Std Dev",
             "Portfolio Value Over Time",
@@ -362,6 +371,7 @@ class AnalysisDashboard(QWidget):
 
     def change_graph_type(self, index):
         """Handle graph type change from combo box."""
+        self._update_legend() 
         self.update_visualizations()
         logger.debug(f"Changed graph type to: {self.graph_combo.currentText()}")
 
@@ -600,6 +610,9 @@ class AnalysisDashboard(QWidget):
 
         graph_type = self.graph_combo.currentText()
         theme_colors = self._get_theme_colors()
+
+        if graph_type == "Select Graph Type":
+            return
 
         if graph_type == "Predicted vs Actual Sharpe":
             for idx, ticker in enumerate(self.selected_tickers_order[:5]):
@@ -1102,6 +1115,16 @@ class AnalysisDashboard(QWidget):
         self.chart_fig.clear()
         self._update_figure_colors()
 
+        if graph_type == "Select Graph Type":
+            ax = self.chart_fig.add_subplot(111)
+            theme_colors = self._get_theme_colors()
+            ax.text(0.5, 0.5, 'Please select a graph type to display visualization', 
+                horizontalalignment='center', verticalalignment='center', 
+                color=theme_colors['text'], fontsize=14)
+            ax.set_facecolor(theme_colors['surface'])
+            self.chart_canvas.draw()
+            return
+
         try:
             start_date = pd.to_datetime(self.data_manager.start_date, utc=True) if self.data_manager.start_date else None
             end_date = pd.to_datetime(self.data_manager.end_date, utc=True) if self.data_manager.end_date else None
@@ -1144,7 +1167,7 @@ class AnalysisDashboard(QWidget):
         logger.info("Dashboard updated")
 
     def plot_predicted_vs_actual_sharpe(self, selected_tickers):
-        """Plot predicted Sharpe as solid lines and actual Sharpe as dots over time."""
+        """Plot predicted Sharpe as dots and actual Sharpe as solid lines over time."""
         ax = self.chart_fig.add_subplot(111)
         theme_colors = self._get_theme_colors()
         
@@ -1173,12 +1196,15 @@ class AnalysisDashboard(QWidget):
         for idx, ticker in enumerate(selected_tickers):
             ticker_data = data[data['Ticker'] == ticker].sort_values('date')
             if not ticker_data.empty:
-                ax.plot(ticker_data['date'], ticker_data['Best_Prediction'],
-                        label=f'{ticker} Predicted', color=colors[idx], linewidth=2.0)
+                # Predicted values as dots/scatter
+                ax.scatter(ticker_data['date'], ticker_data['Best_Prediction'],
+                        label=f'{ticker} Predicted', color=colors[idx], s=50)
+                
+                # Actual values as solid lines (only where available)
                 actual_data = ticker_data[ticker_data['Actual_Sharpe'] != -1.0]
                 if not actual_data.empty:
-                    ax.scatter(actual_data['date'], actual_data['Actual_Sharpe'],
-                               label=f'{ticker} Actual', color=colors[idx], s=50)
+                    ax.plot(actual_data['date'], actual_data['Actual_Sharpe'],
+                        label=f'{ticker} Actual', color=colors[idx], linewidth=2.0)
 
         ax.set_title('Predicted vs Actual Sharpe Ratios', pad=10, color=theme_colors['text'])
         ax.set_xlabel('Date', color=theme_colors['text'])
@@ -1200,7 +1226,24 @@ class AnalysisDashboard(QWidget):
             return
 
         df = pd.DataFrame(portfolio_history)
-        df['date'] = pd.to_datetime(df['date'], utc=True)
+
+        try:
+            df['date'] = pd.to_datetime(df['date'], format='mixed', utc=True)
+        except Exception as e:
+            # Fallback: try without utc=True first, then convert
+            try:
+                df['date'] = pd.to_datetime(df['date'], format='mixed')
+                if df['date'].dt.tz is None:
+                    df['date'] = df['date'].dt.tz_localize('UTC')
+                else:
+                    df['date'] = df['date'].dt.tz_convert('UTC')
+            except Exception as fallback_error:
+                logger.error(f"Failed to parse dates: {e}, fallback error: {fallback_error}")
+                ax.text(0.5, 0.5, 'Error parsing portfolio history dates', 
+                    horizontalalignment='center', verticalalignment='center', 
+                    color=theme_colors['text'])
+                return
+        
         df = df[(df['date'] >= self.start_date) & (df['date'] <= self.end_date)]
         if df.empty:
             ax.text(0.5, 0.5, 'No portfolio history in date range', horizontalalignment='center',
@@ -1248,7 +1291,16 @@ class AnalysisDashboard(QWidget):
             return
 
         df = pd.DataFrame(portfolio_history)
-        df['date'] = pd.to_datetime(df['date'], utc=True)
+
+        try:
+            df['date'] = pd.to_datetime(df['date'], format='mixed', utc=True)
+        except:
+            df['date'] = pd.to_datetime(df['date'], format='mixed')
+            if df['date'].dt.tz is None:
+                df['date'] = df['date'].dt.tz_localize('UTC')
+            else:
+                df['date'] = df['date'].dt.tz_convert('UTC')
+
         df = df[(df['date'] >= self.start_date) & (df['date'] <= self.end_date)]
         if df.empty:
             ax.text(0.5, 0.5, 'No portfolio history in date range', horizontalalignment='center',
