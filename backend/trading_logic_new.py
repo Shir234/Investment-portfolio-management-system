@@ -323,6 +323,17 @@ def sell_logic(daily_data, sell_threshold, holdings, current_date):
         purchase_date = holding['purchase_date']
         shares = holding['shares']
 
+        # Ensure both dates are Timestamps for comparison
+        if isinstance(purchase_date, str):
+            purchase_date = pd.to_datetime(purchase_date, utc=True)
+        elif isinstance(purchase_date, pd.Timestamp):
+            purchase_date = purchase_date if purchase_date.tz else purchase_date.tz_localize('UTC')
+        
+        if isinstance(current_date, str):
+            current_date = pd.to_datetime(current_date, utc=True)
+        elif isinstance(current_date, pd.Timestamp):
+            current_date = current_date if current_date.tz else current_date.tz_localize('UTC')
+
         # Calculate days held and profit/loss
         days_held = (current_date - purchase_date).days
         profit_pct = (current_price - purchase_price) / purchase_price
@@ -659,6 +670,25 @@ def execute_orders(orders_to_execute, holdings, cash, mode="automatic"):
     """
 
 
+def add_cash_to_portfolio(additional_cash):
+    """Add cash to the current portfolio state."""
+    global portfolio_history
+    
+    if portfolio_history:
+        # Update the latest portfolio entry
+        latest_state = portfolio_history[-1].copy()
+        latest_state['cash'] += additional_cash
+        latest_state['value'] += additional_cash
+        latest_state['date'] = pd.Timestamp.now(tz='UTC')
+        
+        portfolio_history.append(latest_state)
+        save_portfolio_state()
+        
+        logger.info(f"Added ${additional_cash:,.2f} to portfolio cash")
+    else:
+        logger.warning("No portfolio history found - cannot add cash")
+
+
 # def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False, use_weights=True, use_signal_strength=True, selected_orders=None):
 #     """
 #     Execute trading strategy combining Buy/Sell functions with LONG/SHORT support.
@@ -872,7 +902,8 @@ def execute_orders(orders_to_execute, holdings, cash, mode="automatic"):
 #             return [], [], investment_amount, warning_message
 #         else:
 #             return [], warning_message
-def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False, use_weights=True, use_signal_strength=True, selected_orders=None):
+def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False, use_weights=True, use_signal_strength=True, selected_orders=None, current_cash=None, current_holdings=None):
+#def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False, use_weights=True, use_signal_strength=True, selected_orders=None):
     """
     Execute trading strategy combining Buy/Sell functions with LONG/SHORT support.
     
@@ -895,6 +926,20 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
     global orders, portfolio_history
 
     try:
+        if reset_state:
+                # Only reset if explicitly requested (first window)
+                orders = []
+                portfolio_history = []
+                if os.path.exists(portfolio_state_file):
+                    os.remove(portfolio_state_file)
+                logger.info("Portfolio state reset for trading")
+        if mode != "semi-automatic":
+            load_portfolio_state()
+        elif not reset_state:
+            load_portfolio_state()
+            logger.info(f"Loaded existing portfolio state: {len(orders)} orders, {len(portfolio_history)} history")
+
+        """
         # FIXED: Handle portfolio initialization properly for semi-automatic mode
         if mode == "semi-automatic":
             if reset_state:
@@ -916,28 +961,29 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
                 if os.path.exists(portfolio_state_file):
                     os.remove(portfolio_state_file)
             load_portfolio_state()
-
-        # FIXED: Initialize portfolio variables based on mode
+        """
+        
+        # Initialize portfolio variables
+        cash, holdings, _ = get_current_portfolio_state()
         if mode == "semi-automatic" and not reset_state and portfolio_history:
-            # Use current portfolio state for subsequent windows
+            # Use existing portfolio state for subsequent windows
             latest_state = portfolio_history[-1]
-            cash = latest_state.get('cash', investment_amount)
-            holdings = latest_state.get('holdings', {}).copy()
+            cash = latest_state.get('cash', cash)
+            holdings = latest_state.get('holdings', holdings).copy()
             logger.info(f"Semi-auto continuing with: Cash=${cash:,.2f}, Holdings={len(holdings)}")
-        else:
-            # Fresh start (automatic mode or first semi-auto window)
+        elif reset_state or not portfolio_history:
+            # Fresh start
             cash = investment_amount
             holdings = {}
-            logger.info(f"Starting fresh with: Cash=${cash:,.2f}")
+            logger.info(f"Starting fresh with: Cash=${cash:,.2f}")   
 
         warning_message = ""
         total_buy_orders = 0
         total_sell_orders = 0
 
-        # FIXED: Handle selected_orders execution properly
+        # Handle selected_orders execution properly
         if selected_orders and mode == "semi-automatic":
             logger.info(f"Executing {len(selected_orders)} selected orders")
-            
             # Get the date from selected orders for portfolio history
             if selected_orders:
                 order_date = selected_orders[0]['date']

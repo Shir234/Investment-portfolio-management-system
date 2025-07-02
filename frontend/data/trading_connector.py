@@ -14,7 +14,8 @@ logger = get_logger(__name__)
 logger = get_logger('trading_logic')  # Align with logging_config.py logger name
 logger.setLevel(logging.INFO)
 
-def execute_trading_strategy(investment_amount, risk_level, start_date, end_date, data_manager, mode="automatic", reset_state=True, selected_orders=None):
+#def execute_trading_strategy(investment_amount, risk_level, start_date, end_date, data_manager, mode="automatic", reset_state=True, selected_orders=None):
+def execute_trading_strategy(investment_amount, risk_level, start_date, end_date, data_manager, mode="automatic", reset_state=True, selected_orders=None, current_cash=None, current_holdings=None):
     """Execute the trading strategy with user inputs from the frontend."""
     logger.info("="*50)
     logger.info("EXECUTE TRADING STRATEGY CALLED")
@@ -57,16 +58,25 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
             end_date=end_date,
             mode=mode,
             reset_state=reset_state,
-            selected_orders=selected_orders
+            selected_orders=selected_orders,
+            current_cash=current_cash,
+            current_holdings=current_holdings
         )
 
         portfolio_history = get_portfolio_history()
         cash = portfolio_history[-1].get('cash', investment_amount) if portfolio_history else investment_amount
         portfolio_value = portfolio_history[-1].get('value', investment_amount) if portfolio_history else investment_amount
 
+        
         if mode == "semi-automatic":
-            orders, warning_message = result
-            logger.info(f"Semi-automatic mode completed - {len(orders)} orders suggested")
+            if selected_orders:
+                # Executing selected orders - expect 4 values
+                orders, portfolio_history, portfolio_value, warning_message = result
+                cash = portfolio_history[-1].get('cash', investment_amount) if portfolio_history else investment_amount
+            else:
+                # Generating suggestions - expect 2 values  
+                orders, warning_message = result
+            logger.info(f"Semi-automatic mode completed - {len(orders)} orders")
         else:
             orders, portfolio_history, portfolio_value, warning_message = result
             cash = portfolio_history[-1].get('cash', investment_amount) if portfolio_history else investment_amount

@@ -491,6 +491,9 @@ class InputPanel(QWidget):
 
         self.apply_styles()
         self.update_financial_metrics(0, 0)
+        
+        # Check if we should lock the investment field on startup
+        self.lock_investment_field_after_first_trade()
 
     def create_configuration_section(self, main_layout):
         """Create the configuration input section with darker label backgrounds."""
@@ -499,7 +502,7 @@ class InputPanel(QWidget):
         config_layout.setContentsMargins(16, 20, 16, 20)  # Reduced from (20, 30, 20, 30)
         config_layout.setSpacing(10)  # Reduced from 15
 
-        # Investment Amount - with darker label background
+        # Investment Amount with Add Funds button
         investment_container = QFrame()
         investment_layout = QVBoxLayout(investment_container)
         investment_layout.setContentsMargins(0, 0, 0, 0)
@@ -508,26 +511,36 @@ class InputPanel(QWidget):
         # Dark label background frame
         investment_label_frame = QFrame()
         investment_label_frame.setProperty("class", "label-frame")
-        investment_label_frame.setFixedHeight(28)  # Reduced from 35
+        investment_label_frame.setFixedHeight(28)
         investment_label_layout = QHBoxLayout(investment_label_frame)
-        investment_label_layout.setContentsMargins(10, 6, 10, 6)  # Reduced from (12, 8, 12, 8)
+        investment_label_layout.setContentsMargins(10, 6, 10, 6)
         
-        investment_label = QLabel("Investment Amount ($):")
-        investment_label.setProperty("class", "label-dark")
-        investment_label_layout.addWidget(investment_label)
+        self.investment_label = QLabel("Investment Amount ($):")  # Make it instance variable
+        self.investment_label.setProperty("class", "label-dark")
+        investment_label_layout.addWidget(self.investment_label)
         investment_label_layout.addStretch()
         
-        # Input field
+        # Input field with Add Funds button
         investment_input_frame = QFrame()
         investment_input_frame.setProperty("class", "input-frame")
         investment_input_layout = QHBoxLayout(investment_input_frame)
-        investment_input_layout.setContentsMargins(10, 8, 10, 8)  # Reduced from (12, 12, 12, 12)
+        investment_input_layout.setContentsMargins(10, 8, 10, 8)
         
         self.investment_input = QLineEdit("10000")
         self.investment_input.setPlaceholderText("Enter amount (e.g., 10000)")
         self.investment_input.setToolTip("Enter the initial investment amount in USD")
         self.investment_input.setProperty("class", "input-field")
+        
+        # Add Funds button (initially hidden)
+        self.add_funds_button = QPushButton("Add Funds")
+        self.add_funds_button.setProperty("class", "primary")
+        self.add_funds_button.setVisible(False)
+        self.add_funds_button.clicked.connect(self.add_funds_to_portfolio)
+        self.add_funds_button.setMinimumHeight(32)
+        self.add_funds_button.setMaximumHeight(32)
+        
         investment_input_layout.addWidget(self.investment_input)
+        investment_input_layout.addWidget(self.add_funds_button)
         
         investment_layout.addWidget(investment_label_frame)
         investment_layout.addWidget(investment_input_frame)
@@ -1334,11 +1347,23 @@ class InputPanel(QWidget):
     def validate_inputs(self):
         """Validate user inputs with timeline protection checks."""
         try:
-            investment_amount = float(self.investment_input.text().replace(',', ''))
-            if investment_amount <= 0:
-                raise ValueError("Investment amount must be greater than zero")
-            if investment_amount > 1000000000:  # 1 billion limit
-                raise ValueError("Investment amount seems too large")
+            # Check if investment field is locked (add funds mode)
+            if not self.investment_input.isEnabled():
+                # In add funds mode, allow empty field or validate additional amount
+                if self.investment_input.text().strip():
+                    investment_amount = float(self.investment_input.text().replace(',', ''))
+                    if investment_amount <= 0:
+                        raise ValueError("Additional amount must be greater than zero")
+                else:
+                    investment_amount = 0  # No additional funds
+            else:
+                # Normal investment mode
+                investment_amount = float(self.investment_input.text().replace(',', ''))
+                if investment_amount <= 0:
+                    raise ValueError("Investment amount must be greater than zero")
+                if investment_amount > 1000000000:  # 1 billion limit
+                    raise ValueError("Investment amount seems too large")
+                    
         except ValueError as e:
             self.show_message_box(
                 QMessageBox.Icon.Warning,
@@ -1370,7 +1395,7 @@ class InputPanel(QWidget):
             )
             return None
 
-        # NEW: Timeline protection validation
+        # Timeline protection validation
         timeline_validation = self.validate_timeline_constraints(start_date, end_date)
         if not timeline_validation[0]:
             self.show_message_box(
@@ -1507,6 +1532,19 @@ class InputPanel(QWidget):
     
     def _execute_windowed_semi_automatic(self, investment_amount, risk_level, start_date, end_date):
         """Execute windowed semi-automatic trading with proper portfolio state management."""
+        # Check if this is continuing or new portfolio
+        portfolio_history = get_portfolio_history()
+        if portfolio_history:
+            # Use current cash from portfolio
+            current_cash = portfolio_history[-1].get('cash', investment_amount)
+            reset_state = False
+            logger.info(f"Continuing windowed trading with existing portfolio: ${current_cash:,.2f} cash")
+        else:
+            # New portfolio
+            current_cash = investment_amount
+            reset_state = True
+            logger.info(f"Starting new windowed trading with: ${investment_amount:,.2f}")
+        
         # Check if date range is too long for semi-automatic
         date_diff = (end_date - start_date).days
         
@@ -1524,37 +1562,56 @@ class InputPanel(QWidget):
                 logger.info("User cancelled semi-automatic execution due to long date range")
                 return
         
-        # FIXED: Reset portfolio state before starting semi-automated trading
-        try:
-            if os.path.exists(self.portfolio_state_file):
-                os.remove(self.portfolio_state_file)
-                logger.info("Reset portfolio state for fresh semi-automated trading")
-        except Exception as e:
-            logger.warning(f"Could not reset portfolio state: {e}")
+        # Only reset portfolio state if starting fresh
+        if reset_state:
+            try:
+                if os.path.exists(self.portfolio_state_file):
+                    os.remove(self.portfolio_state_file)
+                    logger.info("Reset portfolio state for fresh semi-automated trading")
+            except Exception as e:
+                logger.warning(f"Could not reset portfolio state: {e}")
         
         # Create and start semi-automated manager
         self.semi_auto_manager = SemiAutomatedManager(self, self.main_window)
         self.semi_auto_manager.start_windowed_trading(
-            investment_amount, risk_level, start_date, end_date
+            current_cash, risk_level, start_date, end_date  # Use current_cash instead of investment_amount
         )
 
     def _execute_automatic_mode(self, investment_amount, risk_level, start_date, end_date):
-        """Execute automatic mode (existing logic)."""
-        # Show progress and disable controls
+        """Execute automatic mode using current portfolio cash or new investment."""
+        
+        # Check if this is the first trade or additional trade
+        portfolio_history = get_portfolio_history()
+        if portfolio_history:
+            # Use current cash from portfolio, not new investment amount
+            current_cash = portfolio_history[-1].get('cash', investment_amount)
+            current_holdings = portfolio_history[-1].get('holdings', {})
+            reset_state = False
+            actual_investment = current_cash  # Use available cash
+            logger.info(f"Continuing with existing portfolio: ${current_cash:,.2f} cash available")
+        else:
+            # First trade - use investment amount
+            current_cash = investment_amount
+            current_holdings = {}
+            reset_state = True
+            actual_investment = investment_amount
+            logger.info(f"Starting new portfolio with: ${investment_amount:,.2f}")
+        
         self.execute_button.setEnabled(False)
         self.show_progress("Initializing trading strategy...")
 
-        # Set up worker and thread (existing logic)
         self.thread = QThread()
         self.worker = Worker(
-            investment_amount=investment_amount,
+            investment_amount=actual_investment,  # Use actual available cash
             risk_level=risk_level,
             start_date=start_date,
             end_date=end_date,
             data_manager=self.data_manager,
             mode="automatic",
-            reset_state=True,
-            selected_orders=None
+            reset_state=reset_state,
+            selected_orders=None,
+            current_cash=current_cash,
+            current_holdings=current_holdings
         )
         
         self.worker.moveToThread(self.thread)
@@ -1574,7 +1631,6 @@ class InputPanel(QWidget):
         self.hide_progress()
         
         mode = self.mode_combo.currentText().lower()
-        investment_amount = float(self.investment_input.text().replace(',', ''))
         
         if not success:
             self.show_message_box(
@@ -1587,8 +1643,8 @@ class InputPanel(QWidget):
             return
 
         orders = result.get('orders', [])
-        portfolio_value = result.get('portfolio_value', investment_amount)
-        cash = result.get('cash', investment_amount)
+        portfolio_value = result.get('portfolio_value', 0)
+        cash = result.get('cash', 0)
         warning_message = result.get('warning_message', '')
 
         if warning_message:
@@ -1612,8 +1668,9 @@ class InputPanel(QWidget):
             if hasattr(self.main_window, 'update_dashboard'):
                 self.main_window.update_dashboard()
             
-            # NEW: Refresh date constraints after successful trade
+            # Lock investment field after first successful trade
             if orders:  # Only if trades were actually executed
+                self.lock_investment_field_after_first_trade()
                 self.refresh_date_constraints_after_trade()
             
             # Show success message
@@ -1622,10 +1679,13 @@ class InputPanel(QWidget):
                 "Strategy Executed Successfully",
                 f"Trading strategy completed successfully!\n\n"
                 f"Orders executed: {len(orders)}\n"
-                f"Final portfolio value: ${(portfolio_value):,.2f}",
+                f"Final portfolio value: ${portfolio_value:,.2f}",
                 QMessageBox.StandardButton.Ok
             )
             logger.info("Strategy execution completed successfully")
+
+            if orders:  # Only if trades were actually executed
+                self.update_ui_after_trading()
 
     def handle_semi_auto_result(self, success, result):
         """Handle semi-automatic trade execution results."""
@@ -1794,7 +1854,7 @@ class InputPanel(QWidget):
         
         if result == QMessageBox.StandardButton.Yes:
             try:
-                # IMPORTANT: Reset the in-memory orders list FIRST
+                # Reset the in-memory orders list FIRST
                 from backend.trading_logic_new import reset_portfolio_for_semi_auto
                 reset_portfolio_for_semi_auto()
                 
@@ -1802,11 +1862,14 @@ class InputPanel(QWidget):
                     os.remove(self.portfolio_state_file)
                     logger.debug(f"Deleted {self.portfolio_state_file}")
                 
+                # Unlock investment field after reset
+                self.unlock_investment_field_after_reset()
+                
                 # Reset financial metrics to default values
-                investment_amount = float(self.investment_input.text().replace(',', ''))
+                investment_amount = float(self.investment_input.text().replace(',', '')) if self.investment_input.text() else 10000
                 self.update_financial_metrics(investment_amount, investment_amount)
                 
-                # IMPORTANT: Refresh date constraints to allow trading from dataset beginning
+                # Refresh date constraints to allow trading from dataset beginning
                 self.set_date_constraints()
                 
                 # Force update the start date to dataset minimum after constraints are reset
@@ -1854,11 +1917,11 @@ class InputPanel(QWidget):
                     QMessageBox.Icon.Information,
                     "Portfolio Reset",
                     "Portfolio has been reset successfully.\n\n"
-                    "You can now trade from the beginning of the dataset.",
+                    "You can now start fresh with a new investment amount.",
                     QMessageBox.StandardButton.Ok
                 )
                 
-                logger.info("Portfolio reset completed - date constraints refreshed")
+                logger.info("Portfolio reset completed - investment field unlocked")
                 
             except Exception as e:
                 logger.error(f"Error resetting portfolio: {e}")
@@ -1931,3 +1994,88 @@ class InputPanel(QWidget):
             return False, "Invalid investment amount"
         except Exception as e:
             return False, f"Configuration error: {e}"
+        
+    def add_funds_to_portfolio(self):
+        """Show dialog to add funds to portfolio."""
+        try:
+            from PyQt6.QtWidgets import QInputDialog
+            
+            amount, ok = QInputDialog.getDouble(
+                self, 
+                "Add Funds", 
+                "Enter amount to add to portfolio:", 
+                value=0.0, 
+                min=0.01, 
+                max=1000000000.0, 
+                decimals=2
+            )
+            
+            if ok and amount > 0:
+                # Get current portfolio state
+                portfolio_history = get_portfolio_history()
+                if portfolio_history:
+                    current_cash = portfolio_history[-1].get('cash', 0)
+                    current_value = portfolio_history[-1].get('value', 0)
+                    
+                    # Add cash using backend function
+                    from backend.trading_logic_new import add_cash_to_portfolio
+                    add_cash_to_portfolio(amount)
+                    
+                    new_cash = current_cash + amount
+                    new_total_value = current_value + amount
+                    
+                    self.update_financial_metrics(new_cash, new_total_value)
+                    
+                    self.show_message_box(
+                        QMessageBox.Icon.Information,
+                        "Funds Added",
+                        f"${amount:,.2f} added successfully!\n"
+                        f"New cash balance: ${new_cash:,.2f}",
+                        QMessageBox.StandardButton.Ok
+                    )
+                    logger.info(f"Added ${amount:,.2f} to portfolio")
+                else:
+                    self.show_message_box(
+                        QMessageBox.Icon.Warning,
+                        "No Portfolio Found",
+                        "No existing portfolio found.",
+                        QMessageBox.StandardButton.Ok
+                    )
+        except Exception as e:
+            logger.error(f"Error adding funds: {e}")
+            self.show_message_box(
+                QMessageBox.Icon.Critical,
+                "Error",
+                f"Failed to add funds: {e}",
+                QMessageBox.StandardButton.Ok
+            )
+
+    def update_ui_after_trading(self):
+        """Update UI state after any trading activity."""
+        # Lock investment field and show add funds if there are orders
+        orders = get_orders()
+        if orders:
+            self.lock_investment_field_after_first_trade()
+            self.refresh_date_constraints_after_trade()
+
+    def lock_investment_field_after_first_trade(self):
+        """Lock investment field and show add funds functionality after first trade."""
+        orders = get_orders()
+        if orders:
+            self.investment_input.setEnabled(False)
+            self.investment_input.clear()
+            self.investment_input.setPlaceholderText("Investment locked")
+            self.add_funds_button.setVisible(True)
+            self.investment_label.setText("Portfolio Funding:")
+            logger.info("Investment field locked - showing add funds button")
+            return True
+        return False
+
+    def unlock_investment_field_after_reset(self):
+        """Unlock investment field after portfolio reset."""
+        self.investment_input.setEnabled(True)
+        self.investment_input.setPlaceholderText("Enter amount (e.g., 10000)")
+        self.investment_input.setText("10000")
+        self.add_funds_button.setVisible(False)
+        self.investment_label.setText("Investment Amount ($):")
+        logger.info("Investment field unlocked after reset")

@@ -11,7 +11,8 @@ class Worker(QObject):
     error = pyqtSignal(str)  # error message
     progress = pyqtSignal(str)  # progress message
 
-    def __init__(self, investment_amount, risk_level, start_date, end_date, data_manager, mode, reset_state, selected_orders=None):
+    #def __init__(self, investment_amount, risk_level, start_date, end_date, data_manager, mode, reset_state, selected_orders=None):
+    def __init__(self, investment_amount, risk_level, start_date, end_date, data_manager, mode, reset_state, selected_orders=None, current_cash=None, current_holdings=None):
         super().__init__()
         self.investment_amount = investment_amount
         self.risk_level = risk_level
@@ -21,6 +22,8 @@ class Worker(QObject):
         self.mode = mode
         self.reset_state = reset_state
         self.selected_orders = selected_orders
+        self.current_cash = current_cash
+        self.current_holdings = current_holdings
 
     def run(self):
         """Execute the trading strategy in the background."""
@@ -34,7 +37,9 @@ class Worker(QObject):
                 data_manager=self.data_manager,
                 mode=self.mode,
                 reset_state=self.reset_state,
-                selected_orders=self.selected_orders
+                selected_orders=self.selected_orders,
+                current_cash=self.current_cash,
+                current_holdings=self.current_holdings
             )
             self.finished.emit(success, result)
         except Exception as e:
