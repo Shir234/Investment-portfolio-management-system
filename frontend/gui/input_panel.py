@@ -452,6 +452,7 @@ class InputPanel(QWidget):
         self.project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
         self.portfolio_state_file = os.path.join(self.project_root, 'data', 'portfolio_state.json')
         self.is_dark_mode = True
+        self.initial_load = True
         self.init_ui()
         self.set_default_values()
         self.set_date_constraints()
@@ -656,8 +657,8 @@ class InputPanel(QWidget):
         
         #self.mode_combo = QComboBox()
         self.mode_combo = WheelDisabledComboBox()
-        self.mode_combo.addItems(["Automatic", "Semi-Automatic"])
-        self.mode_combo.setCurrentText("Automatic")
+        self.mode_combo.addItems(["Select Mode", "Automatic", "Semi-Automatic"])
+        self.mode_combo.setCurrentText("Select Mode")
         self.mode_combo.setToolTip("Automatic: Execute trades automatically\nSemi-Automatic: Confirm trades manually")
         self.mode_combo.setProperty("class", "input-field")
         mode_input_layout.addWidget(self.mode_combo)
@@ -703,11 +704,21 @@ class InputPanel(QWidget):
 
         # Hide/show based on mode selection
         def on_mode_change():
-            is_semi_auto = self.mode_combo.currentText() == "Semi-Automatic"
+            mode = self.mode_combo.currentText()
+            if mode == "Select Mode":
+                window_container.setVisible(False)
+                return
+            
+            is_semi_auto = mode == "Semi-Automatic"
             window_container.setVisible(is_semi_auto)
+            
+            # Show explanation when user selects a real mode
+            if not self.initial_load:
+                self.show_mode_explanation()
 
         self.mode_combo.currentTextChanged.connect(on_mode_change)
         on_mode_change()  # Set initial visibility
+        self.initial_load = False  # Reset flag after initial setup
 
     def set_default_values(self):
         """Set default values based on data availability."""
@@ -1347,6 +1358,14 @@ class InputPanel(QWidget):
     def validate_inputs(self):
         """Validate user inputs with timeline protection checks."""
         try:
+            if self.mode_combo.currentText() == "Select Mode":
+                self.show_message_box(
+                    QMessageBox.Icon.Warning,
+                    "Mode Selection Required",
+                    "Please select a trading mode (Automatic or Semi-Automatic).",
+                    QMessageBox.StandardButton.Ok
+                )
+                return None
             # Check if investment field is locked (add funds mode)
             if not self.investment_input.isEnabled():
                 # In add funds mode, allow empty field or validate additional amount
@@ -1525,10 +1544,15 @@ class InputPanel(QWidget):
                 return
 
         # Handle semi-automatic mode differently
+        self.execute_button.setEnabled(False)
+        self.reset_button.setEnabled(False)
+        self.show_progress("Initializing trading strategy...")
+
         if mode == "semi-automatic":
             self._execute_windowed_semi_automatic(investment_amount, risk_level, start_date, end_date)
         else:
             self._execute_automatic_mode(investment_amount, risk_level, start_date, end_date)
+        
     
     def _execute_windowed_semi_automatic(self, investment_amount, risk_level, start_date, end_date):
         """Execute windowed semi-automatic trading with proper portfolio state management."""
@@ -1628,6 +1652,7 @@ class InputPanel(QWidget):
     def handle_strategy_result(self, success, result):
         """Handle strategy execution results with modern UI feedback."""
         self.execute_button.setEnabled(True)
+        self.reset_button.setEnabled(True)  # Add this line
         self.hide_progress()
         
         mode = self.mode_combo.currentText().lower()
@@ -1690,6 +1715,7 @@ class InputPanel(QWidget):
     def handle_semi_auto_result(self, success, result):
         """Handle semi-automatic trade execution results."""
         self.execute_button.setEnabled(True)
+        self.reset_button.setEnabled(True)
         self.hide_progress()
         
         if not success:
@@ -1768,6 +1794,7 @@ class InputPanel(QWidget):
         end_date = pd.Timestamp(self.end_date_input.date().toPyDate(), tz='UTC')
 
         self.execute_button.setEnabled(False)
+        self.reset_button.setEnabled(False)
         self.show_progress("Executing selected trades...")
 
         self.thread = QThread()
@@ -1832,6 +1859,7 @@ class InputPanel(QWidget):
     def handle_strategy_error(self, error_message):
         """Handle errors from the worker thread."""
         self.execute_button.setEnabled(True)
+        self.reset_button.setEnabled(True)
         self.hide_progress()
         
         self.show_message_box(
@@ -2079,3 +2107,42 @@ class InputPanel(QWidget):
         self.add_funds_button.setVisible(False)
         self.investment_label.setText("Investment Amount ($):")
         logger.info("Investment field unlocked after reset")
+
+    # Remove the inner function definition and add this method to the InputPanel class:
+
+    def show_mode_explanation(self):
+        """Show explanation popup for selected trading mode."""
+        mode = self.mode_combo.currentText()
+        
+        if mode == "Automatic":
+            title = "Automatic Trading Mode"
+            explanation = (
+                "🤖 Automatic Mode:\n\n"
+                "• System executes ALL recommended trades automatically\n"
+                "• No user intervention required during execution\n"
+                "• Trades based on your risk level and date range\n"
+                "• Best for: Hands-off, systematic trading\n"
+                "• You'll see results after completion\n\n"
+                "The system will analyze market data and execute trades "
+                "according to the algorithm without asking for confirmation."
+            )
+        else:  # Semi-Automatic
+            title = "Semi-Automatic Trading Mode"
+            explanation = (
+                "👤 Semi-Automatic Mode:\n\n"
+                "• System suggests trades in small time windows\n"
+                "• YOU decide which trades to execute\n"
+                "• Review and approve each trading window\n"
+                "• Full control over every transaction\n"
+                "• Best for: Learning and selective trading\n\n"
+                "You'll see potential trades for each time period and "
+                "can choose which ones to execute. This gives you "
+                "control while benefiting from algorithmic analysis."
+            )
+        
+        self.show_message_box(
+            QMessageBox.Icon.Information,
+            title,
+            explanation,
+            QMessageBox.StandardButton.Ok
+        )

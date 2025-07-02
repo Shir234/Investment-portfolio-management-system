@@ -7,7 +7,7 @@ class SplashScreen(QWidget):
     def __init__(self):
         super().__init__()
         # Remove window frame and stay on top
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
         # Create main layout

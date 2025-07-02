@@ -599,6 +599,10 @@ class SemiAutomatedManager:
             self._process_next_window()
         else:
             logger.info("User cancelled windowed trading")
+            # Re-enable buttons when cancelled
+            self.input_panel.execute_button.setEnabled(True)
+            self.input_panel.reset_button.setEnabled(True)
+            self.input_panel.hide_progress()
     
     def _process_next_window(self):
         """Process the next trading window using REAL user parameters."""

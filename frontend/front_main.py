@@ -318,6 +318,9 @@ def show_modern_message_box(icon, title, text, buttons=QMessageBox.StandardButto
     msg.setText(text)
     msg.setStandardButtons(buttons)
     
+    # Force message box to appear on top of splash screen
+    msg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+    
     # Apply modern styling if available
     try:
         colors = ModernStyles.COLORS['dark']
@@ -355,7 +358,7 @@ def show_modern_message_box(icon, title, text, buttons=QMessageBox.StandardButto
         """)
     except Exception as e:
         logger.warning(f"Could not apply message box styling: {e}")
-        pass  # Use default styling if ModernStyles not available
+        pass
     
     return msg.exec()
 
@@ -427,6 +430,17 @@ def main():
         logger.error("No file selected")
         sys.exit(1)
 
+    # Show splash screen AFTER file selection
+    splash = None
+    try:
+        splash = SplashScreen()
+        logger.info("SplashScreen created")
+        splash.show()
+        splash.raise_()
+        splash.activateWindow()
+    except Exception as e:
+        logger.warning(f"Could not create splash screen: {e}")
+
     # Initialize data manager
     try:
         data_manager = DataManager(csv_path=csv_path)
@@ -434,6 +448,9 @@ def main():
     except Exception as e:
         error_msg = f"Failed to initialize DataManager: {e}"
         logger.error(error_msg)
+        # Hide splash before showing error
+        if splash:
+            splash.hide()
         show_modern_message_box(
             QMessageBox.Icon.Critical,
             "Error",
@@ -444,6 +461,9 @@ def main():
     
     if data_manager.data is None or data_manager.data.empty:
         error_msg = f"Failed to load CSV: {data_manager.csv_path}"
+        # Hide splash before showing error
+        if splash:
+            splash.hide()
         show_modern_message_box(
             QMessageBox.Icon.Critical,
             "Error",
@@ -452,17 +472,6 @@ def main():
         )
         logger.error(error_msg)
         sys.exit(1)
-
-    # Show splash screen
-    try:
-        splash = SplashScreen()
-        logger.info("SplashScreen created")
-        splash.show()
-        splash.raise_()  # Bring to front
-        splash.activateWindow()  # Activate window
-    except Exception as e:
-        logger.warning(f"Could not create splash screen: {e}")
-        splash = None
     
     # Create main window
     try:
@@ -474,8 +483,8 @@ def main():
             splash.finish(window)
         else:
             window.show()
-            window.raise_()  # Bring to front
-            window.activateWindow()  # Activate window
+            window.raise_()
+            window.activateWindow()
             
         logger.info("Application fully loaded")
         
@@ -484,6 +493,9 @@ def main():
     except Exception as e:
         error_msg = f"Failed to create main window: {e}"
         logger.error(error_msg, exc_info=True)
+        # Hide splash before showing error
+        if splash:
+            splash.hide()
         show_modern_message_box(
             QMessageBox.Icon.Critical,
             "Error",
