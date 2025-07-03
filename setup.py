@@ -211,8 +211,37 @@ def create_virtual_env(python_executable):
     venv_path = Path("venv")
     
     if venv_path.exists():
+        # Check if we're running from within the venv
+        current_python = sys.executable
+        venv_python_win = str(venv_path / "Scripts" / "python.exe")
+        venv_python_unix = str(venv_path / "bin" / "python")
+        
+        if (current_python == venv_python_win or 
+            current_python == venv_python_unix or
+            str(venv_path.absolute()) in current_python):
+            print("⚠ WARNING: You are running this script from within the virtual environment!")
+            print("This prevents the script from updating the virtual environment.")
+            print("\nTo update your virtual environment, please:")
+            print("1. Deactivate the current environment: deactivate")
+            print("2. Run the setup script again from outside the venv")
+            print("\nAlternatively, you can just update the packages in your current environment:")
+            print("   python -m pip install --upgrade pip")
+            print("   python -m pip install -r requirements.txt --upgrade")
+            return
+        
         print("Existing virtual environment found. Removing it to create a fresh one...")
-        shutil.rmtree(venv_path)
+        try:
+            shutil.rmtree(venv_path)
+        except PermissionError as e:
+            print(f"ERROR: Cannot remove existing virtual environment: {e}")
+            print("This usually happens when:")
+            print("1. The virtual environment is currently active")
+            print("2. Files are locked by another process")
+            print("\nPlease:")
+            print("1. Deactivate any active virtual environments: deactivate")
+            print("2. Close any IDEs or terminals using the virtual environment")
+            print("3. Run this script again")
+            sys.exit(1)
     
     try:
         print(f"Creating virtual environment using: {python_executable}")
@@ -222,6 +251,36 @@ def create_virtual_env(python_executable):
         print(f"ERROR: Failed to create virtual environment: {e}")
         sys.exit(1)
 
+
+def update_existing_venv():
+    """
+    Update packages in the existing virtual environment.
+    """
+    
+    print_section("Updating Existing Virtual Environment")
+    
+    venv_python = get_venv_python()
+    
+    if not os.path.exists(venv_python):
+        print(f"ERROR: Virtual environment Python not found at {venv_python}")
+        return False
+    
+    try:
+        # Upgrade pip first
+        print("Upgrading pip...")
+        subprocess.run([venv_python, "-m", "pip", "install", "--upgrade", "pip"], check=True)
+        
+        # Install/upgrade dependencies
+        print("Installing/upgrading dependencies...")
+        subprocess.run([venv_python, "-m", "pip", "install", "-r", "requirements.txt", "--upgrade"], check=True)
+        
+        print("✓ Virtual environment updated successfully!")
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: Failed to update virtual environment: {e}")
+        return False
+    
 
 def get_venv_python():
     """
@@ -273,11 +332,22 @@ def create_requirements_file():
         "plotly",  # Interactive plotting
         
         # GUI framework
-        "PyQt5",
+        "PyQt6",
         
         # Development tools
         "ipykernel",  # For Jupyter notebook support in VS Code
+
+        # Testing framework and utilities
+        "pytest>=7.0.0",
+        "pytest-timeout>=2.1.0", 
+        "pytest-mock>=3.10.0",
+        "pytest-cov>=4.0.0",
+        "pytest-html>=3.1.0",
+        "pytest-qt>=4.2.0",  # NEW: PyQt testing support
+        "psutil>=5.9.0",
+        "memory-profiler>=0.60.0",
     ]
+        
     
     with open(requirements_path, "w") as f:
         f.write("\n".join(dependencies))
@@ -312,8 +382,11 @@ def install_dependencies():
             ("Machine Learning", ["scikit-learn", "xgboost", "lightgbm", "optuna", "joblib"]),
             ("Deep Learning", ["tensorflow", "scikeras"]),
             ("Visualization", ["matplotlib", "seaborn", "plotly"]),
-            ("GUI Framework", ["PyQt5"]),
-            ("Development Tools", ["ipykernel"])
+            ("GUI Framework", ["PyQt6"]),  # ← FIXED: Changed from PyQt5 to PyQt6
+            ("Development Tools", ["ipykernel"]),
+            ("Testing Framework", ["pytest>=7.0.0", "pytest-timeout>=2.1.0", "pytest-mock>=3.10.0", 
+                                 "pytest-cov>=4.0.0", "pytest-html>=3.1.0", "pytest-qt>=4.2.0",  # ← ADDED: pytest-qt
+                                 "psutil>=5.9.0", "memory-profiler>=0.60.0"])
         ]
         
         for group_name, packages in dependency_groups:
@@ -330,9 +403,11 @@ def install_dependencies():
             ("numpy", "import numpy; print(f'✓ NumPy {numpy.__version__} works!')"),
             ("scikit-learn", "import sklearn; print(f'✓ Scikit-learn {sklearn.__version__} works!')"),
             ("matplotlib", "import matplotlib; print(f'✓ Matplotlib {matplotlib.__version__} works!')"),
-            ("PyQt5", "from PyQt5.QtWidgets import QApplication; print('✓ PyQt5 GUI framework works!')"),
+            ("PyQt6", "from PyQt6.QtWidgets import QApplication; print('✓ PyQt6 GUI framework works!')"),
             ("tensorflow", "import tensorflow as tf; print(f'✓ TensorFlow {tf.__version__} works!')"),
-            ("xgboost", "import xgboost as xgb; print(f'✓ XGBoost {xgb.__version__} works!')")
+            ("xgboost", "import xgboost as xgb; print(f'✓ XGBoost {xgb.__version__} works!')"),
+            ("pytest", "import pytest; print(f'✓ pytest {pytest.__version__} works!')"),
+            ("pytest-qt", "import pytestqt; print('✓ pytest-qt works!')")  # ← ADDED: Test pytest-qt
         ]
         
         for name, test_code in test_imports:
@@ -412,7 +487,46 @@ def main():
     # Find the best Python to use
     python_executable = find_best_python()
     
-    # Create virtual environment with the selected Python
+    # Check if we're running from within a virtual environment
+    current_python = sys.executable
+    venv_path = Path("venv")
+    
+    if venv_path.exists():
+        venv_python_win = str(venv_path / "Scripts" / "python.exe")
+        venv_python_unix = str(venv_path / "bin" / "python")
+        
+        if (current_python == venv_python_win or 
+            current_python == venv_python_unix or
+            str(venv_path.absolute()) in current_python):
+            
+            print("Detected: Running from within existing virtual environment")
+            
+            # Create requirements file
+            create_requirements_file()
+            
+            # Ask user if they want to update dependencies
+            update_now = input("\nDo you want to update dependencies in the current environment? (y/n): ").lower()
+            
+            if update_now == 'y':
+                if update_existing_venv():
+                    setup_project_structure()
+                    configure_tensorflow_settings()
+                    print_next_steps()
+                    
+                    print("\n" + "="*80)
+                    print("✓ Environment updated successfully!")
+                    print("✓ The project is ready for development!")
+                    print("="*80)
+                else:
+                    print("\n⚠ Update failed. Please check the error messages above.")
+            else:
+                print("\nSkipping dependency update.")
+                setup_project_structure()
+                configure_tensorflow_settings()
+                
+            return
+    
+    # Original flow for creating new virtual environment
     create_virtual_env(python_executable)
     
     # Create requirements file

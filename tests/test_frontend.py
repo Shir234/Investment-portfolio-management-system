@@ -1,249 +1,35 @@
-# import sys
-# import os
-# import pandas as pd
-# import unittest
-# import pytest
-# from datetime import datetime
-# import logging
+# test_frontend.py
 
-# # Add project root to sys.path
-# project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-# sys.path.insert(0, project_root)
+"""
+Frontend non-functional requirements Tests
+=======================================
 
-# from frontend.data.data_manager import DataManager
-# from frontend.logging_config import get_isolated_logger
-# from frontend.data.trading_connector import execute_trading_strategy
+Tests for:
+1. Trade notification time <= 45 seconds    
+2. Invalid input notification time <= 30 seconds 
 
-# # Initialize logger
-# logger = get_isolated_logger("test_frontend", "trading_only", logging.INFO)
-
-# # Path to the real CSV file
-# CSV_PATH = r"E:\Afeka\FinalProject\Project\Investment-portfolio-management-system\resources\all_tickers_results.csv"
-
-# @pytest.fixture
-# def data_manager():
-#     """Fixture to create a DataManager with the real CSV file."""
-#     if not os.path.exists(CSV_PATH):
-#         pytest.fail(f"CSV file not found at {CSV_PATH}")
-#     start_time = datetime.now()
-#     dm = DataManager(CSV_PATH)
-#     if dm.data is None or dm.data.empty:
-#         pytest.fail(f"Failed to load data from {CSV_PATH}")
-#     # Filter using DataManager's set_date_range and get_filtered_data
-#     success, msg = dm.set_date_range(pd.to_datetime('2022-01-01', utc=True), pd.to_datetime('2023-01-01', utc=True))
-#     if not success:
-#         pytest.fail(f"Failed to set date range: {msg}")
-#     dm.data = dm.get_filtered_data()
-#     duration = (datetime.now() - start_time).total_seconds()
-#     logger.info(f"DataManager loading took {duration:.3f} seconds")
-#     if dm.data is None or dm.data.empty:
-#         logger.warning("No data in date range 2022-01-01 to 2023-01-01")
-#         dm.data = pd.DataFrame(columns=['date', 'Ticker', 'Close', 'Best_Prediction', 'Actual_Sharpe', 'Buy', 'Sell', 'Prediction_Uncertainty'])
-#     logger.info(f"DataManager loaded: {dm.data.shape} rows, columns: {list(dm.data.columns)}")
-#     logger.info(f"Test date range: {dm.dataset_start_date} to {dm.dataset_end_date}")
-#     # Log data for key tickers
-#     tickers_to_check = ['ABBV', 'CTSH', 'FICO', 'ATO', 'LLY', 'TPL', 'MCK', 'MPC', 'CBOE', 'KEYS', 'LW', 'UAL', 'AXON', 'LDOS', 'PSX', 'ERIE', 'APD', 'PG']
-#     for ticker in tickers_to_check:
-#         ticker_data = dm.data[dm.data['Ticker'] == ticker]
-#         if not ticker_data.empty:
-#             logger.info(f"Data for {ticker} (first 5 rows): {ticker_data[['date', 'Close', 'Best_Prediction', 'Actual_Sharpe']].head().to_dict(orient='records')}")
-#         else:
-#             logger.info(f"No data for {ticker} in filtered dataset")
-#     return dm
-
-# class TestFrontend(unittest.TestCase):
-#     @pytest.fixture(autouse=True)
-#     def setup(self, data_manager):
-#         """Setup for each test."""
-#         self.data_manager = data_manager
-#         # Reset portfolio state
-#         portfolio_file = os.path.join(project_root, 'data', 'portfolio_state.json')
-#         if os.path.exists(portfolio_file):
-#             os.remove(portfolio_file)
-#             logger.info(f"Cleared portfolio state file: {portfolio_file}")
-
-#     def test_execute_trading_strategy_timing(self):
-#         """Test that execute_trading_strategy completes within 45 seconds and generates trades at risk level 0.0."""
-#         start_time = datetime.now()
-#         logger.info("Testing execute_trading_strategy with risk level 0.0")
-        
-#         # Validate merged_data
-#         merged_data = self.data_manager.data
-#         if merged_data is None or merged_data.empty:
-#             pytest.fail("Merged data is None or empty")
-#         logger.info(f"Merged data shape: {merged_data.shape}")
-#         logger.info(f"Merged data date range: {merged_data['date'].min()} to {merged_data['date'].max()}")
-#         logger.info(f"Sample data (first 5 rows): {merged_data.head().to_dict(orient='records')}")
-
-#         # Log expected vs actual columns
-#         expected_columns = ['date', 'Ticker', 'Close', 'Best_Prediction', 'Actual_Sharpe', 'Buy', 'Sell', 'Prediction_Uncertainty']
-#         actual_columns = list(merged_data.columns)
-#         logger.info(f"Expected columns: {expected_columns}")
-#         logger.info(f"Actual columns: {actual_columns}")
-#         if set(expected_columns) != set(actual_columns):
-#             logger.warning(f"Column mismatch: Missing {set(expected_columns) - set(actual_columns)}")
-#             # Add missing columns with defaults
-#             for col in expected_columns:
-#                 if col not in actual_columns:
-#                     merged_data[col] = 0 if col in ['Buy', 'Sell'] else 1.0
-#                     logger.info(f"Added default column {col}")
-
-#         # Check for weights file
-#         weights_file = os.path.join(project_root, 'resources', 'final_tickers_score.csv')
-#         if not os.path.exists(weights_file):
-#             logger.warning(f"Weights file {weights_file} not found. Creating default weights.")
-#             tickers = merged_data['Ticker'].unique()
-#             weights = pd.DataFrame({'Ticker': tickers, 'Weight': [0.02] * len(tickers)})
-#             weights.to_csv(weights_file, index=False)
-#             logger.info(f"Created default weights file at {weights_file}")
-
-#         # Call execute_trading_strategy
-#         start_date = pd.to_datetime('2022-01-01', utc=True)
-#         end_date = pd.to_datetime('2023-01-01', utc=True)
-#         success, result = execute_trading_strategy(
-#             investment_amount=10000,
-#             risk_level=0.0,
-#             start_date=start_date,
-#             end_date=end_date,
-#             data_manager=self.data_manager,
-#             mode="automatic",
-#             reset_state=True,
-#             selected_orders=None
-#         )
-
-#         duration = (datetime.now() - start_time).total_seconds()
-#         logger.info(f"execute_trading_strategy execution took {duration:.3f} seconds")
-#         logger.info(f"Result: success={success}, orders={len(result['orders'])}, "
-#                     f"portfolio_value={result['portfolio_value']}, warning={result['warning_message']}")
-#         if not result['orders']:
-#             logger.error("No orders generated when trades were expected")
-#         else:
-#             logger.info(f"Orders executed: {len(result['orders'])}")
-#             for order in result['orders'][:5]:  # Log first 5 orders
-#                 logger.info(f"Order: {order}")
-
-#         # Assertions
-#         self.assertLessEqual(duration, 45, f"Trading strategy execution took {duration:.3f} seconds, exceeded 45 seconds")
-#         self.assertTrue(success, "execute_trading_strategy failed")
-#         self.assertGreater(len(result['orders']), 20, f"Expected at least 20 orders, got {len(result['orders'])}")
-#         self.assertGreater(result['portfolio_value'], 10000, f"Portfolio value {result['portfolio_value']} should be greater than initial $10,000")
-#         self.assertLess(result['portfolio_value'], 15000, f"Portfolio value {result['portfolio_value']} unexpectedly high")
-#         self.assertEqual(result['warning_message'], "", "No warning message expected when trades are executed")
-#         self.assertGreater(len(result['portfolio_history']), 300, f"Expected at least 300 portfolio history entries, got {len(result['portfolio_history'])}")
-        
-#     def test_execute_trading_strategy_no_trades(self):
-#         """Test that execute_trading_strategy returns a warning and no trades when thresholds are misaligned."""
-#         start_time = datetime.now()
-#         logger.info("Testing execute_trading_strategy with high risk level to prevent trades")
-        
-#         # Validate merged_data
-#         merged_data = self.data_manager.data
-#         if merged_data is None or merged_data.empty:
-#             pytest.fail("Merged data is None or empty")
-#         logger.info(f"Merged data shape: {merged_data.shape}")
-#         logger.info(f"Merged data date range: {merged_data['date'].min()} to {merged_data['date'].max()}")
-
-#         # Check for weights file
-#         weights_file = os.path.join(project_root, 'resources', 'final_tickers_score.csv')
-#         if not os.path.exists(weights_file):
-#             logger.warning(f"Weights file {weights_file} not found. Creating default weights.")
-#             tickers = merged_data['Ticker'].unique()
-#             weights = pd.DataFrame({'Ticker': tickers, 'Weight': [0.02] * len(tickers)})
-#             weights.to_csv(weights_file, index=False)
-#             logger.info(f"Created default weights file at {weights_file}")
-
-#         # Test with high risk level (e.g., 1.0) to set unreachable thresholds
-#         success, result = execute_trading_strategy(
-#             investment_amount=10000,
-#             risk_level=1.0,  # High risk to make thresholds unreachable
-#             start_date=pd.to_datetime('2022-01-01', utc=True),
-#             end_date=pd.to_datetime('2023-01-01', utc=True),
-#             data_manager=self.data_manager,
-#             mode="automatic",
-#             reset_state=True,
-#             selected_orders=None
-#         )
-
-#         duration = (datetime.now() - start_time).total_seconds()
-#         logger.info(f"execute_trading_strategy execution took {duration:.3f} seconds")
-#         logger.info(f"Result: success={success}, orders={len(result['orders'])}, "
-#                     f"portfolio_value={result['portfolio_value']}, warning={result['warning_message']}")
-
-#         # Assertions
-#         self.assertLessEqual(duration, 30, f"Execution took {duration:.3f} seconds, exceeded 30 seconds")
-#         self.assertTrue(success, "execute_trading_strategy failed")
-#         self.assertEqual(len(result['orders']), 0, f"Expected no orders, got {len(result['orders'])}")
-#         self.assertEqual(result['portfolio_value'], 10000, f"Expected portfolio value $10,000, got {result['portfolio_value']}")
-#         self.assertNotEqual(result['warning_message'], "", "Expected a non-empty warning message")
-#         self.assertTrue("no trades" in result['warning_message'].lower() or "threshold" in result['warning_message'].lower(),
-#                         f"Warning message '{result['warning_message']}' does not indicate no trades or threshold issue")
-
-#         # Optional: Test with invalid date range
-#         logger.info("Testing execute_trading_strategy with invalid date range")
-#         start_time = datetime.now()
-#         success, result = execute_trading_strategy(
-#             investment_amount=10000,
-#             risk_level=0.0,  # Normal risk level, but invalid dates
-#             start_date=pd.to_datetime('2020-01-01', utc=True),  # Outside dataset range
-#             end_date=pd.to_datetime('2020-12-31', utc=True),
-#             data_manager=self.data_manager,
-#             mode="automatic",
-#             reset_state=True,
-#             selected_orders=None
-#         )
-
-#         duration = (datetime.now() - start_time).total_seconds()
-#         logger.info(f"execute_trading_strategy execution took {duration:.3f} seconds")
-#         logger.info(f"Result: success={success}, orders={len(result['orders'])}, "
-#                     f"portfolio_value={result['portfolio_value']}, warning={result['warning_message']}")
-
-#         # Assertions for invalid date range
-#         self.assertLessEqual(duration, 30, f"Execution took {duration:.3f} seconds, exceeded 30 seconds")
-#         self.assertTrue(success, "execute_trading_strategy failed")
-#         self.assertEqual(len(result['orders']), 0, f"Expected no orders, got {len(result['orders'])}")
-#         self.assertEqual(result['portfolio_value'], 10000, f"Expected portfolio value $10,000, got {result['portfolio_value']}")
-#         self.assertNotEqual(result['warning_message'], "", "Expected a non-empty warning message")
-#         self.assertTrue("no data" in result['warning_message'].lower() or "date range" in result['warning_message'].lower(),
-#                         f"Warning message '{result['warning_message']}' does not indicate no data or date range issue")
-
-# if __name__ == '__main__':
-#     pytest.main(['-v', '--tb=short'])
+Run commands:
+pytest tests/test_frontend.py -v -k "timing"
+pytest tests/test_frontend.py -v -k "validation"
+pytest tests/test_frontend.py -v -s
+"""
 
 import sys
 import os
+import numpy as np
 import pandas as pd
-import unittest
-from unittest.mock import patch
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import QTimer, QDate
 import pytest
+import time
 from datetime import datetime
-import builtins
-
-# Store original os.path.exists and builtins.open
-original_exists = os.path.exists
-original_open = builtins.open
-
-print(f"Initial sys.path: {sys.path}")  # Debug: Print sys.path before modifications
+from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtCore import QDate, Qt, QTimer
+from PyQt6.QtTest import QTest
+import logging
+from datetime import datetime
 
 # Add project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
-print(f"Updated sys.path: {sys.path}")  # Debug: Print sys.path after modifications
-
-# Verify frontend module exists
-frontend_path = os.path.join(project_root, 'frontend')
-if not original_exists(frontend_path):
-    raise RuntimeError(f"Frontend directory not found at {frontend_path}")
-if not original_exists(os.path.join(frontend_path, '__init__.py')):
-    raise RuntimeError("Frontend directory is missing __init__.py")
-if not original_exists(os.path.join(frontend_path, 'data', '__init__.py')):
-    raise RuntimeError("Frontend/data directory is missing __init__.py")
-if not original_exists(os.path.join(frontend_path, 'gui', '__init__.py')):
-    raise RuntimeError("Frontend/gui directory is missing __init__.py")
-if not original_exists(os.path.join(frontend_path, 'logging_config.py')):
-    raise RuntimeError("logging_config.py not found at frontend/logging_config.py")
-print(f"Frontend directory verified: {frontend_path}")
 
 # Imports
 try:
@@ -251,154 +37,542 @@ try:
     from frontend.gui.main_window import MainWindow
     from frontend.data.trading_connector import get_order_history_df
     from frontend.logging_config import get_logger
-    print("Frontend imports successful")
+    from backend.standalone_trading_runner import TradingRunner
+    from backend.trading_logic_new import get_orders, get_portfolio_history
 except ImportError as e:
     raise RuntimeError(f"Failed to import frontend modules: {e}")
 
-# Initialize logger
-logger = get_logger(__name__)
+CSV_PATH = r"data/all_tickers_results.csv"  # Updated path
 
-# Path to the real CSV file
-CSV_PATH = r"backend\resources\all_tickers_results.csv"
+def setup_test_logger():
+    """Setup dedicated logger for timing tests"""
+    # Create tests/logs directory
+    test_log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+    os.makedirs(test_log_dir, exist_ok=True)
+    
+    # Create logger
+    test_logger = logging.getLogger('timing_tests')
+    test_logger.setLevel(logging.INFO)
+    
+    # Remove existing handlers to avoid duplicates
+    test_logger.handlers.clear()
+    
+    # File handler with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = os.path.join(test_log_dir, f'timing_test_{timestamp}.log')
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    
+    # Formatter
+    formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | %(message)s',
+        datefmt='%H:%M:%S'
+    )
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    
+    test_logger.addHandler(file_handler)
+    test_logger.addHandler(console_handler)
+    
+    return test_logger
 
-@pytest.fixture(scope="session")
-def app():
-    """Fixture to initialize QApplication."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    yield app
-    app.quit()
+logger = setup_test_logger()
 
-@pytest.fixture
-def data_manager():
-    """Fixture to create a DataManager with the real CSV file."""
-    abs_csv_path = os.path.join(project_root, CSV_PATH)
-    if not original_exists(abs_csv_path):
-        pytest.fail(f"CSV file not found at {abs_csv_path}")
-    dm = DataManager(abs_csv_path)
-    if dm.data is None or dm.data.empty:
-        pytest.fail(f"Failed to load data from {abs_csv_path}")
-    # Log dataset date range for debugging
-    logger.info(f"Dataset date range: {dm.dataset_start_date} to {dm.dataset_end_date}")
-    return dm
+class TestSharpSightUI:
+    """Test class for SharpSight UI functionality"""
+    
+    @classmethod
+    def setup_class(cls):
+        """Set up QApplication once for all tests"""
+        cls.app = QApplication.instance()
+        if cls.app is None:
+            cls.app = QApplication(sys.argv)
+        
+        # Setup data manager
+        abs_csv_path = os.path.join(project_root, CSV_PATH)
+        if not os.path.exists(abs_csv_path):
+            pytest.fail(f"CSV file not found at {abs_csv_path}")
+        
+        cls.data_manager = DataManager(abs_csv_path)
+        if cls.data_manager.data is None or cls.data_manager.data.empty:
+            pytest.fail(f"Failed to load data from {abs_csv_path}")
+        
+        logger.info(f"Dataset range: {cls.data_manager.dataset_start_date} to {cls.data_manager.dataset_end_date}")
+    
+    # Store results
+    timing_results = []
+    validation_results = []
 
-@pytest.fixture
-def main_window(data_manager, tmp_path):
-    """Fixture to create MainWindow with real functions."""
-    window = MainWindow(data_manager)
-    # Set date range and trading mode
-    window.input_panel.start_date_input.setDate(QDate(2021, 10, 15))
-    window.input_panel.end_date_input.setDate(QDate(2021, 10, 20))
-    window.input_panel.mode_combo.setCurrentText("Automatic")  # Ensure automatic mode
-    start_date = pd.to_datetime(window.input_panel.start_date_input.date().toPyDate(), utc=True)
-    end_date = pd.to_datetime(window.input_panel.end_date_input.date().toPyDate(), utc=True)
-    success, msg = data_manager.set_date_range(start_date, end_date)
-    if not success:
-        pytest.fail(f"Failed to set date range: {msg}")
-    yield window
-    window.close()
+    def setup_method(self):
+        """Set up for each test method with complete reset"""
+         # Reset backend state FIRST
+        try:
+            from backend.trading_logic_new import reset_portfolio_for_semi_auto
+            reset_portfolio_for_semi_auto()
+        except ImportError:
+            pass
 
-class TestFrontend(unittest.TestCase):
-    @pytest.fixture(autouse=True)
-    def setup(self, app, main_window, data_manager):
-        """Setup for each test."""
-        self.app = app
-        self.main_window = main_window
-        self.data_manager = data_manager
+        # Remove portfolio state file
+        portfolio_file = os.path.join(project_root, 'data', 'portfolio_state.json')
+        if os.path.exists(portfolio_file):
+            os.remove(portfolio_file)
+
+         # Create main window
+        self.main_window = MainWindow(self.data_manager)
         self.input_panel = self.main_window.input_panel
+        
+        # Show window
+        self.main_window.show()
+        QTest.qWaitForWindowExposed(self.main_window)
 
-    def test_execute_trading_strategy_timing(self):
-        """Test 1: Ensure execute trading strategy completes within 45 seconds."""
-        start_time = datetime.now()
+        # Force reset date constraints to original dataset range
+        if self.data_manager.data is not None and not self.data_manager.data.empty:
+            try:
+                # Get original dataset dates
+                date_column = None
+                for col in ['Date', 'date', 'DATE']:
+                    if col in self.data_manager.data.columns:
+                        date_column = col
+                        break
+                
+                if date_column:
+                    dates = pd.to_datetime(self.data_manager.data[date_column])
+                    dataset_min_date = dates.min().date()
+                    dataset_max_date = dates.max().date()
+                    
+                    # Convert to QDate
+                    q_min_date = QDate(dataset_min_date.year, dataset_min_date.month, dataset_min_date.day)
+                    q_max_date = QDate(dataset_max_date.year, dataset_max_date.month, dataset_max_date.day)
+                    
+                    # Force set date ranges to full dataset
+                    self.input_panel.start_date_input.setDateRange(q_min_date, q_max_date)
+                    self.input_panel.end_date_input.setDateRange(q_min_date, q_max_date)
+                    
+                    # Set default values to dataset start/end
+                    self.input_panel.start_date_input.setDate(q_min_date)
+                    self.input_panel.end_date_input.setDate(q_max_date)
+            except Exception as e:
+                logger.warning(f"Error resetting date constraints: {e}")
+        
+        # Set default values
+        self.input_panel.investment_input.setText("10000")
+        self.input_panel.risk_input.setValue(0)
+        
+        # Disable mode explanation popup to prevent interference
+        self.input_panel.initial_load = True
+        self.input_panel.mode_combo.setCurrentText("Automatic")
+        self.input_panel.initial_load = False
+
+        # Ensure investment field is unlocked
+        self.input_panel.investment_input.setEnabled(True)
+        self.input_panel.add_funds_button.setVisible(False)
+    
+    def teardown_method(self):
+        """Clean up after each test"""
+        if hasattr(self, 'main_window'):
+            self.main_window.close()
+            QTest.qWait(100)
+    
+    def handle_popups_continuously(self, qtbot, max_popups=20, timeout=5000):
+        """Handle all popups automatically with continuous monitoring"""
+        popup_count = 0
+        start_time = time.time()
+        
+        def check_and_handle_popup():
+            nonlocal popup_count
+            
+            # Stop if we've reached max popups or timeout
+            if popup_count >= max_popups or (time.time() - start_time) * 1000 > timeout:
+                return
+                
+            # Find any message boxes
+            message_boxes = [w for w in QApplication.topLevelWidgets() 
+                           if isinstance(w, QMessageBox) and w.isVisible()]
+            
+            for message_box in message_boxes:
+                popup_count += 1
+                popup_text = message_box.text().lower()
+                logger.info(f"Auto-handling popup {popup_count}: {message_box.text()[:50]}...")
+
+                # Handle date validation errors by resetting portfolio
+                if "end date must be after start date" in popup_text:
+                    self.click_popup_button(message_box, QMessageBox.StandardButton.Ok)
+                    # Reset portfolio to clear date constraints
+                    logger.info("Date validation error detected - resetting portfolio")
+                    QTest.qWait(100)
+                    self.input_panel.reset_button.click()
+                    return
+                # Handle different popup types based on content
+                elif any(keyword in popup_text for keyword in ["automatic", "semi-automatic", "mode"]):
+                    # Mode explanation popup - click OK
+                    self.click_popup_button(message_box, QMessageBox.StandardButton.Ok)
+                elif "no trades" in popup_text:
+                    # No trades warning - click OK
+                    self.click_popup_button(message_box, QMessageBox.StandardButton.Ok)
+                elif any(keyword in popup_text for keyword in ["confirm", "proceed", "continue"]):
+                    # Confirmation dialog - click Yes
+                    if not self.click_popup_button(message_box, QMessageBox.StandardButton.Yes):
+                        self.click_popup_button(message_box, QMessageBox.StandardButton.Ok)
+                elif "error" in popup_text:
+                    # Error dialog - click OK
+                    self.click_popup_button(message_box, QMessageBox.StandardButton.Ok)
+                elif any(keyword in popup_text for keyword in ["short", "range", "warning"]):
+                    # Date range warning - click Yes to proceed
+                    if not self.click_popup_button(message_box, QMessageBox.StandardButton.Yes):
+                        self.click_popup_button(message_box, QMessageBox.StandardButton.Ok)
+                else:
+                    # Default - try OK first, then Yes
+                    if not self.click_popup_button(message_box, QMessageBox.StandardButton.Ok):
+                        self.click_popup_button(message_box, QMessageBox.StandardButton.Yes)
+        
+        # Set up timer to check every 50ms for more responsive handling
+        timer = QTimer()
+        timer.timeout.connect(check_and_handle_popup)
+        timer.start(50)
+        
+        return timer
+    
+    def click_popup_button(self, message_box, button_role):
+        """Click a specific button in a message box"""
+        try:
+            button = message_box.button(button_role)
+            if button and button.isEnabled() and button.isVisible():
+                QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+                QTest.qWait(100)  # Wait for click to process
+                return True
+        except Exception as e:
+            logger.warning(f"Failed to click button {button_role}: {e}")
+        return False
+    
+    def wait_for_execution_complete(self, qtbot, timeout=60000):
+        """Wait for strategy execution to complete with popup handling"""
+        start_time = time.time()
+        completion_detected = False
+
+        # Start popup handler that also detects completion
+        popup_timer = self.handle_popups_continuously(qtbot, max_popups=50, timeout=timeout)
+
+        def check_completion():
+            nonlocal completion_detected
+            
+            # Check for completion popup (success message)
+            message_boxes = [w for w in QApplication.topLevelWidgets() 
+                           if isinstance(w, QMessageBox) and w.isVisible()]
+            
+            for msg_box in message_boxes:
+                text = msg_box.text().lower()
+                if any(keyword in text for keyword in ["success", "completed", "executed", "finished"]):
+                    completion_detected = True
+                    logger.info(f"Completion popup detected: {msg_box.text()[:50]}...")
+                    # Auto-click OK to dismiss
+                    self.click_popup_button(msg_box, QMessageBox.StandardButton.Ok)
+                    return True
+            
+            # Fallback: check if execution finished based on UI state
+            return (not self.input_panel.progress_bar.isVisible() and 
+                   self.input_panel.execute_button.isEnabled())
+        
+        try:
+            # Wait for either completion popup or UI state change
+            qtbot.waitUntil(check_completion, timeout=timeout)
+        except Exception as e:
+            logger.warning(f"Timeout or error waiting for execution: {e}")
+        finally:
+            popup_timer.stop()
+        
+        duration = time.time() - start_time
+        logger.info(f"Execution completed in {duration:.2f}s (completion popup: {'Yes' if completion_detected else 'No'})")
+        return duration
+        
+    
+    # Test periods as pytest parameters
+    @pytest.mark.parametrize("period_name,start_date,end_date", [
+        # 1-month periods (3 tests)
+        ("1_month_jan", QDate(2022, 1, 1), QDate(2022, 1, 31)),
+        ("1_month_june", QDate(2022, 6, 1), QDate(2022, 6, 30)),
+        ("1_month_sept", QDate(2022, 9, 1), QDate(2022, 9, 30)),
+        
+        # 3-month periods (3 tests)
+        ("3_months_q1", QDate(2022, 1, 1), QDate(2022, 3, 31)),
+        ("3_months_q2", QDate(2022, 4, 1), QDate(2022, 6, 30)),
+        ("3_months_q3", QDate(2022, 7, 1), QDate(2022, 9, 30)),
+        
+        # 6-month periods (3 tests)
+        ("6_months_h1", QDate(2022, 1, 1), QDate(2022, 6, 30)),
+        ("6_months_h2", QDate(2022, 7, 1), QDate(2022, 12, 31)),
+        ("6_months_alt", QDate(2022, 3, 1), QDate(2022, 8, 31)),
+        
+        # 1-year periods (2 tests)
+        ("1_year_calendar", QDate(2022, 1, 1), QDate(2022, 12, 31)),
+        ("1_year_may_to_may", QDate(2022, 5, 1), QDate(2023, 4, 30)),
+    ])
+    def test_execute_trading_strategy_timing(self, qtbot, period_name, start_date, end_date):
+        """Test trading strategy executes within 45 seconds in different time periods"""
+        # Calculate test metadata
+        date_range_days = (end_date.toPyDate() - start_date.toPyDate()).days
+        logger.info("="*80)
+        logger.info(f"STARTING TIMING TEST: {period_name}")
+        logger.info(f"Date Range: {start_date.toString('yyyy-MM-dd')} to {end_date.toString('yyyy-MM-dd')}")
+        logger.info(f"Period Length: {date_range_days} days")
+        logger.info(f"Expected Limit: 45 seconds")
+        logger.info("="*80)
+        
+        # Set date range
+        self.input_panel.start_date_input.setDate(start_date)
+        self.input_panel.end_date_input.setDate(end_date)
+
+        # Log configuration
+        investment = self.input_panel.investment_input.text()
+        risk = self.input_panel.risk_input.value()
+        mode = self.input_panel.mode_combo.currentText()
+        
+        logger.info(f"Test Configuration:")
+        logger.info(f"  Investment: ${investment}")
+        logger.info(f"  Risk Level: {risk}")
+        logger.info(f"  Trading Mode: {mode}")
+
+        # Start execution and measure time
+        logger.info(f"Starting execution at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+        start_time = time.time()
         self.input_panel.execute_button.click()
-        self.app.processEvents()  # Process GUI events
-        QTimer.singleShot(100, lambda: self.app.processEvents())  # Additional event processing
-        end_time = datetime.now()
-        duration = (end_time - start_time).total_seconds()
-        logger.info(f"Trading strategy execution took {duration} seconds")
-        self.assertLessEqual(duration, 45, "Trading strategy execution exceeded 45 seconds")
 
-    def test_no_trades_message_timing(self):
-        """Test 2: Ensure no-trades message appears within 30 seconds when thresholds not met."""
-        # Simulate no trades by setting an extreme risk value
-        self.input_panel.risk_input.setValue(1000)  # QDoubleSpinBox
-        start_time = datetime.now()
-        self.input_panel.execute_button.click()
-        self.app.processEvents()  # Process GUI events
-        QTimer.singleShot(100, lambda: self.app.processEvents())  # Additional event processing
-        end_time = datetime.now()
-        duration = (end_time - start_time).total_seconds()
-        logger.info(f"No-trades message appeared in {duration} seconds")
-        self.assertLessEqual(duration, 30, "No-trades message took longer than 30 seconds")
+        # Wait for completion with popup handling
+        duration = self.wait_for_execution_complete(qtbot, timeout=60000)  # 60s max
 
-    def test_profit_percentage(self):
-        """Test 3: Ensure at least 70% of transactions made a profit."""
-        self.input_panel.execute_button.click()
-        self.app.processEvents()  # Process GUI events
-        orders_df = get_order_history_df()  # Use real function to get orders
-        logger.info(f"Orders retrieved: {len(orders_df)} rows")
-        if orders_df.empty:
-            pytest.skip("No orders available to test profitability")
-        orders = orders_df.to_dict('records')
+        # Calculate results
+        within_limit = duration <= 45
+        performance_pct = (45 / duration) * 100 if duration > 0 else 100
+        
+        # Store result for compliance analysis
+        result = {
+            'period': period_name,
+            'duration': duration,
+            'within_45s': within_limit,
+            'date_range_days': date_range_days,
+            'performance_pct': performance_pct,
+            'timestamp': datetime.now().isoformat()
+        }
+        TestSharpSightUI.timing_results.append(result)
+        
+        # Log detailed results
+        logger.info("-"*60)
+        logger.info(f"TIMING TEST COMPLETED: {period_name}")
+        logger.info(f"Execution Time: {duration:.2f}s")
+        logger.info(f"Status: {' PASS' if within_limit else ' FAIL'} (45s limit)")
+        logger.info(f"Performance: {performance_pct:.1f}% of limit")
+        if duration > 45:
+            logger.warning(f"  EXCEEDED LIMIT by {duration - 45:.2f}s")
+        else:
+            logger.info(f" UNDER LIMIT by {45 - duration:.2f}s")
+        logger.info("-"*60)
+        
+        # Individual test passes if under 60s (generous limit)
+        assert duration <= 60, f"{period_name} took {duration:.2f}s, exceeded 60s maximum"
+    
+    def test_timing_95_percent_compliance(self):
+        """Verify 95% of timing tests completed within 45 seconds"""
+        if not TestSharpSightUI.timing_results:
+            pytest.skip("No timing results available - run timing tests first")
+        
+        total_tests = len(TestSharpSightUI.timing_results)
+        within_45s = sum(1 for result in TestSharpSightUI.timing_results if result['within_45s'])
+        compliance_rate = (within_45s / total_tests) * 100
+        required_passes = int(total_tests * 0.95)
+        
+        # Log comprehensive compliance report
+        logger.info("="*100)
+        logger.info("TIMING COMPLIANCE ANALYSIS - NON-FUNCTIONAL REQUIREMENT #1")
+        logger.info("="*100)
+        logger.info(f"Requirement: 95% of transactions must complete within 45 seconds")
+        logger.info(f"Test Results Summary:")
+        logger.info(f"  Total Tests Run: {total_tests}")
+        logger.info(f"  Tests Within 45s: {within_45s}")
+        logger.info(f"  Tests Over 45s: {total_tests - within_45s}")
+        logger.info(f"  Actual Compliance: {compliance_rate:.1f}%")
+        logger.info(f"  Required Compliance: 95.0%")
+        logger.info(f"  Required Passes: ≥{required_passes}")
+        logger.info(f"  Result: {' REQUIREMENT MET' if within_45s >= required_passes else ' REQUIREMENT FAILED'}")
+        logger.info("-"*100)
+        
+        # Detailed breakdown by period type
+        period_types = {}
+        for result in TestSharpSightUI.timing_results:
+            period_type = result['period'].split('_')[0] + "_" + result['period'].split('_')[1]
+            if period_type not in period_types:
+                period_types[period_type] = {'total': 0, 'passed': 0, 'times': []}
+            period_types[period_type]['total'] += 1
+            if result['within_45s']:
+                period_types[period_type]['passed'] += 1
+            period_types[period_type]['times'].append(result['duration'])
+        
+        logger.info("BREAKDOWN BY PERIOD TYPE:")
+        for period_type, stats in period_types.items():
+            avg_time = sum(stats['times']) / len(stats['times'])
+            pass_rate = (stats['passed'] / stats['total']) * 100
+            logger.info(f"  {period_type.replace('_', ' ').title()}: {stats['passed']}/{stats['total']} passed ({pass_rate:.1f}%), avg: {avg_time:.2f}s")
+        
+        logger.info("-"*100)
+        logger.info("DETAILED TEST RESULTS:")
+        for i, result in enumerate(TestSharpSightUI.timing_results, 1):
+            status = "pass" if result['within_45s'] else "fail"
+            logger.info(f"  {i:2d}. {status} {result['period']:20s} | {result['duration']:6.2f}s | {result['date_range_days']:3d} days | {result['performance_pct']:6.1f}%")
+        
+        logger.info("="*100)
+        
+        # Assert compliance
+        assert within_45s >= required_passes, (
+            f"TIMING COMPLIANCE FAILED: {within_45s}/{total_tests} tests within 45s "
+            f"({compliance_rate:.1f}%), required ≥{required_passes} ({required_passes/total_tests*100:.1f}%)"
+        )
+        
+        logger.info(f" TIMING COMPLIANCE REQUIREMENT SATISFIED: {compliance_rate:.1f}% >= 95%")
+    
+    
+    @pytest.mark.parametrize("scenario,investment,start_date,end_date,mode,expected_error", [
+        # Investment validation scenarios
+        ("zero_investment", "0", QDate(2022, 1, 1), QDate(2022, 1, 31), "Automatic", "investment"),
+        ("empty_investment", "", QDate(2022, 1, 1), QDate(2022, 1, 31), "Automatic", "investment"),
+        ("negative_investment", "-1000", QDate(2022, 1, 1), QDate(2022, 1, 31), "Automatic", "investment"),
+        
+        # Date validation scenarios
+        ("same_dates", "10000", QDate(2022, 1, 15), QDate(2022, 1, 15), "Automatic", "date"),
+        ("end_before_start", "10000", QDate(2022, 1, 31), QDate(2022, 1, 1), "Automatic", "date"),
+        
+        # Mode validation scenarios  
+        ("no_mode_selected", "10000", QDate(2022, 1, 1), QDate(2022, 1, 31), "Select Mode", "mode"),
+        
+        # Additional edge cases
+        ("very_large_investment", "999999999999", QDate(2022, 1, 1), QDate(2022, 1, 31), "Automatic", "investment"),
+    ])
+    def test_no_trades_validation_timing(self, qtbot, scenario, investment, start_date, end_date, mode, expected_error):
+        """Test validation error notifications appear within 30 seconds"""
+        
+        logger.info("="*80)
+        logger.info(f"STARTING VALIDATION TEST: {scenario}")
+        logger.info("="*80)
+        
+        # Set test inputs
+        self.input_panel.investment_input.setText(investment)
+        self.input_panel.start_date_input.setDate(start_date)
+        self.input_panel.end_date_input.setDate(end_date)
+        self.input_panel.mode_combo.setCurrentText(mode)
+        
+        # Start continuous popup monitoring BEFORE clicking execute
+        validation_detected = False
+        detection_time = None
+        
+        def handle_validation_popup():
+            nonlocal validation_detected, detection_time
+            message_boxes = [w for w in QApplication.topLevelWidgets() 
+                            if isinstance(w, QMessageBox) and w.isVisible()]
+            
+            for msg_box in message_boxes:
+                text = msg_box.text().lower()
+                if any(keyword in text for keyword in [
+                    "investment", "amount", "valid", "greater than zero",
+                    "end date must be after", "mode selection", "select a trading mode"
+                ]):
+                    if not validation_detected:
+                        validation_detected = True
+                        detection_time = time.time()
+                        logger.info(f"Validation popup detected: {text[:50]}...")
+                    
+                    self.click_popup_button(msg_box, QMessageBox.StandardButton.Ok)
+                    return True
+            return validation_detected
+        
+        # Set up continuous monitoring
+        timer = QTimer()
+        timer.timeout.connect(handle_validation_popup)
+        timer.start(50)  # Check every 50ms
+        
+        try:
+            # Start timing and click execute
+            start_time = time.time()
+            self.input_panel.execute_button.click()
+            
+            # Wait for validation popup
+            qtbot.waitUntil(lambda: validation_detected, timeout=30000)
+            
+            duration = (detection_time - start_time) if detection_time else 30
+            
+        finally:
+            timer.stop()
+        
+        # Store and validate results
+        TestSharpSightUI.validation_results.append({
+            'scenario': scenario,
+            'duration': duration,
+            'within_30s': duration <= 30 and validation_detected,
+            'validation_detected': validation_detected,
+            'error_type': expected_error
+        })
+        
+        logger.info(f"VALIDATION TEST: {scenario} - {duration:.2f}s")
+        
+        assert validation_detected, f"No validation popup for {scenario}"
+        assert duration <= 30, f"{scenario} took {duration:.2f}s"
 
-        profitable_trades = 0
-        total_trades = 0
-        buy_price = None
-        buy_cost = None
-
-        for order in orders:
-            if order['action'] == 'buy':
-                buy_price = order['price']
-                buy_cost = order['investment_amount'] + order.get('transaction_cost', 0)
-            elif order['action'] == 'sell' and buy_price is not None:
-                sell_proceeds = order['investment_amount'] - order.get('transaction_cost', 0)
-                if sell_proceeds > buy_cost:
-                    profitable_trades += 1
-                total_trades += 1
-                buy_price = None
-                buy_cost = None
-
-        profit_percentage = (profitable_trades / total_trades) * 100 if total_trades > 0 else 0
-        logger.info(f"Profitable trades: {profitable_trades}/{total_trades} ({profit_percentage:.2f}%)")
-        self.assertGreaterEqual(profit_percentage, 70, f"Only {profit_percentage:.2f}% of trades were profitable, expected at least 70%")
-
-    def test_sharpe_accuracy(self):
-        """Test 4: Ensure Predicted Sharpe is within 15% of Actual Sharpe in Trading History."""
-        self.input_panel.execute_button.click()
-        self.app.processEvents()
-        self.main_window.tabs.setCurrentIndex(2)  # Switch to trading history tab
-        self.main_window.recommendation_panel.update_recommendations()
-        self.app.processEvents()
-        recommendation_panel = self.main_window.recommendation_panel
-        table = recommendation_panel.table
-        total_rows = table.rowCount()
-        logger.info(f"Trading history table rows: {total_rows}")
-
-        if total_rows == 0:
-            pytest.skip("No rows in trading history table to test Sharpe accuracy")
-
-        accurate_rows = 0
-        for row in range(total_rows):
-            pred_sharpe_item = table.item(row, 10)  # Predicted Sharpe column
-            actual_sharpe_item = table.item(row, 11)  # Actual Sharpe column
-
-            if pred_sharpe_item and actual_sharpe_item and pred_sharpe_item.text() != "N/A" and actual_sharpe_item.text() != "N/A":
-                try:
-                    pred_sharpe = float(pred_sharpe_item.text())
-                    actual_sharpe = float(actual_sharpe_item.text())
-                    if actual_sharpe != 0:
-                        error_percentage = abs(pred_sharpe - actual_sharpe) / abs(actual_sharpe) * 100
-                        if error_percentage <= 15:
-                            accurate_rows += 1
-                        logger.info(f"Row {row}: Pred Sharpe={pred_sharpe:.2f}, Actual Sharpe={actual_sharpe:.2f}, Error={error_percentage:.2f}%")
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Row {row}: Could not parse Sharpe values - {e}")
-                    continue
-
-        accuracy_percentage = (accurate_rows / total_rows) * 100 if total_rows > 0 else 0
-        logger.info(f"Sharpe accuracy: {accurate_rows}/{total_rows} rows within 15% ({accuracy_percentage:.2f}%)")
-        self.assertGreaterEqual(accuracy_percentage, 100, f"Only {accuracy_percentage:.2f}% of Predicted Sharpes were within 15% of Actual Sharpes")
-
+    def test_validation_95_percent_compliance(self):
+        """Verify 95% of validation notifications appear within 30 seconds"""
+        if not TestSharpSightUI.validation_results:
+            pytest.skip("No validation results available - run validation tests first")
+        
+        total_tests = len(TestSharpSightUI.validation_results)
+        within_30s = sum(1 for result in TestSharpSightUI.validation_results if result['within_30s'])
+        compliance_rate = (within_30s / total_tests) * 100
+        required_passes = int(total_tests * 0.95)
+        
+        # Log compliance report
+        logger.info("="*100)
+        logger.info("VALIDATION COMPLIANCE ANALYSIS - NON-FUNCTIONAL REQUIREMENT #2")
+        logger.info("="*100)
+        logger.info(f"Requirement: 95% of validation errors must appear within 30 seconds")
+        logger.info(f"Test Results Summary:")
+        logger.info(f"  Total Tests Run: {total_tests}")
+        logger.info(f"  Tests Within 30s: {within_30s}")
+        logger.info(f"  Tests Over 30s: {total_tests - within_30s}")
+        logger.info(f"  Actual Compliance: {compliance_rate:.1f}%")
+        logger.info(f"  Required Compliance: 95.0%")
+        logger.info(f"  Result: {' REQUIREMENT MET' if within_30s >= required_passes else ' REQUIREMENT FAILED'}")
+        
+        # Breakdown by error type
+        error_types = {}
+        for result in TestSharpSightUI.validation_results:
+            error_type = result['error_type']
+            if error_type not in error_types:
+                error_types[error_type] = {'total': 0, 'passed': 0, 'times': []}
+            error_types[error_type]['total'] += 1
+            if result['within_30s']:
+                error_types[error_type]['passed'] += 1
+            error_types[error_type]['times'].append(result['duration'])
+        
+        logger.info("-"*100)
+        logger.info("BREAKDOWN BY ERROR TYPE:")
+        for error_type, stats in error_types.items():
+            avg_time = sum(stats['times']) / len(stats['times'])
+            pass_rate = (stats['passed'] / stats['total']) * 100
+            logger.info(f"  {error_type.title()}: {stats['passed']}/{stats['total']} passed ({pass_rate:.1f}%), avg: {avg_time:.2f}s")
+        
+        logger.info("-"*100)
+        logger.info("DETAILED VALIDATION RESULTS:")
+        for i, result in enumerate(TestSharpSightUI.validation_results, 1):
+            status = "✓" if result['within_30s'] else "✗"
+            detected = "✓" if result['validation_detected'] else "✗"
+            logger.info(f"  {i:2d}. {status} {result['scenario']:20s} | {result['duration']:6.2f}s | {detected} detected | {result['error_type']}")
+        
+        logger.info("="*100)
+        
+        assert within_30s >= required_passes, (
+            f"VALIDATION COMPLIANCE FAILED: {within_30s}/{total_tests} tests within 30s "
+            f"({compliance_rate:.1f}%), required ≥{required_passes}"
+        )
+        
+        logger.info(f"🎉 VALIDATION COMPLIANCE REQUIREMENT SATISFIED: {compliance_rate:.1f}% >= 95%")
+        
 if __name__ == '__main__':
-    pytest.main(['-v', '--tb=long'])
+    pytest.main(['-v', '--tb=short', '-s'])

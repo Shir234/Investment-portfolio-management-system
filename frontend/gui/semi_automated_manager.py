@@ -361,14 +361,29 @@ class WindowedTradeConfirmationDialog(QDialog):
         return widget
 
     def select_all_valid_trades(self):
-        """Select all valid trades that we can afford."""
+        """Select all valid trades that we can afford, in order until cash runs out."""
+        running_cash_cost = 0.0
+
         for row in range(self.table.rowCount()):
             checkbox_widget = self.table.cellWidget(row, 0)
             status_item = self.table.item(row, 7)
+            
             if status_item and "Valid" in status_item.text():
                 order = self.orders[row]
-                if order.get('action') == 'sell' or self.can_afford_selection(checkbox_widget):
+                
+                # Always allow sell orders (they add cash)
+                if order.get('action') == 'sell':
                     checkbox_widget.set_checked(True)
+                # For buy orders, check if we can afford them
+                elif order.get('action') == 'buy':
+                    order_cost = order.get('total_cost', order.get('shares_amount', 0) * order.get('price', 0))
+                    if running_cash_cost + order_cost <= self.current_cash:
+                        checkbox_widget.set_checked(True)
+                        running_cash_cost += order_cost
+                    else:
+                        # Stop selecting once we run out of cash
+                        break
+    
         self.update_selected_totals()
 
     def clear_all_selections(self):
@@ -627,6 +642,8 @@ class SemiAutomatedManager:
             current_cash = self.user_investment_amount
             current_holdings = {}
 
+        logger.info(f"Window {self.current_window_index + 1} using: Cash=${current_cash:,.2f}, Holdings={len(current_holdings)}")
+
         self.worker = Worker(
             investment_amount=current_cash,                 # Use current cash, not initial
             risk_level=self.user_risk_level,
@@ -772,7 +789,12 @@ class SemiAutomatedManager:
     
     def _handle_window_error(self, error_message):
         """Handle errors in window processing."""
+
         self.input_panel.hide_progress()
+        # RE-ENABLE BUTTONS
+        self.input_panel.execute_button.setEnabled(True)
+        self.input_panel.reset_button.setEnabled(True)
+
         self.input_panel.show_message_box(
             QMessageBox.Icon.Critical,
             "Window Processing Error",
@@ -784,6 +806,10 @@ class SemiAutomatedManager:
     def _finish_windowed_trading(self):
         """Finish the windowed trading process."""
         logger.info("Windowed semi-automated trading completed")
+
+        # RE-ENABLE BUTTONS - ADD THIS
+        self.input_panel.execute_button.setEnabled(True)
+        self.input_panel.reset_button.setEnabled(True)
         
         # Update UI state after completion
         self.input_panel.update_ui_after_trading()

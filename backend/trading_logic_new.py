@@ -689,221 +689,8 @@ def add_cash_to_portfolio(additional_cash):
         logger.warning("No portfolio history found - cannot add cash")
 
 
-# def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False, use_weights=True, use_signal_strength=True, selected_orders=None):
-#     """
-#     Execute trading strategy combining Buy/Sell functions with LONG/SHORT support.
-    
-#     Args:
-#     - merged_data: DataFrame with predictions and price data
-#     - investment_amount: Initial cash amount
-#     - risk_level: Risk level 0-10 (0=conservative, 10=aggressive) 
-#     - start_date: Start date for trading
-#     - end_date: End date for trading
-#     - mode: "automatic" or "semi-automatic"
-#     - reset_state: Whether to reset portfolio state
-        
-#     Returns:
-#     - tuple: (orders, portfolio_history, final_value, warning_message) or 
-#                 (suggested_orders, warning_message) for semi-automatic
 
-                
-#     orders - Transaction History : a list of dictionaries where each order represents a single transaction (buy/sell)
-#     portfolio_history - Daily Portfolio Snapshots:  tracks the portfolio value over time
-#     holdings - Current Stock Positions: tracks what we currently own
-    
-#     """
-
-#     logger.info(f"Starting integrated trading strategy - Risk Level: {risk_level}")
-#     global orders, portfolio_history
-
-#     try:
-#         # Initialize the portfolio history and transactions if needed
-#         if reset_state:
-#             orders = []
-#             portfolio_history = []
-#             if os.path.exists(portfolio_state_file):
-#                 os.remove(portfolio_state_file)
-    
-#         # Load the portfolio state (if exists)
-#         load_portfolio_state()
-
-#         # Initialize portfolio variables
-#         cash = investment_amount
-#         holdings = {}
-#         warning_message = ""
-#         total_buy_orders = 0
-#         total_sell_orders = 0
-
-#         if selected_orders and mode == "semi-automatic":
-#             if selected_orders:
-#                 order_date = selected_orders[0]['date']
-#                 if isinstance(order_date, str):
-#                     current_date = pd.to_datetime(order_date, utc=True)
-#                 elif isinstance(order_date, pd.Timestamp):
-#                     current_date = order_date if order_date.tz else order_date.tz_localize('UTC')
-#                 else:
-#                     current_date = pd.Timestamp(order_date).tz_localize('UTC')
-#             else:
-#                 current_date = pd.Timestamp.now(tz='UTC')
-            
-#             # Execute only selected orders
-#             cash, executed_count = execute_orders(selected_orders, holdings, cash, mode="semi-automatic")
-#             total_buy_orders = sum(1 for o in selected_orders if o['action'] == 'buy' and o in selected_orders)
-#             total_sell_orders = sum(1 for o in selected_orders if o['action'] == 'sell' and o in selected_orders)
-
-#             current_value = cash
-#             for ticker, holding in holdings.items():
-#                 # Find the current price for this ticker from selected orders, or use purchase price
-#                 ticker_price = holding['purchase_price']  # fallback
-#                 for order in selected_orders:
-#                     if order['ticker'] == ticker:
-#                         ticker_price = order['price']
-#                         break
-#                 current_value += holding['shares'] * ticker_price
-
-#             portfolio_history.append({
-#                 'date': current_date,
-#                 'value': current_value,
-#                 'holdings': holdings.copy(),
-#                 'cash': cash,
-#                 'num_positions': len(holdings)
-#             })
-
-#             save_portfolio_state()
-#             return selected_orders, warning_message
-
-#         # Date processing
-#         merged_data['date'] = pd.to_datetime(merged_data['date'], utc=True)
-#         date_range = pd.date_range(start=start_date, end=end_date, freq='D', tz='UTC')
-
-#         # Load ticker weights and calculate thresholds
-#         if use_weights:
-#             ticker_weights = load_ticker_weights()
-#         else:
-#             ticker_weights = {}
-#         default_weight = 0.02  # 2% default weight
-
-#         sharpe_min = merged_data['Best_Prediction'].min()
-#         sharpe_max = merged_data['Best_Prediction'].max()
-        
-#         # Get the risk threshold as a sharpe ratio value - to match the predictions scale
-#         buy_threshold, sell_threshold = map_risk_to_sharpe_thresholds(risk_level, sharpe_min, sharpe_max)
-#         max_positions = 70  # Maximum number of different stocks
-
-#         # Get Buy / Sell transaction for each date - based on trading logic 
-#         for current_date in date_range:
-#             # Get daily data
-#             daily_data = merged_data[
-#                 merged_data['date'].dt.floor('D') == current_date
-#             ].copy()
-
-#             if daily_data.empty:
-#                 # No data today - just record portfolio value
-#                 current_value = cash
-#                 for ticker, holding in holdings.items():
-#                     # Use last known price or skip
-#                     last_price_data = merged_data[
-#                         (merged_data['Ticker'] == ticker) & 
-#                         (merged_data['date'] <= current_date)
-#                     ].tail(1)
-#                     if not last_price_data.empty:
-#                         current_value += holding['shares'] * last_price_data.iloc[0]['Close']
-                
-#                 portfolio_history.append({
-#                     'date': current_date,
-#                     'value': current_value,
-#                     'holdings': holdings.copy(),
-#                     'cash': cash,
-#                     'num_positions': len(holdings)
-#                 })
-#                 continue
-
-#             logger.debug(f"Processing {current_date.date()}: {len(daily_data)} tickers")
-
-#             # STEP 1: SELL FIRST (to free up cash for buying)
-#             sell_orders = sell_logic(
-#                 daily_data = daily_data,
-#                 sell_threshold = sell_threshold,
-#                 holdings = holdings,
-#                 current_date = current_date
-#             )
-#             cash, sell_count = execute_orders(sell_orders, holdings, cash, mode=mode)
-#             total_sell_orders += sell_count
-
-#             # STEP 2: BUY (with updated cash amount)
-#             buy_orders = buy_logic(
-#                 daily_data = daily_data,
-#                 buy_threshold = buy_threshold,
-#                 holdings=holdings,
-#                 cash = cash,
-#                 current_date = current_date,
-#                 ticker_weights = ticker_weights,
-#                 default_weight = default_weight,
-#                 max_positions = max_positions,
-#                 use_weights=use_weights,
-#                 use_signal_strength=use_signal_strength
-#             )
-#             cash, buy_count = execute_orders(buy_orders, holdings, cash, mode=mode)
-#             total_buy_orders += buy_count
-
-#             # STEP 3: Calculate current portfolio value
-#             current_value = cash
-#             for ticker, holding in holdings.items():
-#                 ticker_data = daily_data[daily_data['Ticker'] == ticker]
-#                 shares = holding['shares']
-#                 # if not ticker_data.empty:
-#                 #     current_value += holding['shares'] * ticker_data.iloc[0]['Close']
-#                 if not ticker_data.empty:
-#                     current_price = ticker_data.iloc[0]['Close']
-#                     position_value = shares * current_price
-#                     current_value += position_value
-#                     logger.debug(f"Position {ticker}: {shares} shares @ ${current_price:.2f} = ${position_value:.2f}")
-
-#                 else:
-#                     # Fallback: use purchase price if current price not available
-#                     purchase_price = holding['purchase_price']
-#                     position_value = shares * purchase_price
-#                     current_value += position_value
-#                     logger.debug(f"Position {ticker}: {shares} shares @ ${purchase_price:.2f} (purchase price) = ${position_value:.2f}")
-
-
-#             # STEP 4: Record daily portfolio snapshot
-#             portfolio_history.append({
-#                 'date': current_date,
-#                 'value': current_value,
-#                 'holdings': holdings.copy(),
-#                 'cash': cash,
-#                 'num_positions': len(holdings)
-#             })
-
-#             logger.debug(f"Day summary: Sells={sell_count}, Buys={buy_count}, "
-#                         f"Cash=${cash:.0f}, Value=${current_value:.0f}, Positions={len(holdings)}")
-
-#         # After the loop - calculate final results
-#         final_value = portfolio_history[-1]['value'] if portfolio_history else investment_amount
-#         total_return = (final_value / investment_amount - 1) * 100
-
-#         logger.info(f"Strategy completed: Buy orders={total_buy_orders}, Sell orders={total_sell_orders}")
-#         logger.info(f"Final value: ${final_value:.2f} ({total_return:.1f}% return)")
-
-#         save_portfolio_state()
-
-#         # Return results based on mode
-#         if mode == "automatic":
-#             return orders, portfolio_history, final_value, warning_message
-#         else:
-#             return orders, warning_message
-
-#     except Exception as e:
-#         logger.error(f"Error in integrated trading strategy: {e}", exc_info=True)
-#         warning_message = f"Strategy error: {e}"
-#         save_portfolio_state()
-#         if mode == "automatic":
-#             return [], [], investment_amount, warning_message
-#         else:
-#             return [], warning_message
 def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False, use_weights=True, use_signal_strength=True, selected_orders=None, current_cash=None, current_holdings=None):
-#def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False, use_weights=True, use_signal_strength=True, selected_orders=None):
     """
     Execute trading strategy combining Buy/Sell functions with LONG/SHORT support.
     
@@ -927,41 +714,39 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
 
     try:
         if reset_state:
-                # Only reset if explicitly requested (first window)
-                orders = []
-                portfolio_history = []
-                if os.path.exists(portfolio_state_file):
-                    os.remove(portfolio_state_file)
-                logger.info("Portfolio state reset for trading")
-        if mode != "semi-automatic":
-            load_portfolio_state()
-        elif not reset_state:
-            load_portfolio_state()
-            logger.info(f"Loaded existing portfolio state: {len(orders)} orders, {len(portfolio_history)} history")
-
-        """
-        # FIXED: Handle portfolio initialization properly for semi-automatic mode
-        if mode == "semi-automatic":
-            if reset_state:
-                # Only reset if explicitly requested (first window)
-                orders = []
-                portfolio_history = []
-                if os.path.exists(portfolio_state_file):
-                    os.remove(portfolio_state_file)
-                logger.info("Portfolio state reset for semi-automated trading")
-            else:
-                # Load existing state for subsequent windows
-                load_portfolio_state()
-                logger.info(f"Loaded existing portfolio state: {len(orders)} orders, {len(portfolio_history)} history")
+            # Explicit reset requested
+            orders = []
+            portfolio_history = []
+            if os.path.exists(portfolio_state_file):
+                os.remove(portfolio_state_file)
+            logger.info("Portfolio state reset for trading")
         else:
-            # Automatic mode: handle as before
-            if reset_state:
+            # Load existing state regardless of mode
+            load_portfolio_state()
+            logger.info(f"Loaded portfolio state: {len(orders)} orders, {len(portfolio_history)} history")
+        
+        # For semi-automatic first window, ensure we start fresh if no real portfolio exists
+        if mode == "semi-automatic" and not selected_orders:
+            if not portfolio_history or (len(orders) == 0 and len(portfolio_history) == 0):
+                # This is effectively a fresh start for semi-auto
+                reset_state = True
                 orders = []
                 portfolio_history = []
-                if os.path.exists(portfolio_state_file):
-                    os.remove(portfolio_state_file)
-            load_portfolio_state()
-        """
+                logger.info("Semi-auto: Starting fresh - no existing portfolio detected")
+        
+        # Initialize portfolio variables with proper state handling
+        if portfolio_history and not reset_state:
+            # Use existing portfolio state
+            latest_state = portfolio_history[-1]
+            cash = latest_state.get('cash', investment_amount)
+            holdings = latest_state.get('holdings', {}).copy()
+            logger.info(f"Continuing with existing portfolio: Cash=${cash:,.2f}, Holdings={len(holdings)}")
+        else:
+            # Fresh start
+            cash = investment_amount
+            holdings = {}
+            logger.info(f"Starting fresh with: Cash=${cash:,.2f}")
+        
         
         # Initialize portfolio variables
         cash, holdings, _ = get_current_portfolio_state()
