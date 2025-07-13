@@ -11,6 +11,14 @@ venv.bak/
 
 # Result folder - preserved locally, not tracked
 result/
+# BUT allow specific backend results folders
+!backend/results/
+!backend/results/20250513/
+!backend/results/20250527/
+# Allow specific files in the backend results folders (example files)
+!backend/results/20250513/*.csv
+!backend/results/20250527/*.csv
+
 
 # Python bytecode and CPython files
 __pycache__/
@@ -42,3 +50,12 @@ build/
 *.xls
 *.db
 *.sqlitechanges.patch
+
+# BUT allow specific backend files
+!backend/InsiderTrading_sharp.csv
+!backend/final_tickers_score.csv
+!backend/valid_tickers_av.csv
+!backend/stock_pipeline_20250527.txt
+!backend/20250527_all_tickers_results.csv
+
+changes.patch
