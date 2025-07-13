@@ -1,6 +1,7 @@
 """
 This script will:
 
+- Auto-detect the best Python installation to use
 - Check your Python version to ensure it's compatible
 - Create a virtual environment to isolate your project dependencies
 - Generate a requirements.txt file with all necessary libraries
@@ -20,7 +21,7 @@ Activating the environment:
 - Activate this environment each time before working on your project
 """
 
-#!/usr/bin/env python3
+
 """
 Setup script for Stock Analysis Project
 This script sets up a Python environment and installs required dependencies.
@@ -33,11 +34,13 @@ import subprocess
 import platform
 from pathlib import Path
 
+
 def print_section(title):
     """Print a formatted section title."""
     print("\n" + "="*80)
     print(f" {title} ".center(80, "="))
     print("="*80 + "\n")
+
 
 def configure_tensorflow_settings():
     """Create a script to configure TensorFlow environment settings."""
@@ -74,7 +77,7 @@ def configure_tensorflow_settings():
     if platform.system() != "Windows":
         os.chmod(tf_config_sh, 0o755)
     
-    print("✓ TensorFlow configuration scripts created")
+    print(" TensorFlow configuration scripts created")
     print("  - scripts/configure_tensorflow.bat (Windows Command Prompt)")
     print("  - scripts/configure_tensorflow.ps1 (Windows PowerShell)")
     print("  - scripts/configure_tensorflow.sh (Unix/Linux/MacOS)")

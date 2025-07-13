@@ -1,6 +1,4 @@
 # standalone_trading_runner.py
-
-#!/usr/bin/env python3
 """
 Standalone Trading Logic Runner - FINAL FIXED VERSION
 ====================================================
@@ -8,7 +6,6 @@ Standalone Trading Logic Runner - FINAL FIXED VERSION
 Run trading strategy directly without frontend.
 Tracks portfolio state, trade history, and profitability.
 """
-
 import pandas as pd
 import numpy as np
 import os
@@ -17,7 +14,6 @@ import logging
 from datetime import datetime, timedelta
 import sys
 
-# Fix import paths - similar to trading_connector.py
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 frontend_dir = os.path.join(parent_dir, 'frontend')
@@ -168,6 +164,18 @@ def force_reset_state():
 
 
 class TradingRunner:
+    """
+    Complete trading system wrapper providing execution, analysis, and result management.
+    
+    Features:
+    - Dual-mode execution (automatic vs semi-automatic)
+    - Comprehensive profitability analysis (completed + open positions)
+    - Multi-format result output (CSV, JSON)
+    - 70% win rate target tracking
+    - Portfolio state persistence
+    
+    Designed for both backtesting and live trading simulation.
+    """
     def __init__(self, csv_path, output_dir="trading_results"):
         """
         Initialize the trading runner.
@@ -222,18 +230,20 @@ class TradingRunner:
             self.logger.error(f"Error loading data: {e}")
             raise
     
-    def run_strategy(self, 
-                    investment_amount=10000,
-                    risk_level=5,
-                    start_date=None,
-                    end_date=None,
-                    mode="automatic",
-                    reset_state=True,
-                    use_weights=True,
-                    use_signal_strength=True,
-                    selected_orders=None):
+    def run_strategy(self, investment_amount=10000, risk_level=5, start_date=None, end_date=None, mode="automatic", 
+                    reset_state=True, use_weights=True, use_signal_strength=True, selected_orders=None):
         """
-        Run the trading strategy.
+        Main strategy execution with comprehensive configuration options.
+    
+        Execution Modes:
+        - Automatic: Full back-testing with immediate order execution
+        - Semi-automatic: Generate suggestions -> User review -> Selective execution
+        
+        Configuration:
+        - Risk Level: 0-10 scale (conservative to aggressive)
+        - Feature Toggles: Weights (insider scores), Signal strength (prediction confidence)
+        - State Management: Fresh start vs continuation of existing portfolio
+        
         
         Args:
             investment_amount: Starting cash
@@ -245,6 +255,8 @@ class TradingRunner:
             use_weights: Whether to use ticker weights
             use_signal_strength: Whether to use signal strength
             selected_orders: List of orders to execute (for semi-automatic mode)
+            
+        Returns complete results with performance metrics and portfolio history.
         """
         try:
             # Auto-detect date range if not provided
@@ -293,15 +305,9 @@ class TradingRunner:
                 orders, portfolio_history, final_value, warning_message = result
 
             else:
-                # # Handle semi-automatic mode with selected_orders
-                # if selected_orders:
-                #     # When executing selected orders, we still get the full result
-                #     orders, portfolio_history, final_value, warning_message = result[0], get_portfolio_history(), result[0][-1]['final_value'] if result[0] else investment_amount, result[1] if len(result) > 1 else ""
-                # else:
-                    # When just getting suggestions
-                    orders, warning_message = result
-                    portfolio_history = get_portfolio_history()
-                    final_value = portfolio_history[-1]['value'] if portfolio_history else investment_amount
+                orders, warning_message = result
+                portfolio_history = get_portfolio_history()
+                final_value = portfolio_history[-1]['value'] if portfolio_history else investment_amount
             
             # Store results
             self.results = {
@@ -339,8 +345,16 @@ class TradingRunner:
     
     def analyze_trade_profitability(self):
         """
-        Enhanced profitability analysis including both completed and open positions.
+        Enhanced profitability analysis covering all position types.
+    
+        Analysis includes:
+        - Completed trades: Full buy→sell cycle P&L
+        - Open positions: Current unrealized gains/losses  
+        - Performance metrics: Win rates, average returns, best/worst trades
+        - 70% target validation: Industry benchmark for trading success
         
+        Critical for validating trading strategy effectiveness and risk management.
+
         Returns a DataFrame with detailed trade analysis covering:
         1. Completed trades (buy → sell)
         2. Open positions (still holding shares)
@@ -445,7 +459,7 @@ class TradingRunner:
             # ===========================================
             open_positions = []
             
-            # FIXED: Iterate through ALL current holdings, not just some
+            # Iterate through ALL current holdings, not just some
             for ticker, holding in current_holdings.items():
                 shares = holding.get('shares', 0)
                 purchase_price = holding.get('purchase_price', 0)
@@ -560,15 +574,15 @@ class TradingRunner:
             open_profit_loss = open_df['profit_loss_dollar'].sum() if not open_df.empty else 0
             open_avg_return = open_df['profit_loss_pct'].mean() if not open_df.empty else 0
             
-            # ===========================================
-            # 70% PROFITABILITY CHECK (Your Request!)
-            # ===========================================
+            # =========================
+            # 70% PROFITABILITY CHECK 
+            # =========================
             profitability_threshold = 70.0
             meets_70_percent = overall_win_rate >= profitability_threshold
             
-            # ===========================================
+            # =========================
             # DETAILED LOGGING
-            # ===========================================
+            # =========================
             self.logger.info("="*80)
             self.logger.info("ENHANCED TRADE PROFITABILITY ANALYSIS")
             self.logger.info("="*80)
@@ -654,8 +668,7 @@ class TradingRunner:
         except Exception as e:
             self.logger.error(f"Error in enhanced trade profitability analysis: {e}", exc_info=True)
             return pd.DataFrame()
-            
-    
+               
     def save_results(self, filename_prefix="trading_results", trades_df=None):
         """Save all results to files."""
         try:
@@ -796,7 +809,6 @@ class TradingRunner:
             self.logger.error(f"Error getting suggested orders: {e}", exc_info=True)
             return [], f"Error: {e}"
 
-
     def execute_selected_orders(self, 
                             selected_orders,
                             investment_amount=10000,
@@ -822,13 +834,13 @@ class TradingRunner:
             # Execute the selected orders
             result = self.run_strategy(
                 investment_amount=investment_amount,
-                risk_level=5,  # Not used when executing specific orders
-                start_date=None,  # Not used when executing specific orders
-                end_date=None,    # Not used when executing specific orders
+                risk_level=5,  
+                start_date=None,  
+                end_date=None,   
                 mode="semi-automatic",
                 reset_state=reset_state,
-                use_weights=True,  # Not relevant for execution
-                use_signal_strength=True,  # Not relevant for execution
+                use_weights=True, 
+                use_signal_strength=True,  
                 selected_orders=selected_orders
             )
             

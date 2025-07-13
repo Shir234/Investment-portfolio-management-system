@@ -1,4 +1,17 @@
 # Ensembles.py
+"""
+Ensembles.py - Multi-method ensemble learning for financial prediction
+
+Combines predictions from multiple ML models using three approaches:
+1. Linearly Weighted: Performance-based weighting (R²/RMSE²)
+2. Equal Weighted: Simple averaging of all models
+3. GBDT Meta-Learning: Gradient boosting to learn optimal combinations
+
+Key features:
+- Dynamic clipping based on validation data ranges
+- LSTM-aware prediction handling with time steps
+- Comprehensive performance comparison and validation
+"""
 import time
 import pandas as pd
 import numpy as np
@@ -6,18 +19,21 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
-from sklearn.feature_selection import VarianceThreshold
 from Models_Creation_and_Training import create_rolling_window_data
 import optuna
-from scipy.stats import pearsonr
 import Models_Creation_and_Training as Models_Creation_and_Training
-from Logging_and_Validation import log_data_stats, verify_prediction_scale
+from Logging_and_Validation import verify_prediction_scale
 import traceback
+
 
 def prepare_lstm_data(X, time_steps=3, features=None):
     """
-    Prepare data for LSTM prediction with rolling windows
+    Converts regular data into rolling windows for LSTM input.
+    
+    Creates sequences where each sample contains 'time_steps' consecutive observations.
+    Essential for LSTM models that require sequential input data.
     """
+
     if hasattr(X, 'values'):
         X = X.values
     if features is not None:
@@ -29,11 +45,15 @@ def prepare_lstm_data(X, time_steps=3, features=None):
         X_rolled.append(X[i:i + time_steps])
     return np.array(X_rolled)
 
-# Helper function to get dynamic clipping range
+
 def get_dynamic_clipping_range(models_results, logger=None):
     """
-    Calculate dynamic clipping range based on validation data
+    Calculates reasonable prediction bounds from validation data.
+    
+    Uses 1st and 99th percentiles of all model validation targets to prevent
+    extreme predictions that could destabilize ensemble results.
     """
+
     y_values = []
     
     for model_name, result in models_results.items():
@@ -66,8 +86,14 @@ def get_dynamic_clipping_range(models_results, logger=None):
     return y_min, y_max
 
 
-# Linearly Weighted Ensemble
 def linearly_weighted_ensemble(models_results, X_test, target_scaler, logger=None):
+    """
+    Performance-weighted ensemble using inverse RMSE squared weighting.
+    
+    Weight formula: (R² + 1) / (RMSE²)
+    - Rewards models with high R² and low RMSE
+    - Filters out poor models (R² <= 0.5)
+    """
 
     if not models_results:
         raise ValueError("Empty models_results dictionary")
@@ -195,8 +221,14 @@ def linearly_weighted_ensemble(models_results, X_test, target_scaler, logger=Non
 
     return final_prediction
 
-# Equal Weights Ensemble
+
 def equal_weighted_ensemble(models_results, X_test, target_scaler, logger=None):
+    """
+    Simple averaging ensemble - all models weighted equally (1/n each).
+    
+    Good approach against overfitting to validation metrics.
+    Provides a good baseline for ensemble comparison.
+    """
     
     X_test_array = X_test.values if hasattr(X_test, 'values') else X_test
     model_predictions = []
@@ -288,8 +320,18 @@ def equal_weighted_ensemble(models_results, X_test, target_scaler, logger=None):
     return final_prediction
 
 
-# GBDT Ensemble
 def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, logger):
+    """
+    Meta-learning ensemble using Gradient Boosting Decision Trees.
+    
+    Two-stage process:
+    1. Generate base model predictions on training data (meta-features)
+    2. Train GBDT meta-model to optimally combine these predictions
+    3. Apply trained meta-model to test predictions
+    
+    Can learn complex, non-linear combinations but requires sufficient training data.
+    Uses Optuna for hyperparameter optimization of the meta-model.
+    """
 
     try:
         meta_features_train = []
@@ -451,7 +493,6 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, logge
         
         # Make final predictions
         final_prediction = meta_model.predict(meta_features_test)
-        #final_prediction = target_scaler.inverse_transform(final_prediction.reshape(-1, 1)).flatten()
         final_prediction = np.clip(final_prediction, clip_min, clip_max)
 
         return final_prediction
@@ -461,9 +502,18 @@ def gbdt_ensemble(models_results, X_train, X_test, Y_train, target_scaler, logge
         return np.zeros(len(X_test))
 
 
-
-# Ensemble Pipeline (Unchanged)
 def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, target_scaler):
+    """
+    Main function that runs all ensemble methods and compares results.
+    
+    Flow:
+    1. Validates model availability and target scaler functionality
+    2. Executes all three ensemble methods sequentially
+    3. Performs scale verification to ensure predictions are reasonable
+    4. Calculates comprehensive metrics (MSE, RMSE, R², MAE) for each method
+    5. Compares methods and identifies the best performer
+    6. Returns complete results with performance rankings
+    """
     
     logger.info(f"\n{'-'*30}\nInitializing ensemble pipeline\n{'-'*30}")
     logger.info("\nVerifying model results for ensemble:")
@@ -594,4 +644,5 @@ def ensemble_pipeline(logger, models_results, X_train, X_test, Y_train, Y_test, 
                                f"Best ensemble method ({best_method})", tolerance=0.2)
     else:
         logger.warning("All ensemble methods failed")
+
     return results

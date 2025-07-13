@@ -7,14 +7,13 @@ def save_csv_to_drive(logger, df, ticker_symbol, file_name, date_folder, current
     Save DataFrame to both local folder and Google Drive with error handling.
     
     Parameters:
-    -----------
-    logger : Logger instance for logging operations
-    df : pd.DataFrame DataFrame to save
-    ticker_symbol : str Stock ticker symbol
-    file_name : str Base name for the file (without .csv extension)
-    date_folder : str Local date folder path
-    current_date : str Current date string for subfolder creation
-    index : bool, optional Whether to save DataFrame index (default: True)
+    - logger : Logger instance for logging operations
+    - df : pd.DataFrame DataFrame to save
+    - ticker_symbol : str Stock ticker symbol
+    - file_name : str Base name for the file (without .csv extension)
+    - date_folder : str Local date folder path
+    - current_date : str Current date string for subfolder creation
+    - index : bool, optional Whether to save DataFrame index (default: True)
     """
      
     drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results\predictions" 
@@ -52,7 +51,6 @@ def save_csv_to_drive(logger, df, ticker_symbol, file_name, date_folder, current
             
         except Exception as e2:
             logger.error(f"Fallback save also failed for {ticker_symbol}_{file_name}: {e2}")
-
 
 
 def load_valid_tickers(logger, file_path="valid_tickers_av.csv"):

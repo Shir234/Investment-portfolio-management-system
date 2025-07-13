@@ -1,14 +1,8 @@
 # results_analysis.py
-
 """
 Simple script to run ensemble vs models analysis on our results.
 * run on a local folder 
 """
-
-
-
-
-# Ensemble_vs_Models_Analysis.py
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -24,8 +18,17 @@ import datetime
 
 class EnsembleAnalysis:
     """
-    Comprehensive analysis class to compare ensemble methods against individual models
-    and extract meaningful insights from stock prediction results.
+    Comprehensive statistical analysis comparing ensemble methods vs individual models.
+    
+    Answers the research question: "Do ensemble methods actually improve prediction
+    accuracy compared to individual models in financial forecasting?"
+    
+    Process:
+    1. Loads results from ML pipeline (ensemble + individual model performance)
+    2. Calculates descriptive statistics across all stocks
+    3. Performs statistical significance testing (Wilcoxon signed-rank)
+    4. Creates visualizations and summary reports
+    5. Provides data-driven model selection recommendations
     """
     
     def __init__(self, results_date_folder, logger=None):
@@ -33,10 +36,9 @@ class EnsembleAnalysis:
         Initialize the analysis with the date folder containing results.
         
         Parameters:
-        -----------
-        results_date_folder : str
+        - results_date_folder : str
             Path to the folder containing results for a specific date ('results/20250527')
-        logger : Logger, optional
+        - logger : Logger, optional
             Logger instance for logging operations
         """
         self.results_date_folder = results_date_folder
@@ -62,13 +64,11 @@ class EnsembleAnalysis:
         Load all ensemble and model results for valid tickers.
         
         Parameters:
-        -----------
-        tickers_file : str
+        - tickers_file : str
             CSV file containing valid ticker symbols
             
         Returns:
-        --------
-        dict : Summary of loading results
+        - dict : Summary of loading results
         """
         self.log_info("Loading all results...")
         
@@ -125,8 +125,7 @@ class EnsembleAnalysis:
         Calculate statistics for ensemble methods.
         
         Returns:
-        --------
-        dict : Dictionary containing ensemble statistics
+        - dict : Dictionary containing ensemble statistics
         """
         self.log_info("Calculating ensemble statistics...")
         
@@ -137,7 +136,6 @@ class EnsembleAnalysis:
         # Metrics to analyze
         metrics = ['mse', 'rmse', 'r2', 'mae']
         ensemble_methods = ['linearly_weighted', 'equal_weighted', 'gbdt']
-        
         ensemble_stats = {}
         
         # Collect all data for each ensemble method
@@ -186,8 +184,7 @@ class EnsembleAnalysis:
         Calculate statistics for individual models.
         
         Returns:
-        --------
-        dict : Dictionary containing model statistics
+        - dict : Dictionary containing model statistics
         """
         self.log_info("Calculating model statistics...")
         
@@ -197,8 +194,7 @@ class EnsembleAnalysis:
         
         # Metrics to analyze (using Average metrics from cross-validation)
         metrics = ['Average_MSE', 'Average_RMSE', 'Average_R2']
-        models = ['SVR', 'XGBoost', 'LightGBM', 'RandomForest', 'GradientBoosting', 'LSTM']
-        
+        models = ['SVR', 'XGBoost', 'LightGBM', 'RandomForest', 'GradientBoosting', 'LSTM']     
         model_stats = {}
         
         # Collect all data for each model
@@ -245,11 +241,15 @@ class EnsembleAnalysis:
     
     def compare_ensemble_vs_models(self):
         """
-        Compare ensemble methods against individual models using statistical tests.
+        Core statistical comparison using Wilcoxon signed-rank test.
+    
+        For each ensemble method vs each individual model:
+        - Calculates improvement percentages
+        - Tests statistical significance of differences
+        - Handles paired samples (same stocks) for valid comparison
         
         Returns:
-        --------
-        dict : Comprehensive comparison results
+        - dict: comprehensive comparison matrix with p-values and effect sizes.
         """
         self.log_info("Comparing ensemble methods vs individual models...")
         
@@ -272,17 +272,15 @@ class EnsembleAnalysis:
         
         for ensemble_method in ensemble_methods:
             comparison_results[ensemble_method] = {}
-            
+    
             for ensemble_metric, model_metric in metric_mappings.items():
-                comparison_results[ensemble_method][ensemble_metric] = {}
-                
+                comparison_results[ensemble_method][ensemble_metric] = {}  
                 ensemble_values = self.ensemble_stats[ensemble_method][ensemble_metric]['values']
                 
                 if not ensemble_values:
                     continue
                 
-                ensemble_mean = np.mean(ensemble_values)
-                
+                ensemble_mean = np.mean(ensemble_values)      
                 # Compare against each model
                 for model in models:
                     model_values = self.model_stats[model][model_metric]['values']
@@ -290,8 +288,7 @@ class EnsembleAnalysis:
                     if not model_values:
                         continue
                     
-                    model_mean = np.mean(model_values)
-                    
+                    model_mean = np.mean(model_values)                    
                     # Calculate improvement percentage
                     if model_metric == 'Average_R2':  # Higher is better for R2
                         improvement = ((ensemble_mean - model_mean) / model_mean) * 100
@@ -304,12 +301,11 @@ class EnsembleAnalysis:
                     # We need to match tickers between ensemble and model data
                     paired_ensemble, paired_model = self._get_paired_values(
                         ensemble_method, ensemble_metric, model, model_metric
-                    )
-                    
+                    )                    
                     p_value = np.nan
                     test_statistic = np.nan
                     
-                    if len(paired_ensemble) >= 3 and len(paired_model) >= 3:  # Minimum for statistical test
+                    if len(paired_ensemble) >= 3 and len(paired_model) >= 3:
                         try:
                             test_statistic, p_value = stats.wilcoxon(
                                 paired_ensemble, paired_model, alternative='two-sided'
@@ -336,8 +332,7 @@ class EnsembleAnalysis:
         Get paired values for the same tickers between ensemble and model results.
         
         Returns:
-        --------
-        tuple : (ensemble_values, model_values) for the same tickers
+        - tuple : (ensemble_values, model_values) for the same tickers
         """
         ensemble_values = []
         model_values = []
@@ -373,19 +368,16 @@ class EnsembleAnalysis:
         Identify the best performing methods overall.
         
         Returns:
-        --------
-        dict : Best performers for each metric
+        - dict : Best performers for each metric
         """
         self.log_info("Finding best performers...")
         
         best_performers = {}
-        
         # Metrics to analyze
         metrics = ['rmse', 'mse', 'r2']
         
         for metric in metrics:
             best_performers[metric] = {}
-            
             # Collect all methods and their performance
             all_methods = {}
             
@@ -428,13 +420,11 @@ class EnsembleAnalysis:
         Generate a comprehensive summary report.
         
         Parameters:
-        -----------
-        save_path : str, optional
+        - save_path : str, optional
             Path to save the report as CSV
             
         Returns:
-        --------
-        dict : Complete analysis summary
+        - dict : Complete analysis summary
         """
         self.log_info("Generating comprehensive summary report...")
         
@@ -521,35 +511,37 @@ class EnsembleAnalysis:
     def _save_summary_to_csv(self, summary, save_path):
         """Save summary tables to CSV files."""
         
-        base_path = save_path.replace('.csv', '')
-        
+        base_path = save_path.replace('.csv', '')       
         # Save ensemble summary
         if 'ensemble_summary' in summary['summary_tables']:
             summary['summary_tables']['ensemble_summary'].to_csv(
                 f"{base_path}_ensemble_summary.csv", index=False
-            )
-        
+            )        
         # Save model summary
         if 'model_summary' in summary['summary_tables']:
             summary['summary_tables']['model_summary'].to_csv(
                 f"{base_path}_model_summary.csv", index=False
-            )
-        
+            )       
         # Save improvement summary
         if 'improvement_summary' in summary['summary_tables']:
             summary['summary_tables']['improvement_summary'].to_csv(
                 f"{base_path}_improvement_summary.csv", index=False
-            )
-        
+            )        
         self.log_info(f"Summary tables saved to {base_path}_*.csv")
     
     def create_visualizations(self, save_dir=None):
         """
-        Create comprehensive visualizations of the analysis results.
+        Generates four key visualization types:
+    
+        1. Performance boxplots: Distribution comparison across all stocks
+        2. Improvement heatmap: Percentage improvements (green=better ensemble)
+        3. Significance matrix: Statistical reliability (red=significant)
+        4. Best performers: Overall ranking of all methods
         
+        Essential for understanding both magnitude and reliability of improvements.
+
         Parameters:
-        -----------
-        save_dir : str, optional
+        - save_dir : str, optional
             Directory to save the plots
         """
         self.log_info("Creating visualizations...")
@@ -562,14 +554,11 @@ class EnsembleAnalysis:
         sns.set_palette("husl")
         
         # 1. Performance comparison boxplots
-        self._plot_performance_comparison(save_dir)
-        
+        self._plot_performance_comparison(save_dir)       
         # 2. Improvement heatmap
-        self._plot_improvement_heatmap(save_dir)
-        
+        self._plot_improvement_heatmap(save_dir)       
         # 3. Statistical significance matrix
-        self._plot_significance_matrix(save_dir)
-        
+        self._plot_significance_matrix(save_dir)       
         # 4. Best performer ranking
         self._plot_best_performers(save_dir)
     
@@ -732,27 +721,21 @@ class EnsembleAnalysis:
             plt.savefig(os.path.join(save_dir, 'best_performers.png'), dpi=300, bbox_inches='tight')
         plt.show()
 
+
 def run_analysis(results_date_folder, logger=None, save_results=True):
     """
     Run the complete ensemble vs models analysis.
     
     Parameters:
-    -----------
-    results_date_folder : str
-        Path to folder containing results ('results/20250527')
-    logger : Logger, optional
-        Logger instance for logging operations
-    save_results : bool
-        Whether to save results to files
+    - results_date_folder : str, Path to folder containing results ('results/20250527')
+    - logger : Logger, optional, Logger instance for logging operations
+    - save_results : bool, Whether to save results to files
         
     Returns:
-    --------
-    dict : Complete analysis results
+    - dict : Complete analysis results
     """
-    
     # Initialize analysis
     analyzer = EnsembleAnalysis(results_date_folder, logger)
-    
     # Step 1: Load all results
     loading_summary = analyzer.load_all_results()
     
@@ -763,19 +746,15 @@ def run_analysis(results_date_folder, logger=None, save_results=True):
     
     # Step 2: Calculate statistics
     ensemble_stats = analyzer.calculate_ensemble_statistics()
-    model_stats = analyzer.calculate_model_statistics()
-    
+    model_stats = analyzer.calculate_model_statistics()    
     # Step 3: Compare ensembles vs models
-    comparison_results = analyzer.compare_ensemble_vs_models()
-    
+    comparison_results = analyzer.compare_ensemble_vs_models()   
     # Step 4: Generate comprehensive report
     report_path = os.path.join(results_date_folder, 'analysis_summary') if save_results else None
-    summary_report = analyzer.generate_summary_report(report_path)
-    
+    summary_report = analyzer.generate_summary_report(report_path)   
     # Step 5: Create visualizations
     viz_dir = os.path.join(results_date_folder, 'visualizations') if save_results else None
-    analyzer.create_visualizations(viz_dir)
-    
+    analyzer.create_visualizations(viz_dir)   
     # Step 6: Print key insights
     print_key_insights(analyzer, logger)
     
@@ -788,16 +767,18 @@ def run_analysis(results_date_folder, logger=None, save_results=True):
         'analyzer': analyzer  # Return analyzer for further analysis
     }
 
+
 def print_key_insights(analyzer, logger=None):
     """
-    Print key insights from the analysis in a readable format.
+    Extracts and displays actionable insights from the analysis.
     
-    Parameters:
-    -----------
-    analyzer : EnsembleAnalysis
-        The analyzer object with completed analysis
-    logger : Logger, optional
-        Logger instance for logging
+    Key outputs:
+    - Best performing ensemble method
+    - Statistical significance summary
+    - Improvement percentages vs individual models
+    - Practical recommendations for model selection
+    
+    Designed for executive summary and research reporting.
     """
     
     def log_print(message):
@@ -817,10 +798,10 @@ def print_key_insights(analyzer, logger=None):
     common_tickers = len(set(analyzer.ensemble_data.keys()) & set(analyzer.model_data.keys()))
     
     log_print(f"\n  DATA OVERVIEW:")
-    log_print(f"   • Total tickers analyzed: {total_tickers}")
-    log_print(f"   • Tickers with ensemble results: {ensemble_tickers}")
-    log_print(f"   • Tickers with model results: {model_tickers}")
-    log_print(f"   • Common tickers (for direct comparison): {common_tickers}")
+    log_print(f"   - Total tickers analyzed: {total_tickers}")
+    log_print(f"   - Tickers with ensemble results: {ensemble_tickers}")
+    log_print(f"   - Tickers with model results: {model_tickers}")
+    log_print(f"   - Common tickers (for direct comparison): {common_tickers}")
     
     # Best performers
     if analyzer.ensemble_stats and analyzer.model_stats:
@@ -830,7 +811,7 @@ def print_key_insights(analyzer, logger=None):
         for metric, data in best_performers.items():
             if 'method' in data:
                 method_type = "ENSEMBLE" if "Ensemble" in data['method'] else "MODEL"
-                log_print(f"   • Best {metric.upper()}: {data['method'].replace('Ensemble_', '').replace('Model_', '')} "
+                log_print(f"   - Best {metric.upper()}: {data['method'].replace('Ensemble_', '').replace('Model_', '')} "
                          f"({method_type}) = {data['value']:.6f}")
     
     # Ensemble performance summary
@@ -843,7 +824,7 @@ def print_key_insights(analyzer, logger=None):
                     if metric in analyzer.ensemble_stats[method]:
                         stats = analyzer.ensemble_stats[method][metric]
                         if stats['count'] > 0:
-                            log_print(f"      • {metric.upper()}: μ={stats['mean']:.6f}, "
+                            log_print(f"      - {metric.upper()}: μ={stats['mean']:.6f}, "
                                      f"σ={stats['std']:.6f}, n={stats['count']}")
     
     # Model performance summary
@@ -891,7 +872,7 @@ def print_key_insights(analyzer, logger=None):
                         status = "BETTER" if comp['is_better'] else "WORSE"
                         sig_status = " (SIG)" if is_significant else " (NS)"
                         
-                        log_print(f"      • vs {model}: {improvement:+.1f}% {status}{sig_status} "
+                        log_print(f"      - vs {model}: {improvement:+.1f}% {status}{sig_status} "
                                  f"(n={comp['paired_samples']})")
                 
                 if improvements:
@@ -919,9 +900,9 @@ def print_key_insights(analyzer, logger=None):
         
         if total_tests > 0:
             sig_percentage = (total_significant / total_tests) * 100
-            log_print(f"   • Total statistical tests conducted: {total_tests}")
-            log_print(f"   • Statistically significant differences: {total_significant} ({sig_percentage:.1f}%)")
-            log_print(f"   • This suggests {'STRONG' if sig_percentage > 50 else 'WEAK'} evidence for ensemble superiority")
+            log_print(f"   - Total statistical tests conducted: {total_tests}")
+            log_print(f"   - Statistically significant differences: {total_significant} ({sig_percentage:.1f}%)")
+            log_print(f"   - This suggests {'STRONG' if sig_percentage > 50 else 'WEAK'} evidence for ensemble superiority")
     
     # Key recommendations
     log_print(f"\n  KEY RECOMMENDATIONS:")
@@ -970,63 +951,6 @@ def print_key_insights(analyzer, logger=None):
     log_print("ANALYSIS COMPLETE")
     log_print("="*80)
 
-# Example usage function
-def example_usage():
-    """
-    Example of how to use the analysis system.
-    """
-
-    
-    # Set up logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(f"ensemble_analysis_{datetime.datetime.now().strftime('%Y%m%d')}.log"),
-            logging.StreamHandler()
-        ]
-    )
-    logger = logging.getLogger("ensemble_analysis")
-    
-    # Set your results folder path
-    results_date_folder = "results/20250527"  # Update this to your actual date folder
-    
-    # Run the complete analysis
-    results = run_analysis(
-        results_date_folder=results_date_folder,
-        logger=logger,
-        save_results=True
-    )
-    
-    # Access specific results
-    if results.get('status') != 'error':
-        analyzer = results['analyzer']
-        
-        # You can do additional custom analysis here
-        print("\nCustom Analysis Example:")
-        print("="*50)
-        
-        # Example: Find which ensemble method wins most often
-        if analyzer.comparison_results:
-            wins_by_method = {}
-            for ensemble_method in ['linearly_weighted', 'equal_weighted', 'gbdt']:
-                wins = 0
-                total = 0
-                if ensemble_method in analyzer.comparison_results and 'rmse' in analyzer.comparison_results[ensemble_method]:
-                    for model, comp in analyzer.comparison_results[ensemble_method]['rmse'].items():
-                        if comp['paired_samples'] >= 3:
-                            total += 1
-                            if comp['is_better']:
-                                wins += 1
-                if total > 0:
-                    wins_by_method[ensemble_method] = (wins, total, wins/total*100)
-            
-            print("Win rates by ensemble method:")
-            for method, (wins, total, percentage) in wins_by_method.items():
-                print(f"  {method}: {wins}/{total} ({percentage:.1f}%)")
-    
-    return results
-
 
 def setup_logging():
     """Set up logging for the analysis."""
@@ -1039,7 +963,6 @@ def setup_logging():
         ]
     )
     return logging.getLogger("ensemble_analysis")
-
 
 
 def main():
@@ -1105,14 +1028,14 @@ def main():
         # Print quick summary
         loading_summary = results.get('loading_summary', {})
         logger.info(f"\nQUICK SUMMARY:")
-        logger.info(f"• Ensemble files processed: {loading_summary.get('ensemble_loaded', 0)}")
-        logger.info(f"• Model files processed: {loading_summary.get('model_loaded', 0)}")
-        logger.info(f"• Total tickers analyzed: {loading_summary.get('total_tickers', 0)}")
+        logger.info(f"- Ensemble files processed: {loading_summary.get('ensemble_loaded', 0)}")
+        logger.info(f"- Model files processed: {loading_summary.get('model_loaded', 0)}")
+        logger.info(f"- Total tickers analyzed: {loading_summary.get('total_tickers', 0)}")
         
         logger.info(f"\n Check the '{results_date_folder}' folder for:")
-        logger.info(f"   • CSV files with detailed statistics")
-        logger.info(f"   • 'visualizations' subfolder with plots")
-        logger.info(f"   • Analysis log file in current directory")
+        logger.info(f"   - CSV files with detailed statistics")
+        logger.info(f"   - 'visualizations' subfolder with plots")
+        logger.info(f"   - Analysis log file in current directory")
         
     except Exception as e:
         logger.error(f"Error during analysis: {str(e)}")

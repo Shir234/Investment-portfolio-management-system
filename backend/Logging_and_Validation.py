@@ -7,14 +7,14 @@ def log_data_stats(logger, data, name, include_stats=True, log_shape=True, log_h
     """
     Log information about a dataframe or numpy array.
     Parameters:
-    -----------
-    data : DataFrame or ndarray, data to log information about
-    name : str, name of the data for logging
-    include_stats : bool, whether to log descriptive statistics
-    log_shape : bool, whether to log shape
-    log_head : bool, whether to log first few rows
-    n_head : int, number of rows to log if log_head=True
+    - data : DataFrame or ndarray, data to log information about
+    - name : str, name of the data for logging
+    - include_stats : bool, whether to log descriptive statistics
+    - log_shape : bool, whether to log shape
+    - log_head : bool, whether to log first few rows
+    - n_head : int, number of rows to log if log_head=True
     """
+
     if data is None:
         logger.warning(f"{name} is None")
         print(f"{name} is None")
@@ -31,9 +31,7 @@ def log_data_stats(logger, data, name, include_stats=True, log_shape=True, log_h
             stats = data.describe()
             logger.info(f"\nSummary Statistics:\n{stats}")
 
-            # Handle PyArrow dtypes in newer pandas versions
             try:
-                # For newer pandas (2.0+) with PyArrow dtypes
                 dtype_counts = data.dtypes.astype(str).value_counts()
                 logger.info(f"\nData Types: {dtype_counts}")
             except Exception:
@@ -55,6 +53,7 @@ def verify_lstm_shape(X, expected_time_steps=1):
     """
     Verify that data is properly shaped for LSTM input
     """
+
     if len(X.shape) != 3:
         raise ValueError(f"LSTM input should be 3D, but got shape {X.shape}")
     if X.shape[1] != expected_time_steps:
@@ -67,6 +66,7 @@ def verify_prediction_scale(logger, original_y, predicted_y, name="", tolerance=
     """
     Verify that predictions are on the same scale as original data
     """
+
     orig_min, orig_max = np.min(original_y), np.max(original_y)
     pred_min, pred_max = np.min(predicted_y), np.max(predicted_y)
     
@@ -92,19 +92,18 @@ def validate_data_quality(data, name="dataset", check_missing=True, check_outlie
     Comprehensive data validation and quality check
     
     Parameters:
-    -----------
-    data : DataFrame or Series, data to validate
-    name : str, name of the dataset for reporting
-    check_missing : bool, whether to check for missing values
-    check_outliers : bool, whether to check for outliers
-    check_dtypes : bool, whether to check for inconsistent data types
-    check_duplicates : bool, whether to check for duplicate rows/columns
-    check_scaling : bool, whether to check for scaling issues
+    - data : DataFrame or Series, data to validate
+    - name : str, name of the dataset for reporting
+    - check_missing : bool, whether to check for missing values
+    - check_outliers : bool, whether to check for outliers
+    - check_dtypes : bool, whether to check for inconsistent data types
+    - check_duplicates : bool, whether to check for duplicate rows/columns
+    - check_scaling : bool, whether to check for scaling issues
     
     Returns:
-    --------
-    dict : Dictionary with validation results
+    - dict : Dictionary with validation results
     """
+    
     print(f"\n{'-'*20} Data Quality Check for {name} {'-'*20}")
     
     if data is None:

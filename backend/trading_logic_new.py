@@ -36,9 +36,8 @@ def map_risk_to_sharpe_thresholds(risk_level, sharpe_min, sharpe_max):
     # Calculate sharpe ratio range
     sharpe_range = sharpe_max - sharpe_min
     buy_percentile = 85 - (risk_level * 7)  # Risk 0: 85%, Risk 10: 15%
-    sell_percentile = 15 + (risk_level * 7)  # Risk 0: 15%, Risk 10: 85%
+    sell_percentile = 15 + (risk_level * 7) # Risk 0: 15%, Risk 10: 85%
     
-   
     # Get buy & sell threshold in sharpe range      
     buy_threshold = sharpe_max - (sharpe_range * (100 - buy_percentile) / 100)
     sell_threshold = sharpe_min + (sharpe_range * sell_percentile / 100)
@@ -88,7 +87,7 @@ def get_current_portfolio_state():
             return cash, holdings, total_value
         else:
             logger.info("No portfolio history found - returning initial state")
-            return 10000, {}, 10000  # Default initial values
+            return 10000, {}, 10000
             
     except Exception as e:
         logger.error(f"Error getting current portfolio state: {e}")
@@ -261,7 +260,16 @@ def save_portfolio_state():
 
 def calculate_position_size(sharpe_value, ticker_weight, available_cash, signal_strength, max_position_pct=0.20):
     """
-    Calculate position size based on signal strength and ticker weight.
+    Sophisticated position sizing combining multiple factors.
+    
+    Formula: Cash x Signal_Strength x Normalized_Weight
+    
+    Factors:
+    - Signal Strength: How much above threshold (prediction confidence)
+    - Ticker Weight: Insider trading confidence (-1 to +1 normalized)
+    - Max Position: Never exceed 20% of portfolio in single stock
+    
+    Higher confidence predictions + insider buying → Larger positions
     Position size = amount of money to invest in specific stock.
 
     Args:
@@ -279,13 +287,10 @@ def calculate_position_size(sharpe_value, ticker_weight, available_cash, signal_
     normalized_weight = 0.6 + (ticker_weight * 0.4)
     # Ensure weight is in valid range
     normalized_weight = max(0.2, min(normalized_weight, 1.0))
-
     # Step 2: Combine score
     combined_score = signal_strength * normalized_weight
-
     # Step 3: Calculate dollar amount
-    position_size = available_cash * combined_score
-    
+    position_size = available_cash * combined_score   
     # Step 4: Don't exceed available cash (safety check)
     position_size = min(position_size, available_cash * 0.95)  # Leave 5% buffer
     
@@ -306,12 +311,10 @@ def sell_logic(daily_data, sell_threshold, holdings, current_date):
     - sell_orders
     """
     sell_orders = []
-    transaction_cost_bps = 5  # 0.05% transaction cost (bps=basis point)
-
+    transaction_cost_bps = 5    # 0.05% transaction cost (bps=basis point)
     # Simple rules
     MIN_HOLDING_DAYS = 5        # Hold at least 5 days
     PROFIT_TARGET = 0.15        # Sell when 15% profit
-    STOP_LOSS = -0.10           # Sell when 10% loss
 
     for ticker, holding in list (holdings.items()):
         ticker_data = daily_data[daily_data['Ticker'] == ticker]
@@ -338,7 +341,6 @@ def sell_logic(daily_data, sell_threshold, holdings, current_date):
         days_held = (current_date - purchase_date).days
         profit_pct = (current_price - purchase_price) / purchase_price
         current_sharpe = ticker_data.iloc[0]['Best_Prediction']
-
         # Decision: Should we sell?
         should_sell = False
         sell_reason = ""
@@ -405,9 +407,17 @@ def sell(order, holdings, cash):
 
 def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_weights, default_weight, max_positions, use_weights=True, use_signal_strength=True):
     """
-    Process buy signals - buy when predicted sharpe > threshold.
-    Only buy top half of signals using signal strength and weights.
+    Generates buy orders using sophisticated filtering and position sizing.
     
+    Process:
+    1. Filter candidates: Predicted Sharpe ≥ threshold
+    2. Add weight/signal information: Insider scores + prediction confidence
+    3. Rank candidates: By weight and signal strength
+    4. Quality filter: Take only top 50% of candidates
+    5. Position sizing: Cash x Signal Strength x Weight
+    
+    Quality over quantity approach - fewer, higher-confidence positions.
+
     Args:
     - daily_data: DataFrame with current day's data
     - buy_threshold: Threshold for LONG positions
@@ -484,13 +494,12 @@ def buy_logic(daily_data, buy_threshold, holdings, cash, current_date, ticker_we
         logger.info(f"Sorting candidates by: {sort_columns}")
         buy_candidates = buy_candidates.sort_values(sort_columns, ascending=sort_ascending)
 
-
     # STEP 4: Take only TOP HALF of candidates
     top_half_count = max(1, len(buy_candidates) // 2)
+    
     top_candidates = buy_candidates.head(top_half_count)
-
     logger.info(f"Taking top {top_half_count} candidates from {len(buy_candidates)} total")
-
+    
     available_positions = max_positions - len(holdings)
     candidates_to_process = min(len(top_candidates), available_positions)
     
@@ -629,11 +638,9 @@ def execute_orders(orders_to_execute, holdings, cash, mode="automatic"):
     """
 
     executed_count = 0
-
     for order in orders_to_execute:
         if mode == "semi-automatic" and order not in orders_to_execute:
             continue
-
         if order['action'] == 'buy':
             cash, success = buy(order, holdings, cash)
             if success:
@@ -642,32 +649,9 @@ def execute_orders(orders_to_execute, holdings, cash, mode="automatic"):
             cash, success = sell(order, holdings, cash)
             if success:
                 executed_count += 1
-
     logger.info(f"Executed {executed_count} orders")
     
     return cash, executed_count
-
-    """
-
-    executed_count = 0
-
-    for order in orders_to_execute:
-        if mode == "semi-automatic" and order not in orders_to_execute:  # Ensure only selected orders
-            continue
-
-        if order['action'] == 'buy':
-            cash, success = buy(order, holdings, cash)
-            if success:
-                executed_count += 1
-        elif order['action'] == 'sell':
-            cash, success = sell(order, holdings, cash)
-            if success:
-                executed_count += 1
-
-    logger.info(f"Executed {executed_count} orders")
-
-    return cash, executed_count
-    """
 
 
 def add_cash_to_portfolio(additional_cash):
@@ -689,15 +673,24 @@ def add_cash_to_portfolio(additional_cash):
         logger.warning("No portfolio history found - cannot add cash")
 
 
-
 def run_trading_strategy(merged_data, investment_amount, risk_level, start_date, end_date, mode="automatic", reset_state=False, use_weights=True, use_signal_strength=True, selected_orders=None, current_cash=None, current_holdings=None):
     """
-    Execute trading strategy combining Buy/Sell functions with LONG/SHORT support.
+    Core trading strategy execution engine with dual-mode operation.
+    
+    Strategy Logic:
+    - Buy when predicted Sharpe > dynamic threshold (based on risk level)
+    - Sell when profit target hit (15%) or signal weakens
+    - Position sizing based on signal strength x insider confidence weights
+    - Risk management: Max 20% per position, 70 total positions
+    
+    Modes:
+    - Automatic: Execute all generated orders immediately
+    - Semi-automatic: Return suggested orders for user review/selection
     
     Args:
     - merged_data: DataFrame with predictions and price data
     - investment_amount: Initial cash amount (for semi-auto: current available cash)
-    - risk_level: Risk level 0-10 (0=conservative, 10=aggressive) 
+    - risk_level: Risk level 0-10: : 0=Conservative (85th percentile), 10=Aggressive (15th percentile)
     - start_date: Start date for trading
     - end_date: End date for trading
     - mode: "automatic" or "semi-automatic"
@@ -950,6 +943,7 @@ def run_trading_strategy(merged_data, investment_amount, risk_level, start_date,
             return [], [], investment_amount, warning_message
         else:
             return [], warning_message
+
 
 def validate_prediction_quality(merged_data, forward_days=5):
     """

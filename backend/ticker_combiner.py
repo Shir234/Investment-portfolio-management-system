@@ -1,3 +1,4 @@
+# ticker_combiner.py
 import pandas as pd
 import os
 from datetime import datetime
@@ -8,13 +9,13 @@ def merge_ticker_data(base_directory, date_folder, validate=True, sort_by_date=T
     with validation to ensure data integrity, and optional sorting by date..
     
     Parameters:
-    base_directory (str): Path to the base results directory
-    date_folder (str): Name of the specific date subfolder (e.g., '20250327')
-    validate (bool): Whether to perform validation checks on the merged data
-    sort_by_date (bool): Whether to sort the merged data by date
+    - base_directory (str): Path to the base results directory
+    - date_folder (str): Name of the specific date subfolder (e.g., '20250327')
+    - validate (bool): Whether to perform validation checks on the merged data
+    - sort_by_date (bool): Whether to sort the merged data by date
 
     Returns:
-    pd.DataFrame: Merged data from all ticker files in the specified date folder
+    - pd.DataFrame: Merged data from all ticker files in the specified date folder
     """
     all_tickers_data = []
     validation_stats = {}

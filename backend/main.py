@@ -14,9 +14,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("stock_pipeline")
 
-# ===================================================
-### Create data directories if they don't exist
-# ===================================================
+
+# Create data directories if they don't exist
 os.makedirs('results', exist_ok=True)
 current_date = datetime.datetime.now().strftime("%Y%m%d")
 date_folder = f'results/{current_date}'

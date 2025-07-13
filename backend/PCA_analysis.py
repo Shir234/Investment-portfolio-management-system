@@ -5,9 +5,17 @@ import statistics
 
 def analyze_pca_results(log_text):
     """
-    Analyze PCA results from log text to extract statistics about 
-    PCA percentages and component counts.
+    Extracts and analyzes PCA configuration statistics from pipeline log files.
     
+    Purpose: Understanding which PCA variance thresholds and component counts were most 
+                effective across different stock tickers in the ML pipeline.
+    
+    Process:
+    1. Regex parsing to find "Best feature set: PCA X% with Y components" entries
+    2. Statistical analysis of variance threshold choices (90%, 95%, 97%, 99%)
+    3. Component count analysis (average, median, range, distribution)
+    4. Usage rate calculations for research reporting
+
     Parameters:
     log_text (str): The complete log text containing PCA results
     
@@ -54,8 +62,22 @@ def analyze_pca_results(log_text):
     
     return results
 
+
 def print_analysis_summary(results):
-    """Print a formatted summary of the PCA analysis"""
+    """
+    Formats and displays PCA analysis results in readable summary format.
+    
+    Output sections:
+    - Total tickers processed
+    - PCA threshold popularity (most/least used variance levels)
+    - Component count statistics (average, median, range)
+    - Usage distribution for research reporting
+    
+    Provides insights for:
+    - Pipeline optimization (best default PCA settings)
+    - Academic reporting (feature selection effectiveness)
+    - Domain understanding (financial data complexity patterns)
+    """
     
     if "error" in results:
         print(f"Error: {results['error']}")
@@ -83,26 +105,15 @@ def print_analysis_summary(results):
     
     return results
 
-# Example usage:
-# Replace 'your_log_text' with your actual log content
-if __name__ == "__main__":
-    # Example log text (replace with your actual log)
-    sample_log = """
-    Best feature set: PCA 97% with 15 components
-    Best feature set: PCA 95% with 12 components
-    Best feature set: PCA 97% with 18 components
-    Best feature set: PCA 90% with 8 components
-    """
-    
-    # To use with your actual log file:
+
+# Usage:
+if __name__ == "__main__":   
     with open('stock_pipeline_20250527.txt', 'r') as f:
         log_content = f.read()
     results = analyze_pca_results(log_content)
     
-    #results = analyze_pca_results(sample_log)
     print_analysis_summary(results)
     
-    # For your engineering report, you can extract specific values:
     print(f"\nFor final report:")
     print(f"- Most used PCA threshold: {results['percentage_stats']['most_common'][0]}%")
     print(f"- Average number of components: {results['component_stats']['average']}")

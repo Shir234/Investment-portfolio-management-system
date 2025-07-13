@@ -2,79 +2,72 @@
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import RobustScaler
-from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.svm import SVR
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
-
 import optuna
 from optuna.integration import TFKerasPruningCallback
-
 from scipy.stats import uniform, randint
-
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Input, Bidirectional, BatchNormalization
 from tensorflow.keras.optimizers import Adam
-
 from joblib import parallel_backend
-
-from Logging_and_Validation import log_data_stats, verify_prediction_scale
+from Logging_and_Validation import verify_prediction_scale
 from Helper_Functions import save_csv_to_drive
 
-import json
-import os
-from datetime import datetime
 
-# ===============================================================================
-# Model Creation and Training
-# ===============================================================================
 def is_pca_transformed_data(X_data):
     """
     Check if the data appears to be PCA-transformed based on column names.
     
     Parameters:
-    -----------
-    X_data : DataFrame or ndarray
+    - X_data : DataFrame or ndarray
     
     Returns:
-    --------
-    bool : True if data appears to be PCA-transformed, False otherwise
+    - bool : True if data appears to be PCA-transformed, False otherwise
     """
+
     if isinstance(X_data, pd.DataFrame):
         # Check if column names follow PC pattern
         return all(col.startswith('PC') for col in X_data.columns)
     return False
 
-# Six models we took from stage 1 of the article, each model with list af params to do grid search on (optimize)
-"""
-Support Vector Regression (SVR)
-eXtreme Gradient Boosting (XGBoost)
-Light Gradient Boosting Machine (LightGBM)
-Random Forest regression (RF)
-Gradient Boosting Regression (GBR)
-Long Short Term Memory model (LSTM)
-"""
+
 def create_models():
+    """
+    Defines the complete model portfolio with hyperparameter search spaces.
+    
+    Models included:
+    - SVR: Kernel-based regression (RBF kernel)
+    - XGBoost: Advanced gradient boosting with regularization
+    - LightGBM: Microsoft's efficient gradient boosting
+    - Random Forest: Ensemble of decision trees
+    - Gradient Boosting: Traditional boosting approach
+    - LSTM: Deep learning for sequential financial data
+    
+    Returns: Dictionary with model instances and Optuna-compatible parameter ranges
+    """
 
     try:
         models = {
             'SVR': (SVR(), {
-                'kernel': ['rbf'],  # Focus on RBF based on fold results
-                'C': ('float', 5.0, 20.0),  # Narrowed from 0.1–20
-                'epsilon': ('float', 0.05, 0.3),  # Narrowed from 0.01–0.3
-                'gamma': ('float', 0.05, 0.5),  # Narrowed from 0.001–0.5
+                'kernel': ['rbf'],
+                'C': ('float', 5.0, 20.0), 
+                'epsilon': ('float', 0.05, 0.3),
+                'gamma': ('float', 0.05, 0.5),
                 'max_iter': [15000]
             }),
             'XGBoost': (XGBRegressor(random_state=42), {
-                'n_estimators': ('int', 100, 500),  # Narrowed from 100–1000
-                'max_depth': ('int', 3, 7),  # Narrowed from 3–15
-                'learning_rate': ('float', 0.01, 0.1),  # Narrowed from 0.001–0.2
-                'subsample': ('float', 0.7, 1.0),  # Narrowed from 0.5–1.0
-                'colsample_bytree': ('float', 0.6, 0.9),  # Narrowed from 0.5–1.0
-                'min_child_weight': ('float', 5, 20),  # Narrowed from 1–20
+                'n_estimators': ('int', 100, 500),
+                'max_depth': ('int', 3, 7),
+                'learning_rate': ('float', 0.01, 0.1), 
+                'subsample': ('float', 0.7, 1.0),
+                'colsample_bytree': ('float', 0.6, 0.9), 
+                'min_child_weight': ('float', 5, 20),  
                 'gamma': ('float', 0.3, 0.5),
                 'reg_alpha': ('float', 0.3, 1.0),
                 'reg_lambda': ('float', 0.1, 1.0)
@@ -92,32 +85,32 @@ def create_models():
                 'force_row_wise': [True]
             }),
             'RandomForest': (RandomForestRegressor(random_state=42), {
-                'n_estimators': ('int', 200, 600),  # Narrowed from 100–1000
-                'max_depth': ('int', 3, 10),  # Narrowed from 3–15
-                'min_samples_split': ('int', 5, 15),  # Narrowed from 2–15
-                'min_samples_leaf': ('int', 5, 10),  # Narrowed from 1–10
-                'max_features': ['sqrt', 0.3, 0.5, 1.0],  # Removed log2
-                'bootstrap': [True],  # Fixed to True
-                'warm_start': [False]  # Fixed to False
+                'n_estimators': ('int', 200, 600),  
+                'max_depth': ('int', 3, 10), 
+                'min_samples_split': ('int', 5, 15), 
+                'min_samples_leaf': ('int', 5, 10), 
+                'max_features': ['sqrt', 0.3, 0.5, 1.0],
+                'bootstrap': [True],
+                'warm_start': [False] 
             }),
             'GradientBoosting': (GradientBoostingRegressor(random_state=42), {
-                'n_estimators': ('int', 100, 500),  # Narrowed from 100–1000
-                'max_depth': ('int', 3, 7),  # Narrowed from 3–15
-                'learning_rate': ('float', 0.01, 0.05),  # Narrowed from 0.001–0.2
-                'subsample': ('float', 0.6, 1.0),  # Narrowed from 0.5–1.0
-                'min_samples_split': ('int', 2, 10),  # Narrowed from 2–15
-                'min_samples_leaf': ('int', 5, 10),  # Narrowed from 1–10
-                'max_features': ['sqrt', 0.3, 0.5],  # Removed log2, 0.7, 1.0
-                'alpha': ('float', 0.1, 0.7)  # Narrowed from 0.1–0.9
+                'n_estimators': ('int', 100, 500),
+                'max_depth': ('int', 3, 7), 
+                'learning_rate': ('float', 0.01, 0.05), 
+                'subsample': ('float', 0.6, 1.0), 
+                'min_samples_split': ('int', 2, 10),  
+                'min_samples_leaf': ('int', 5, 10), 
+                'max_features': ['sqrt', 0.3, 0.5], 
+                'alpha': ('float', 0.1, 0.7)
             }),
             'LSTM': (None, {
-                'epochs': ('int', 50, 100),  # Reduced from 50–150
-                'batch_size': ('int', 16, 32),  # Reduced from 16–64
-                'units': ('int', 8, 32),  # Reduced from 8–48
+                'epochs': ('int', 50, 100),
+                'batch_size': ('int', 16, 32),
+                'units': ('int', 8, 32), 
                 'learning_rate': ('float', 0.001, 0.01),
-                'dropout': ('float', 0.1, 0.3),  # Narrowed from 0.1–0.5
-                'time_steps': ('int', 3, 5),  # Narrowed from 3–10
-                'layers': ('int', 1, 1),  # Fixed to 1
+                'dropout': ('float', 0.1, 0.3),
+                'time_steps': ('int', 3, 5),  
+                'layers': ('int', 1, 1), 
                 'bidirectional': [False],
                 'use_batch_norm': [False]
             })
@@ -127,7 +120,20 @@ def create_models():
         print(f"Error creating models: {e}")
         return {}
     
+
 def optimize_model_with_optuna(model, params_grid, X_train, Y_train, X_val, Y_val, model_name, logger, target_scaler, n_trials=30):
+    """
+    Hyperparameter optimization using Optuna's efficient search algorithms.
+    
+    Process:
+    1. Converts parameter definitions to Optuna search space
+    2. Trains models with different hyperparameter combinations
+    3. Evaluates on validation data (RMSE minimization)
+    4. Returns best parameters and performance
+    
+    Uses parallel processing for faster optimization.
+    """
+
     def objective(trial):
         params = {}
         for param, value in params_grid.items():
@@ -155,33 +161,45 @@ def optimize_model_with_optuna(model, params_grid, X_train, Y_train, X_val, Y_va
     return study.best_params, study.best_value, study.best_trial
 
 
-
 def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ticker_symbol, date_folder):
+    """
+    Main training pipeline with time series cross-validation and hyperparameter optimization.
+    
+    Process:
+    1. Data preparation (PCA detection, target scaling with RobustScaler)
+    2. Time series CV (3-fold) maintaining temporal order
+    3. For each model x fold:
+       - Optuna hyperparameter optimization (20-30 trials)
+       - Best model training and validation
+       - Performance metrics calculation
+    4. Model retraining on full dataset
+    5. Results compilation and ranking
+    
+    Handles both traditional ML models and LSTM with proper sequential data processing.
+    Returns: Dictionary with trained models, scalers, and comprehensive metrics
+    """
     logger.info(f"\n{'-'*30}\nInitializing model training\n{'-'*30}")
 
-    # We assume X_train_val is already PCA-transformed data
+    # We know X_train_val is already PCA-transformed data
     logger.info("Using PCA-transformed input data without additional scaling")
-    X_train_val_scaled = X_train_val  # Use PCA data directly
-
+    X_train_val_scaled = X_train_val  
     # Create global scaler for final output
     target_scaler = RobustScaler()
-    # Scale the target variable (same for both PCA and non-PCA)
+    # Scale the target variable
     target_scaler.fit(Y_train_val.values.reshape(-1, 1))
     Y_train_val_scaled = target_scaler.transform(Y_train_val.values.reshape(-1, 1)).flatten()
-
     # Time series cross-validation with 5 folds, to ensure temporal order (sequence of events in time)
-    tscv = TimeSeriesSplit(n_splits=3) # originaly 5                                    
+    tscv = TimeSeriesSplit(n_splits=3)                                  
     models = create_models()
     results = {}
-
     # Dictionary to store fold metrics for each model
     all_fold_metrics = {}
 
     # Iterate each model
     for model_name, (model, params_grid) in models.items():    
         logger.info(f"\n{'-'*30}\nTraining {model_name}\n{'-'*30}")                     
-
-        best_mse_scores = []                                                               # lists to store scores and parameters for the models
+        # lists to store scores and parameters for the models
+        best_mse_scores = []                                                                                                    
         best_rmse_scores = []
         best_r2_scores = []
         best_params = []
@@ -189,7 +207,6 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
         best_model = None
         best_model_prediction = None
         Y_val_best = None
-
         # Create a list to store fold metrics for this model
         fold_metrics = []
 
@@ -198,14 +215,12 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             logger.info(f"Handling LSTM model separately with special reshaping")
             lstm_results = train_lstm_model_with_cv(logger,X_train_val_scaled, Y_train_val, tscv, None, target_scaler)
             results[model_name] = lstm_results
-            #results[model_name] = train_lstm_model_with_cv(X_train_val, Y_train_val, tscv, None, target_scaler)
 
             # Extract LSTM fold metrics from the results
             if 'fold_metrics' in lstm_results:
                 all_fold_metrics[model_name] = lstm_results['fold_metrics']
             continue
         
-        # Each fold: split the data and to train and val (using the tcsv indices) then scale
         # For each fold, use the pre-scaled data with the global scalers
         for fold, (train_idx, val_idx) in enumerate(tscv.split(X_train_val)): 
             logger.info(f"\nFold {fold + 1} for {model_name}:")
@@ -225,11 +240,8 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
 
             logger.info(f"  Train fold shapes: X={X_train_fold.shape}, Y={Y_train_fold.shape}")
             logger.info(f"  Validation fold shapes: X={X_val_fold.shape}, Y={Y_val_fold.shape}")
-
-            # Grid search
             logger.info(f"  Running Optuna optimization for {model_name} on fold {fold + 1}...")
-            # Increased number of trials by 50% for all models
-            n_trials = 30 if model_name != 'SVR' else 20  # increased from 40->60 and from 30->40
+            n_trials = 30 if model_name != 'SVR' else 20  #
 
             try:
                 best_params_fold, best_mse, _ = optimize_model_with_optuna(
@@ -244,7 +256,6 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
             
                 # Convert predictions back to original scale
                 Y_pred = target_scaler.inverse_transform(Y_pred_scaled.reshape(-1, 1)).flatten()
-
                 # Scale verification
                 min_ratio, max_ratio = verify_prediction_scale(logger, Y_val_original, Y_pred, f"{model_name} fold {fold+1}")
 
@@ -270,7 +281,6 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                     'Parameters': str(best_params_fold)
                 })
 
-
                 # Update best model
                 if rmse < best_score:
                     best_score = rmse
@@ -278,7 +288,6 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                     best_model_prediction = Y_pred
                     Y_val_best= Y_val_original
                     logger.info(f"  New best model found with RMSE: {rmse:.4f}")
-
 
             except Exception as e:
                 logger.error(f"  Error in {model_name} training on fold {fold + 1}: {e}")
@@ -327,14 +336,12 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
                 
                 # Fit on all training data
                 base_model.fit(X_train_val_scaled, Y_train_val_scaled)
-
                 # Validate the retrained model
                 Y_retrain_pred_scaled = base_model.predict(X_train_val_scaled)
                 Y_retrain_pred = target_scaler.inverse_transform(Y_retrain_pred_scaled.reshape(-1, 1)).flatten()
                 retrain_mse = mean_squared_error(Y_train_val, Y_retrain_pred)
                 retrain_rmse = np.sqrt(retrain_mse)
                 retrain_r2 = r2_score(Y_train_val, Y_retrain_pred)
-
                 logger.info(f"  Retrained {model_name} - MSE: {retrain_mse:.4f}, RMSE: {retrain_rmse:.4f}")
                 min_ratio, max_ratio = verify_prediction_scale(logger, Y_train_val, Y_retrain_pred, f"{model_name} retrained")
                 
@@ -394,14 +401,11 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
 
         # Create dataframe
         metrics_df = pd.DataFrame(metrics_data)
-
         # Add ranking column
         metrics_df = metrics_df.sort_values('Average_MSE')
         metrics_df['Rank'] = range(1, len(metrics_df) + 1)
-        
         # Save main training results
         save_csv_to_drive(logger, metrics_df, ticker_symbol, 'training_validation_results', date_folder, current_date, index=False)
-        
         # Save detailed fold metrics for each model
         for model_name, fold_metrics in all_fold_metrics.items():
             if fold_metrics:
@@ -413,41 +417,6 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
         for i, row in metrics_df.iterrows():
             logger.info(f"{row['Rank']}. {row['Model']} - MSE: {row['Average_MSE']:.4f}, RMSE: {row['Average_RMSE']:.4f}")
 
-        # # Save to CSV
-        # drive_path = r"G:\.shortcut-targets-by-id\19E5zLX5V27tgCL2D8EysE2nKWTQAEUlg\Investment portfolio management system\code_results\results/"
-        # # Create date folder inside Google Drive path
-        # drive_date_folder = os.path.join(drive_path, current_date)
-        # # Create directory if it doesn't exist
-        # os.makedirs(drive_date_folder,exist_ok=True)
-
-        # try:
-        #     metrics_df.to_csv(f'{date_folder}/{ticker_symbol}_training_validation_results.csv')
-        #     metrics_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_training_validation_results.csv"))
-            
-        #     # Save detailed fold metrics for each model separately
-        #     for model_name, fold_metrics in all_fold_metrics.items():
-        #         if fold_metrics:
-        #             # Create DataFrame for the fold metrics
-        #             fold_df = pd.DataFrame(fold_metrics)               
-        #             # Save to local folder
-        #             fold_df.to_csv(f'{date_folder}/{ticker_symbol}_{model_name}_fold_metrics.csv', index=False)                 
-        #             # Save to Google Drive folder
-        #             fold_df.to_csv(os.path.join(drive_date_folder, f"{ticker_symbol}_{model_name}_fold_metrics.csv"), index=False)
-
-        #     logger.info(f"Saved clean data for {ticker_symbol} to folders")
-
-        # except Exception as e:
-        #     logger.error(f"Error saving to Google Drive: {e}")
-        #     os.makedirs(current_date, exist_ok=True) # Create local date folder if needed
-        #     metrics_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_training_validation_results.csv"))
-
-        #     # Save fold metrics locally
-        #     for model_name, fold_metrics in all_fold_metrics.items():
-        #         if fold_metrics:
-        #             fold_df = pd.DataFrame(fold_metrics)
-        #             fold_df.to_csv(os.path.join(current_date, f"{ticker_symbol}_{model_name}_fold_metrics.csv"), index=False)
-                
-
         # Print ranking to log
         logger.info("\nModel Ranking (by Average MSE):")
         for i, row in metrics_df.iterrows():
@@ -455,7 +424,6 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
         
     except Exception as e:
         logger.error(f"Error saving metrics to CSV: {e}")
-
 
     # Return the scaler as part of the results
     results_with_scaler = {
@@ -467,32 +435,22 @@ def train_and_validate_models(logger, X_train_val, Y_train_val, current_date, ti
     return results_with_scaler
 
 
-# ===============================================================================
-# LSTM Support Functions
-# ===============================================================================
-# def create_rolling_window_data(X, y, time_steps=5):
-#     X_rolled, y_rolled = [], []
-#     for i in range(len(X) - time_steps + 1):
-#         X_rolled.append(X[i:i + time_steps])
-#         y_rolled.append(y[i + time_steps - 1])
-#     return np.array(X_rolled), np.array(y_rolled)
-
-
 def create_rolling_window_data(X, y, time_steps=3):
     """
-    Create rolling window data for LSTM training, predicting the next timestep.
+    Converts time series data into overlapping sequences for LSTM training.
+    Creates sliding windows where each sample contains 'time_steps' consecutive
+    observations, with targets aligned to predict the next time step.
     
     Parameters:
-    -----------
-    X : array-like, Input features (e.g., PCA-transformed with shape (samples, features))
-    y : array-like, Target values
-    time_steps : int, Number of time steps (window size)
+    - X : array-like, Input features (e.g., PCA-transformed with shape (samples, features))
+    - y : array-like, Target values
+    - time_steps : int, Number of time steps (window size)
     
     Returns:
-    --------
-    X_rolled : ndarray, Rolling window input data with shape (samples, time_steps, features)
-    y_rolled : ndarray, Target values for the next timestep after each window
+    - X_rolled : ndarray, Rolling window input data with shape (samples, time_steps, features)
+    - y_rolled : ndarray, Target values for the next timestep after each window
     """
+
     if len(X) != len(y):
         raise ValueError(f"X and y must have same length, got X: {len(X)}, y: {len(y)}")
     
@@ -513,27 +471,25 @@ def create_rolling_window_data(X, y, time_steps=3):
     return X_rolled, y_rolled
 
 
-
 def train_lstm_model(logger, X_train, y_train, X_val, y_val, params, trial=None):
     """
     Train an enhanced LSTM model with various architecture configurations.
     
     Parameters:
-    -----------
-    X_train : array-like, Input features for training
-    y_train : array-like, Target values for training
-    X_val : array-like, Input features for validation
-    y_val : array-like, Target values for validation
-    params : dict, Model hyperparameters
-    trial : optuna.Trial, optional, Trial object for hyperparameter optimization
+    - X_train : array-like, Input features for training
+    - y_train : array-like, Target values for training
+    - X_val : array-like, Input features for validation
+    - y_val : array-like, Target values for validation
+    - params : dict, Model hyperparameters
+    - trial : optuna.Trial, optional, Trial object for hyperparameter optimization
     
     Returns:
-    --------
-    model : keras.Model, Trained LSTM model
-    mse : float, Mean squared error on validation set
-    rmse : float, Root mean squared error on validation set
-    y_pred : array, Predicted values on validation set
+    - model : keras.Model, Trained LSTM model
+    - mse : float, Mean squared error on validation set
+    - rmse : float, Root mean squared error on validation set
+    - y_pred : array, Predicted values on validation set
     """
+
     try:
         epochs = params.get('epochs', 100)
         batch_size = params.get('batch_size', 32)
@@ -593,8 +549,7 @@ def train_lstm_model(logger, X_train, y_train, X_val, y_val, params, trial=None)
 
 def train_lstm_model_with_cv(logger, X_train_val, Y_train_val, tscv, feature_scaler, target_scaler):
     """
-    Train LSTM model using time series cross-validation with Optuna hyperparameter optimization.
-    Handles both regular features and PCA-transformed data.
+    LSTM training with time series cross-validation and comprehensive optimization (with Optuna hyperparameter optimization).
     
     Parameters:
     - X_train_val: Features for training/validation (DataFrame or ndarray)
@@ -616,7 +571,14 @@ def train_lstm_model_with_cv(logger, X_train_val, Y_train_val, tscv, feature_sca
         - retrained_model: Model retrained on full dataset
         - retrained_rmse: RMSE of retrained model
         - retrained_r2: R² of retrained model
+
+
+    Two-stage process:
+    1. Optuna optimization across multiple folds to find best architecture
+    2. Fold-wise training with best parameters for cross-validation metrics
+    - Final model retraining on complete dataset
     """
+
     fold_metrics = []
     data_is_pca = is_pca_transformed_data(X_train_val)
     if data_is_pca and logger:
@@ -629,11 +591,8 @@ def train_lstm_model_with_cv(logger, X_train_val, Y_train_val, tscv, feature_sca
         params = {
             'epochs': trial.suggest_int('epochs', 50, 150),
             'batch_size': trial.suggest_int('batch_size', 16, 64),
-            #'batch_size': trial.suggest_int('batch_size', 16, 32),  # Smaller batches
             'units': trial.suggest_int('units', 32, 128),
-            #'units': trial.suggest_int('units', 32, 64),  # Smaller networks
             'learning_rate': trial.suggest_float('learning_rate', 0.0001, 0.01, log=True),
-            #'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.005, log=True),
             'dropout': trial.suggest_float('dropout', 0.2, 0.5),
             'time_steps': trial.suggest_int('time_steps', 3, 5),
             'layers': trial.suggest_int('layers', 1, 2),
@@ -746,8 +705,8 @@ def train_lstm_model_with_cv(logger, X_train_val, Y_train_val, tscv, feature_sca
                 'R2': r2_original,
                 'Min_Ratio': min_ratio,
                 'Max_Ratio': max_ratio,
-                'Parameters': best_params_fold,  # Store as dict, not string
-                'model': model,  # Save the trained model
+                'Parameters': best_params_fold,  
+                'model': model,
                 'y_val': adjusted_val_fold,
                 'predictions': y_pred_original
             })

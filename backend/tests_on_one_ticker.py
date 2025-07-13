@@ -1,20 +1,22 @@
 # tests_on_one_ticker.py
+"""
+Development and debugging utility for testing ML pipeline on single stocks.
+
+Purpose:
+- Rapid testing of pipeline changes without full batch processing
+- Debugging specific ticker issues
+- Feature development and validation
+- Resource-efficient pipeline testing
+
+Usage:
+1. Update ticker_symbol variable to desired stock
+2. Ensure clean_data_date_folder points to existing data
+3. Run script to execute full pipeline on single ticker
+
+Output: Same as full pipeline (models, ensembles, predictions) for one stock
+"""
 import pandas as pd
-import numpy as np
-import seaborn as sns
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, RobustScaler
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.svm import SVR
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from xgboost import XGBRegressor
-from lightgbm import LGBMRegressor
-import yfinance as yf
-import pandas_ta as ta
 import os
-from sklearn.base import BaseEstimator, TransformerMixin
-from pandas_datareader import data as pdr
 import datetime
 
 from Full_Pipeline_With_Data import full_pipeline_for_single_stock
@@ -49,7 +51,7 @@ date_path = os.path.join(base_directory, clean_data_date_folder)
 if not os.path.exists(date_path):
     print(f"Folder path '{date_path}' does not exist.")
 
-# read csv -> {ticker}_clean_data: send clean data to full pipelin
+# read csv -> {ticker}_clean_data: send clean data to full pipeline
 ticker_symbol = 'IFF'
 ticker_csv_path = os.path.join(date_path, f"{ticker_symbol}_clean_data.csv")
 # Check if the file exists

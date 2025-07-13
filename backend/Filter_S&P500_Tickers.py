@@ -1,3 +1,4 @@
+# Filter_S&P500_Tickers.py
 import time
 import random
 import os
@@ -11,16 +12,25 @@ def validate_and_save_tickers_alpha_vantage(tickers_list, api_key, output_file="
     """
     Validates a list of ticker symbols using Alpha Vantage API and saves valid ones to a CSV file
     Optimized for premium API with 75 requests per minute rate limit
-    
+
     Parameters:
-        tickers_list (list): List of ticker symbols to validate
-        api_key (str): Alpha Vantage API key
-        output_file (str): Filename to save valid tickers
-        batch_size (int): Number of tickers to process in each batch
+    - tickers_list (list): List of ticker symbols to validate
+    - api_key (str): Alpha Vantage API key
+    - output_file (str): Filename to save valid tickers
+    - batch_size (int): Number of tickers to process in each batch
     
     Returns:
-        list: List of valid ticker symbols
+    - list: List of valid ticker symbols
+    
+    Process:
+    1. Batch process tickers to manage rate limits
+    2. Query Global Quote endpoint for each ticker
+    3. Validate response contains proper symbol data
+    4. Save valid/invalid tickers to separate CSV files
+    
+    Note: API key shown is expired - was purchased for limited time only.
     """
+    
     valid_tickers = []
     invalid_tickers = []
     total_tickers = len(tickers_list)
@@ -93,9 +103,14 @@ def validate_and_save_tickers_alpha_vantage(tickers_list, api_key, output_file="
     
     return valid_tickers
 
+
 def validate_and_save_tickers(tickers_list, output_file="valid_tickers.csv", batch_size=5):
     """
     Validates a list of ticker symbols and saves valid ones to a CSV file
+    Free ticker validation using Yahoo Finance via yfinance library.
+    
+    Alternative validation method when Alpha Vantage API isn't available.
+    Uses more conservative rate limiting due to unofficial API usage.
     
     Parameters:
         tickers_list (list): List of ticker symbols to validate
@@ -104,7 +119,15 @@ def validate_and_save_tickers(tickers_list, output_file="valid_tickers.csv", bat
     
     Returns:
         list: List of valid ticker symbols
+    
+    Process:
+    1. Create yfinance Ticker objects for each symbol
+    2. Check if ticker.info contains valid symbol data
+    3. Handle rate limiting with random delays
+    4. Save validated tickers to CSV file
+    
     """
+
     valid_tickers = []
     total_tickers = len(tickers_list)
     
