@@ -1,13 +1,13 @@
 # semi_automated_manager.py
 import pandas as pd
-from datetime import datetime, timedelta
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QMessageBox, QProgressBar, QTextEdit, QScrollArea, QWidget
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QMessageBox, QTextEdit, QWidget
+from PyQt6.QtCore import Qt, QThread
 from frontend.logging_config import get_logger
 from frontend.gui.worker import Worker
-from backend.trading_logic_new import get_orders, get_portfolio_history
+from backend.trading_logic_new import get_portfolio_history
 
 logger = get_logger(__name__)
+
 
 class TradeValidationResult:
     """Holds validation results for trade dependencies."""
@@ -16,6 +16,7 @@ class TradeValidationResult:
         self.invalid_orders = []
         self.warnings = []
         self.dependencies = {}  # order_id -> [dependent_order_ids]
+
 
 class TradeDependencyValidator:
     """Validates trade dependencies and portfolio state."""
@@ -98,8 +99,7 @@ class TradeDependencyValidator:
                     'shares': shares,
                     'purchase_price': price,
                     'purchase_date': order['date']
-                }
-                
+                }           
         elif action == 'sell':
             proceeds = order.get('total_proceeds', shares * price)
             cash += proceeds
@@ -110,6 +110,7 @@ class TradeDependencyValidator:
                     del holdings[ticker]
         
         return cash, holdings
+
 
 class WindowedTradeConfirmationDialog(QDialog):
     """Enhanced dialog for windowed semi-automated trading."""
@@ -178,10 +179,8 @@ class WindowedTradeConfirmationDialog(QDialog):
 
         # Orders table
         self.setup_orders_table(layout)
-
         # Action buttons
         self.setup_action_buttons(layout)
-
         # Apply styling
         self.apply_styles()
 
@@ -199,7 +198,7 @@ class WindowedTradeConfirmationDialog(QDialog):
         for i, width in enumerate(column_widths):
             self.table.setColumnWidth(i, width)
         
-        self.table.verticalHeader().setDefaultSectionSize(40)  # Increase row height
+        self.table.verticalHeader().setDefaultSectionSize(40) 
         layout.addWidget(self.table)
 
     def setup_action_buttons(self, layout):
@@ -234,7 +233,9 @@ class WindowedTradeConfirmationDialog(QDialog):
         layout.addLayout(button_layout)
 
     def validate_and_display_orders(self):
-        """Validate orders and display them with status indicators."""
+        """
+        Validate orders and display them with status indicators.
+        """
         validator = TradeDependencyValidator(self.current_cash, self.current_holdings)
         validation_result = validator.validate_order_sequence(self.orders)
         
@@ -352,9 +353,7 @@ class WindowedTradeConfirmationDialog(QDialog):
         
         check_label.mousePressEvent = toggle_check
         update_appearance()
-        
         layout.addWidget(check_label)
-        
         widget.is_checked = lambda: check_label.checked if check_label.enabled else False
         widget.set_checked = lambda checked: setattr(check_label, 'checked', checked) or update_appearance()
         
@@ -371,7 +370,7 @@ class WindowedTradeConfirmationDialog(QDialog):
             if status_item and "Valid" in status_item.text():
                 order = self.orders[row]
                 
-                # Always allow sell orders (they add cash)
+                # Always allow sell orders
                 if order.get('action') == 'sell':
                     checkbox_widget.set_checked(True)
                 # For buy orders, check if we can afford them
@@ -487,7 +486,7 @@ class WindowedTradeConfirmationDialog(QDialog):
                                 }
                             """)
                         else:
-                            # FIXED: Restore normal unchecked appearance
+                            # Restore normal unchecked appearance
                             check_label.setText("")
                             check_label.setStyleSheet("""
                                 QLabel {
@@ -501,6 +500,7 @@ class WindowedTradeConfirmationDialog(QDialog):
                                 }
                             """)
 
+
 class SemiAutomatedManager:
     """Manages the windowed semi-automated trading process using existing Worker class."""
     
@@ -510,7 +510,10 @@ class SemiAutomatedManager:
         self.data_manager = input_panel.data_manager
         
     def start_windowed_trading(self, investment_amount, risk_level, start_date, end_date):
-        """Start the windowed semi-automated trading process with USER parameters."""
+        """
+        Initialize a complete windowed semi-automated trading session.
+        Breaks down the trading period into manageable windows for user review and approval.
+        """
         logger.info(f"Starting windowed semi-automated trading from {start_date} to {end_date}")
         logger.info(f"User settings: Investment=${investment_amount}, Risk={risk_level}")
         
@@ -620,7 +623,10 @@ class SemiAutomatedManager:
             self.input_panel.hide_progress()
     
     def _process_next_window(self):
-        """Process the next trading window using REAL user parameters."""
+        """
+        Process the next trading window in the sequence using user parameters.
+        Maintains portfolio state continuity and handles window-to-window transitions.
+        """
         if self.current_window_index >= len(self.trading_windows):
             self._finish_windowed_trading()
             return
@@ -645,12 +651,12 @@ class SemiAutomatedManager:
         logger.info(f"Window {self.current_window_index + 1} using: Cash=${current_cash:,.2f}, Holdings={len(current_holdings)}")
 
         self.worker = Worker(
-            investment_amount=current_cash,                 # Use current cash, not initial
+            investment_amount=current_cash,     
             risk_level=self.user_risk_level,
             start_date=window_start,
             end_date=window_end,
             data_manager=self.data_manager,
-            mode="semi-automatic",                          # Changed to semi-automatic
+            mode="semi-automatic",   
             reset_state=False,
             selected_orders=None,
             current_cash=current_cash,
@@ -719,7 +725,6 @@ class SemiAutomatedManager:
         """Execute the selected trades for the current window using EXISTING logic."""
         self.input_panel.show_progress("Executing selected trades...")
         
-        # Use your EXISTING Worker class to execute selected trades
         self.execution_thread = QThread()
         self.execution_worker = Worker(
             investment_amount=self.user_investment_amount,
@@ -730,8 +735,8 @@ class SemiAutomatedManager:
             mode="semi-automatic",
             reset_state=False,
             selected_orders=selected_orders,
-            current_cash=None,  # Will use current state
-            current_holdings=None  # Will use current state
+            current_cash=None, 
+            current_holdings=None 
         )
         
         self.execution_worker.moveToThread(self.execution_thread)
@@ -807,7 +812,7 @@ class SemiAutomatedManager:
         """Finish the windowed trading process."""
         logger.info("Windowed semi-automated trading completed")
 
-        # RE-ENABLE BUTTONS - ADD THIS
+        # RE-ENABLE BUTTONS
         self.input_panel.execute_button.setEnabled(True)
         self.input_panel.reset_button.setEnabled(True)
         

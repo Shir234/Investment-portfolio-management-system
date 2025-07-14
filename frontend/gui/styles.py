@@ -1,4 +1,7 @@
-# styles.py - Modern UI styling for SharpSight Investment System
+# styles.py
+"""
+Modern UI styling for SharpSight Investment System
+"""
 
 class ModernStyles:
     """Modern, comfortable styling following UI design principles"""
@@ -6,7 +9,7 @@ class ModernStyles:
     # Color Palette
     COLORS = {
         'dark': {
-            'primary': '#1E1E2E',           # Deep dark background
+            'primary': '#1E1E2E',          # Deep dark background
             'secondary': '#2A2A3E',        # Slightly lighter panels
             'surface': '#363650',          # Card/widget surfaces
             'accent': '#6366F1',           # Modern indigo accent
@@ -24,8 +27,7 @@ class ModernStyles:
             'selected': '#6366F1',         # Selection color
         },
         'light': {
-            # Even darker "light" mode - almost medium-dark theme
-            'primary': '#D1D5DB',          # Even darker background - medium-dark gray
+            'primary': '#D1D5DB',          # Darker background - medium-dark gray
             'secondary': '#B0B7C3',        # Much darker panels 
             'surface': '#C4C7CF',          # Much darker card surfaces
             'accent': '#6366F1',           # Same indigo accent for consistency
@@ -34,12 +36,12 @@ class ModernStyles:
             'success': '#10B981',          # Green
             'warning': '#F59E0B',          # Amber
             'danger': '#EF4444',           # Red
-            'text_primary': '#111827',     # Very dark text for great contrast
+            'text_primary': '#111827',     # Very dark text for contrast
             'text_secondary': '#374151',   # Dark gray text
             'text_muted': '#6B7280',       # Medium muted text
             'border': '#9CA3AF',           # Darker, more defined borders
             'border_light': '#B0B7C3',     # Medium border
-            'hover': '#A8ACB8',            # Much darker hover state
+            'hover': '#A8ACB8',            # Darker hover state
             'selected': '#DBEAFE',         # Subtle blue selection
         }
     }
@@ -137,9 +139,9 @@ class ModernStyles:
             border-radius: 6px;
             padding: 8px 18px;
             font-weight: 600;
-            font-size: 13px;  /* Consistent font size */
+            font-size: 13px;  
             min-height: 20px;
-            min-width: 100px;  /* Ensure buttons are wide enough for text */
+            min-width: 100px; 
         }}
         
         QPushButton:hover {{
@@ -228,7 +230,7 @@ class ModernStyles:
             border: 1px solid {colors['border_light']};
             border-radius: 6px;
             padding: 8px 12px;
-            font-size: 13px;  /* Consistent font size */
+            font-size: 13px;  
             min-width: 180px;
             min-height: 18px;
             selection-background-color: {colors['accent']};
@@ -250,7 +252,7 @@ class ModernStyles:
             border: 1px solid {colors['border_light']};
             border-radius: 6px;
             padding: 8px 12px;
-            font-size: 13px;  /* Consistent font size */
+            font-size: 13px; 
             min-width: 180px;
             min-height: 18px;
         }}
@@ -298,7 +300,7 @@ class ModernStyles:
             border: 1px solid {colors['border_light']};
             border-radius: 6px;
             padding: 8px 12px;
-            font-size: 13px;  /* Consistent font size */
+            font-size: 13px; 
             min-width: 180px;
             min-height: 18px;
         }}
@@ -361,13 +363,13 @@ class ModernStyles:
             border: 1px solid {colors['border_light']};
             border-radius: 12px;
             gridline-color: {colors['border_light']};
-            font-size: 13px;  /* Better readable font size */
+            font-size: 13px; 
             selection-background-color: {colors['selected']};
         }}
         
         QTableWidget::item {{
             border: none;
-            padding: 8px 6px;  /* Better padding for readability */
+            padding: 8px 6px; 
             border-bottom: 1px solid {colors['border_light']};
         }}
         
@@ -385,9 +387,9 @@ class ModernStyles:
             color: {colors['text_primary']};
             border: none;
             border-bottom: 2px solid {colors['border']};
-            padding: 10px 6px;  /* Better header padding */
+            padding: 10px 6px;  
             font-weight: 600;
-            font-size: 12px;  /* Readable header font */
+            font-size: 12px; 
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }}
@@ -460,14 +462,14 @@ class ModernStyles:
         return f"""
         QLabel {{
             color: {colors['text_primary']};
-            font-size: 13px;  /* Consistent base font size */
+            font-size: 13px; 
             font-weight: 500;
             background-color: transparent;
         }}
         
         QLabel[class="label"] {{
             color: {colors['text_primary']};
-            font-size: 14px;  /* Slightly bigger for labels */
+            font-size: 14px; 
             font-weight: 700;
             margin-bottom: 6px;
             background-color: transparent;
@@ -499,7 +501,7 @@ class ModernStyles:
         }}
         
         QLabel[class="metric"] {{
-            font-size: 14px;  /* Better readable metric font */
+            font-size: 14px;
             font-weight: 600;
             padding: 10px 14px;
             background-color: {colors['surface']};
@@ -547,14 +549,14 @@ class ModernStyles:
         
         QMessageBox QLabel {{
             color: {colors['text_primary']};
-            font-size: 13px;  /* Better readable font */
+            font-size: 13px; 
             padding: 8px;
         }}
         
         QMessageBox QPushButton {{
             min-width: 80px;
             margin: 4px;
-            font-size: 12px;  /* Consistent button font */
+            font-size: 12px; 
             padding: 6px 12px;
         }}
         """

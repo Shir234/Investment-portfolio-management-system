@@ -1,12 +1,26 @@
+# data_manager.py
+"""
+Data management module for loading, validating, and filtering CSV financial data.
+Handles CSV file processing with date range filtering and data validation.
+"""
 import pandas as pd
-import logging
 import os
 from datetime import datetime
 from frontend.logging_config import get_logger
+
 logger = get_logger(__name__)
 
+
 class DataManager:
+    """
+    Manages financial data loading, validation, and filtering operations.
+    
+    Handles CSV file processing with validation for required columns,
+    date parsing, and provides filtered data access based on date ranges.
+    """
+
     def __init__(self, csv_path):
+        """Initialize DataManager with CSV file path and load data."""
         self.data = None
         self.start_date = None
         self.end_date = None
@@ -16,7 +30,9 @@ class DataManager:
         self.load_data()
 
     def load_data(self):
-        """Load and preprocess data from CSV, returning (success, error_msg)."""
+        """
+        Load and validate CSV data with error handling, returning (success, error_msg).
+        """
         try:
             if not self.csv_path or not os.path.exists(self.csv_path):
                 error_msg = f"Data file not found: {self.csv_path}"
@@ -73,8 +89,21 @@ class DataManager:
             return False, error_msg
 
     def set_date_range(self, start_date, end_date):
-        """Set the date range for analysis, validate, and cap dates to dataset range."""
+        """
+        Set analysis date range with automatic bounds checking and adjustment.
+        
+        Validates date types, ensures logical ordering, and constrains dates
+        to the available dataset range with user notification of adjustments.
+        
+        Args:
+        - start_date: Analysis start date (converts to pd.Timestamp if needed)
+        - end_date: Analysis end date (converts to pd.Timestamp if needed)
+            
+        Returns:
+        - (success_bool, message) - success status and adjustment details
+        """
         try:
+            # Ensure consistent timestamp types
             if not isinstance(start_date, pd.Timestamp):
                 logger.warning(f"start_date is not a pd.Timestamp: {type(start_date)}. Converting to pd.Timestamp.")
                 start_date = pd.to_datetime(start_date, utc=True)
@@ -82,6 +111,7 @@ class DataManager:
                 logger.warning(f"end_date is not a pd.Timestamp: {type(end_date)}. Converting to pd.Timestamp.")
                 end_date = pd.to_datetime(end_date, utc=True)
 
+            # Validate date logic
             if start_date >= end_date:
                 logger.error("Start date must be before end date")
                 return False, "Start date must be before end date"
@@ -90,6 +120,7 @@ class DataManager:
                 logger.error("Dataset date range not set. Load data first.")
                 return False, "Dataset date range not set"
 
+            # Adjust dates to dataset boundaries
             original_start_date = start_date
             original_end_date = end_date
             was_adjusted = False
@@ -117,7 +148,13 @@ class DataManager:
             return False, f"Error setting date range: {e}"
 
     def get_filtered_data(self):
-        """Return data filtered by the set date range."""
+        """
+        Applies date range filtering and returns only essential columns
+        needed for analysis and visualization.
+        
+        Returns:
+        - DataFrame with filtered data or None if error/no data available
+        """
         try:
             if self.data is None or self.data.empty:
                 logger.error("No data loaded")

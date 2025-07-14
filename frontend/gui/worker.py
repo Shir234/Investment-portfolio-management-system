@@ -5,14 +5,18 @@ from frontend.data.trading_connector import execute_trading_strategy
 
 logger = get_logger(__name__)
 
+
 class Worker(QObject):
     """Worker class to run execute_trading_strategy in a background thread."""
-    finished = pyqtSignal(bool, dict)  # success, result
-    error = pyqtSignal(str)  # error message
-    progress = pyqtSignal(str)  # progress message
+    finished = pyqtSignal(bool, dict)   # success, result
+    error = pyqtSignal(str)             # error message
+    progress = pyqtSignal(str)          # progress message
 
-    #def __init__(self, investment_amount, risk_level, start_date, end_date, data_manager, mode, reset_state, selected_orders=None):
     def __init__(self, investment_amount, risk_level, start_date, end_date, data_manager, mode, reset_state, selected_orders=None, current_cash=None, current_holdings=None):
+        """
+        Initialize worker with complete trading strategy parameters for background execution.
+        Supports both automatic and semi-automatic modes with portfolio state management.
+        """
         super().__init__()
         self.investment_amount = investment_amount
         self.risk_level = risk_level
@@ -26,7 +30,10 @@ class Worker(QObject):
         self.current_holdings = current_holdings
 
     def run(self):
-        """Execute the trading strategy in the background."""
+        """
+        Execute trading strategy in background thread.
+        Emits signals for UI updates while maintaining thread safety and exception handling.
+        """
         try:
             self.progress.emit("Initializing strategy...")
             success, result = execute_trading_strategy(

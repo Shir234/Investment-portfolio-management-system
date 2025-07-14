@@ -232,7 +232,6 @@ current_date = datetime.datetime.now().strftime("%Y%m%d")
 date_folder = f'results/{current_date}'
 os.makedirs(date_folder, exist_ok=True)
 
-# Example usage
 if __name__ == "__main__":
    # API_KEY - not available anymore!!
     API_KEY = "3T3LNJ2UYGY4R7WO"  # Get from https://www.alphavantage.co/support/#api-key

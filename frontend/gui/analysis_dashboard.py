@@ -1,30 +1,18 @@
 # analysis_dashboard.py
-import os
+"""
+Interactive dashboard for visualizing trading analysis and portfolio performance.
+Provides multiple chart types with ticker selection and comprehensive trading metrics.
+"""
 import numpy as np
 import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 from PyQt6.QtCore import Qt, QEvent, QPoint, QSize, QRect
 from PyQt6.QtGui import QCursor, QFont, QFontMetrics
-from PyQt6.QtWidgets import (
-    QAbstractItemView,
-    QComboBox,
-    QFrame,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QLayout,
-    QListWidget,
-    QListWidgetItem,
-    QMessageBox,
-    QPushButton,
-    QSizePolicy,
-    QToolTip,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
+            QLayout, QListWidget, QListWidgetItem, QMessageBox, QPushButton, 
+            QSizePolicy, QToolTip, QVBoxLayout, QWidget,)
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -48,7 +36,7 @@ COLOR_PALETTE = [
 
 
 class FlowLayout(QLayout):
-    """A layout that arranges widgets in a flowing grid, wrapping to new rows as needed."""
+    """Custom layout that arranges widgets in a flowing grid, wrapping to new rows as needed."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -97,6 +85,7 @@ class FlowLayout(QLayout):
         return size
 
     def _do_layout(self, rect, apply_geometry):
+        """Calculate layout positioning and optionally apply geometry to widgets."""
         x, y = rect.x(), rect.y()
         line_height = 0
         max_height = rect.height()
@@ -122,7 +111,7 @@ class FlowLayout(QLayout):
 
 
 class CustomFigureCanvas(FigureCanvas):
-    """Custom canvas with hover tooltips for plots."""
+    """Enhanced canvas with hover tooltip functionality for interactive plots."""
 
     def __init__(self, figure, parent=None, get_tooltip_text=None):
         super().__init__(figure)
@@ -131,6 +120,7 @@ class CustomFigureCanvas(FigureCanvas):
         self.setMouseTracking(True)
 
     def enterEvent(self, event):
+        """Display tooltip when mouse enters the canvas area."""
         if self.get_tooltip_text:
             tooltip_text = self.get_tooltip_text()
             if tooltip_text:
@@ -139,12 +129,13 @@ class CustomFigureCanvas(FigureCanvas):
         super().enterEvent(event)
 
     def leaveEvent(self, event):
+        """Hide tooltip when mouse leaves the canvas area."""
         QToolTip.hideText()
         super().leaveEvent(event)
 
 
 class CustomComboBox(QComboBox):
-    """Custom QComboBox with hover tooltip for plot descriptions."""
+    """Enhanced QComboBox with hover tooltip for displaying plot descriptions"""
 
     def __init__(self, parent=None, get_tooltip_text=None):
         super().__init__(parent)
@@ -152,7 +143,7 @@ class CustomComboBox(QComboBox):
         self.setMouseTracking(True)
 
     def enterEvent(self, event):
-        """Show tooltip at the current mouse cursor position."""
+        """Show descriptive tooltip at cursor position when hovering over combo box."""
         if self.get_tooltip_text:
             tooltip_text = self.get_tooltip_text()
             if tooltip_text:
@@ -166,7 +157,12 @@ class CustomComboBox(QComboBox):
 
 
 class AnalysisDashboard(QWidget):
-    """A PyQt6-based dashboard for visualizing trading analysis data."""
+    """
+    A PyQt6-based trading analysis dashboard with multiple visualization types.
+    
+    Provides interactive charts for portfolio performance, Sharpe ratio analysis,
+    win rate tracking, and trading distribution with ticker selection capabilities.
+    """
 
     PLOT_DESCRIPTIONS = {
         "Predicted vs Actual Sharpe": "Plots predicted Sharpe ratios as dots over actual Sharpe ratios as lines over time.",
@@ -177,6 +173,13 @@ class AnalysisDashboard(QWidget):
     }
 
     def __init__(self, data_manager, parent=None):
+        """
+        Initialize the analysis dashboard with data source and theme configuration.
+        
+        Args:
+        - data_manager: DataManager instance containing financial data
+        - parent: Parent widget (optional)
+        """
         super().__init__(parent)
         self.data_manager = data_manager
         self.is_dark_mode = True
@@ -223,8 +226,8 @@ class AnalysisDashboard(QWidget):
         self.update_visualizations()
 
     def _setup_ticker_sidebar(self, main_layout):
-        """Configure the ticker selection sidebar."""
-        self.ticker_container = QFrame()  # Assign to self.ticker_container
+        """Create the left sidebar with ticker selection and legend components."""
+        self.ticker_container = QFrame()
         self.ticker_container.setFixedWidth(200)
         ticker_layout = QVBoxLayout(self.ticker_container)
         ticker_layout.setContentsMargins(0, 0, 0, 0)
@@ -249,7 +252,7 @@ class AnalysisDashboard(QWidget):
         main_layout.addWidget(self.ticker_container, stretch=0)
 
     def _populate_ticker_list(self):
-        """Populate the ticker list with available tickers."""
+        """Fill the ticker selection list with available tickers from the dataset."""
         if self.data_manager.data is not None and not self.data_manager.data.empty:
             tickers = sorted(self.data_manager.data["Ticker"].unique())
             for ticker in tickers:
@@ -258,7 +261,7 @@ class AnalysisDashboard(QWidget):
             logger.warning("No tickers available due to missing market data")
 
     def _setup_selected_tickers_header(self, ticker_layout):
-        """Set up the header for selected tickers with a clear button."""
+        """Create header section for selected tickers with clear button."""
         self.selected_tickers_header = QHBoxLayout()
         self.selected_tickers_header.setSpacing(5)
         self.selected_tickers_label = QLabel("Selected:")
@@ -271,7 +274,7 @@ class AnalysisDashboard(QWidget):
         ticker_layout.addLayout(self.selected_tickers_header)
 
     def _setup_selected_tickers_area(self, ticker_layout):
-        """Set up the area for displaying selected ticker buttons."""
+        """Create area for displaying selected ticker buttons with color coding."""
         self.selected_tickers_widget = QWidget()
         self.selected_tickers_widget.setProperty("class", "selected-tickers")
         self.selected_tickers_layout = QVBoxLayout(self.selected_tickers_widget)
@@ -282,7 +285,7 @@ class AnalysisDashboard(QWidget):
         ticker_layout.addWidget(self.selected_tickers_widget)
 
     def _setup_legend_area(self, ticker_layout):
-        """Set up the legend area with a grid layout."""
+        """Create legend area with grid layout for chart element descriptions."""
         self.legend_widget = QWidget()
         self.legend_widget.setFixedHeight(100)
         self.legend_layout = QGridLayout(self.legend_widget)
@@ -293,7 +296,7 @@ class AnalysisDashboard(QWidget):
         ticker_layout.addWidget(self.legend_widget)
 
     def _setup_graph_area(self, main_layout):
-        """Configure the graph type selection and chart display area."""
+        """Create the main chart area with graph type selection controls."""
         right_layout = QVBoxLayout()
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(16)
@@ -332,30 +335,30 @@ class AnalysisDashboard(QWidget):
         main_layout.addLayout(right_layout, stretch=1)
 
     def _connect_signals(self):
-        """Connect UI signals to their respective slots."""
+        """Connect UI element signals to their corresponding handler methods."""
         self.ticker_list.itemSelectionChanged.connect(self.update_selected_tickers)
         self.clear_tickers_button.clicked.connect(self.clear_all_tickers)
         self.graph_combo.currentIndexChanged.connect(self.change_graph_type)
 
     def _show_label_tooltip(self, event, label):
-        """Show tooltip for the graph type label."""
+        """Display tooltip for graph type label with current plot description."""
         tooltip_text = self.get_current_plot_description()
         if tooltip_text:
             pos = QCursor.pos() + QPoint(10, 10)
             QToolTip.showText(pos, tooltip_text, label)
 
     def get_current_plot_description(self):
-        """Return the description of the currently selected plot."""
+        """Return the description text for the currently selected plot type."""
         return self.PLOT_DESCRIPTIONS.get(self.graph_combo.currentText(), "No description available.")
 
     def set_initial_capital(self, initial_capital):
-        """Set the initial capital for the portfolio."""
+        """Set the initial investment capital for portfolio calculations."""
         self.initial_capital = initial_capital
         self.update_visualizations()
         logger.debug(f"Set initial capital: ${initial_capital:,.2f}")
 
     def change_graph_type(self):
-        """Handle graph type change and update visualizations."""
+        """Handle graph type selection change and refresh visualizations."""
         self._update_legend()
         self.update_visualizations()
         logger.debug(f"Changed graph type to: {self.graph_combo.currentText()}")
@@ -492,7 +495,7 @@ class AnalysisDashboard(QWidget):
         logger.debug(f"Applied theme: {'dark' if self.is_dark_mode else 'light'}")
 
     def _update_ticker_button_colors(self):
-        """Update ticker button colors to match plot colors."""
+        """Update ticker button colors to match their corresponding plot colors."""
         if not self.selected_tickers_order:
             self.ticker_colors = {}
             return
@@ -527,7 +530,7 @@ class AnalysisDashboard(QWidget):
         self.chart_canvas.setStyleSheet(f"background-color: {colors['surface']}; border: none;")
 
     def _get_theme_colors(self):
-        """Return colors for the current theme."""
+        """Return color dictionary for current theme used by plotting functions."""
         colors = ModernStyles.COLORS["dark" if self.is_dark_mode else "light"]
         return {
             "text": colors["text_primary"],
@@ -538,7 +541,7 @@ class AnalysisDashboard(QWidget):
         }
 
     def _get_ticker_colors(self, tickers):
-        """Assign consistent colors to tickers from the color palette."""
+        """Assign consistent colors to tickers from the predefined color palette."""
         if not tickers:
             return {}
         ticker_colors = {}
@@ -550,7 +553,7 @@ class AnalysisDashboard(QWidget):
         return ticker_colors
 
     def _update_legend(self):
-        """Update the legend based on the selected graph type."""
+        """Update the legend display based on the currently selected graph type."""
         while self.legend_layout.count():
             item = self.legend_layout.takeAt(0)
             if item.widget():
@@ -587,7 +590,7 @@ class AnalysisDashboard(QWidget):
                 self._add_legend_item(row, col, label, "", color)
 
     def _add_legend_item(self, row, col, label_prefix, label_suffix, color):
-        """Add a single legend item to the grid."""
+        """Add a single legend item with color square and label to the grid layout."""
         legend_widget = QWidget()
         legend_widget.setProperty("class", "legend-item")
         legend_widget.setFixedHeight(18)
@@ -643,7 +646,7 @@ class AnalysisDashboard(QWidget):
             self._updating_tickers = False
 
     def _clear_selected_tickers(self):
-        """Remove all existing ticker buttons."""
+        """Remove all existing ticker button widgets from the display."""
         while self.selected_tickers_layout.count():
             item = self.selected_tickers_layout.takeAt(0)
             if item.widget():
@@ -651,7 +654,7 @@ class AnalysisDashboard(QWidget):
         self.selected_tickers_buttons.clear()
 
     def _show_ticker_limit_warning(self):
-        """Display a warning when too many tickers are selected."""
+        """Display warning dialog when user attempts to select too many tickers."""
         msg = QMessageBox(self)
         msg.setIcon(QMessageBox.Icon.Warning)
         msg.setWindowTitle("Selection Limit")
@@ -662,7 +665,7 @@ class AnalysisDashboard(QWidget):
         msg.exec()
 
     def _display_selected_tickers(self):
-        """Add buttons for selected tickers."""
+        """Create and display colored buttons for each selected ticker."""
         font = QFont("Segoe UI", 9)
         font_metrics = QFontMetrics(font)
         for ticker in self.selected_tickers_order:
@@ -705,14 +708,14 @@ class AnalysisDashboard(QWidget):
         return rgb2hex(adjusted_rgb)
 
     def remove_ticker(self, ticker):
-        """Remove a ticker from the selection."""
+        """Remove a ticker from the selection and update display."""
         for item in self.ticker_list.findItems(ticker, Qt.MatchFlag.MatchExactly):
             item.setSelected(False)
         self.update_selected_tickers()
         logger.debug(f"Removed ticker: {ticker}")
 
     def clear_all_tickers(self):
-        """Clear all selected tickers."""
+        """Clear all selected tickers and reset the display."""
         self.ticker_list.clearSelection()
         self.selected_tickers_order = []
         self.update_selected_tickers()
@@ -751,7 +754,15 @@ class AnalysisDashboard(QWidget):
         """
 
     def calculate_win_rate_over_time(self):
-        """Calculate win rate over time including completed and open trades."""
+        """
+        Calculate win rate metrics including completed and open trades.
+        
+        Processes both executed trades and current open positions to provide
+        a complete view of trading performance over time.
+        
+        Returns:
+        - DataFrame with win rate data or empty DataFrame if no trades found
+        """
         try:
             orders = get_orders()
             portfolio_history = get_portfolio_history()
@@ -792,7 +803,7 @@ class AnalysisDashboard(QWidget):
             return pd.DataFrame()
 
     def _process_completed_trades(self, orders, all_trades):
-        """Process completed trades from order data."""
+        """Extract completed trade data from order history for win rate analysis."""
         if not orders:
             return
         orders_df = pd.DataFrame(orders)
@@ -813,7 +824,7 @@ class AnalysisDashboard(QWidget):
             )
 
     def _process_open_positions(self, portfolio_history, all_trades):
-        """Process open positions from portfolio history."""
+        """Process open positions for unrealized P&L in win rate calculations."""
         if not portfolio_history:
             return
         current_portfolio = portfolio_history[-1]
@@ -843,7 +854,7 @@ class AnalysisDashboard(QWidget):
             )
 
     def _get_latest_prices(self):
-        """Return the latest closing prices for tickers."""
+        """Retrieve the most recent closing prices for all tickers in the dataset."""
         latest_prices = {}
         if self.data_manager.data is not None and not self.data_manager.data.empty:
             latest_date = self.data_manager.data["date"].max()
@@ -891,7 +902,7 @@ class AnalysisDashboard(QWidget):
         self.chart_fig.tight_layout()
 
     def _add_trade_markers(self, ax, win_rate_data):
-        """Add markers for individual trades."""
+        """Add visual markers for individual profitable and losing trades."""
         for condition, style in [
             (
                 (win_rate_data["is_profitable"]) & (win_rate_data["trade_type"] == "COMPLETED"),
@@ -949,7 +960,7 @@ class AnalysisDashboard(QWidget):
         ax.set_ylim(0, 100)
 
     def _add_win_rate_stats(self, ax, win_rate_data):
-        """Add statistics text to the win rate plot."""
+        """Add statistical information and performance indicators to the win rate plot."""
         theme_colors = self._get_theme_colors()
         final_win_rate = win_rate_data["cumulative_win_rate"].iloc[-1]
         total_trades = len(win_rate_data)
@@ -1040,7 +1051,7 @@ class AnalysisDashboard(QWidget):
         self.chart_canvas.draw()
 
     def _set_date_range(self):
-        """Set the date range for data filtering."""
+        """Establish date range for data filtering based on data manager settings."""
         try:
             start_date = (
                 pd.to_datetime(self.data_manager.start_date, utc=True)
@@ -1088,7 +1099,7 @@ class AnalysisDashboard(QWidget):
         ax.set_facecolor(theme_colors["surface"])
 
     def plot_predicted_vs_actual_sharpe(self):
-        """Plot predicted vs actual Sharpe ratios."""
+        """Visualize predicted vs actual Sharpe ratios for selected tickers over time."""
         ax = self.chart_fig.add_subplot(111)
         data = (
             self.data_manager.data.copy()
@@ -1179,7 +1190,7 @@ class AnalysisDashboard(QWidget):
                 return None
 
     def _calculate_profit_std_dev(self, df):
-        """Calculate profit over standard deviation for rolling periods."""
+        """Calculate profit over standard deviation using rolling window analysis."""
         df = df.sort_values("date")
         ratios = []
         dates = []
@@ -1243,7 +1254,7 @@ class AnalysisDashboard(QWidget):
         return sp500_data
 
     def plot_buy_sell_distribution(self):
-        """Plot a pie chart of buy vs sell transactions."""
+        """Create pie chart visualization of buy vs sell transaction distribution."""
         ax = self.chart_fig.add_subplot(111)
         orders = get_orders()
         if not orders:
@@ -1273,7 +1284,7 @@ class AnalysisDashboard(QWidget):
         self.chart_fig.tight_layout()
 
     def _style_plot(self, ax, title, xlabel, ylabel):
-        """Apply common styling to plots."""
+        """Apply consistent styling, colors, and formatting to plot axes."""
         theme_colors = self._get_theme_colors()
         ax.set_title(title, pad=10, color=theme_colors["text"])
         ax.set_xlabel(xlabel, color=theme_colors["text"])

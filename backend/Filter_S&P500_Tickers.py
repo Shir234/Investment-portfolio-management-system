@@ -181,7 +181,7 @@ if __name__ == "__main__":
     stakeholder_data = pd.read_csv('final_tickers_score.csv')
     # Get all tickers from data
     all_tickers = stakeholder_data['Ticker'].tolist()
-    # Your Alpha Vantage API key
+    # Alpha Vantage API key
     alpha_vantage_api_key = "3T3LNJ2UYGY4R7WO"
     # Validate tickers using Alpha Vantage and save to CSV
     validate_and_save_tickers_alpha_vantage(all_tickers, alpha_vantage_api_key, "valid_tickers_av.csv", batch_size=15)

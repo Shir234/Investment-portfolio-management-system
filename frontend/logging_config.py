@@ -1,3 +1,8 @@
+# logging_config.py
+"""
+Centralized logging configuration for the SharpSight application.
+Provides main application logging plus isolated loggers for trading and pipeline operations.
+"""
 import logging
 import logging.handlers
 import os
@@ -5,27 +10,24 @@ import sys
 import atexit
 from datetime import datetime
 
-# Global list to track all handlers for cleanup
+# Track all handlers for proper cleanup
 _all_handlers = []
 
-def setup_logging(log_level=logging.INFO):
-    """
-    Centralized logging configuration for the entire application.
-    """
 
-    # Create logs directory
+def setup_logging(log_level=logging.INFO):
+    """Configure application-wide logging with multiple specialized log files."""
+
+    # Ensure logs directory exists
     if not os.path.exists('logs'):
         os.makedirs('logs')
     
     # Create formatters
     detailed_formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
-    )
-    
+    )   
     simple_formatter = logging.Formatter(
         '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-    )
-    
+    )    
     # Get root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
@@ -35,7 +37,7 @@ def setup_logging(log_level=logging.INFO):
         root_logger.removeHandler(handler)
         handler.close()
     
-    # Console handler
+    # Console output handler
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(log_level)
     console_handler.setFormatter(simple_formatter)
@@ -55,7 +57,7 @@ def setup_logging(log_level=logging.INFO):
     root_logger.addHandler(app_file_handler)
     _all_handlers.append(app_file_handler)
     
-    # Trading logic specific log - ISOLATED (no propagation to root logger)
+    # Trading logic isolated logger
     trading_log_file = f"logs/trading_{datetime.now().strftime('%Y%m%d')}.log"
     trading_file_handler = logging.handlers.RotatingFileHandler(
         trading_log_file,
@@ -66,15 +68,14 @@ def setup_logging(log_level=logging.INFO):
     trading_file_handler.setLevel(log_level)
     trading_file_handler.setFormatter(detailed_formatter)
     
-    # Create isolated trading logger (doesn't propagate to root)
     trading_logger = logging.getLogger('trading_logic')
     trading_logger.handlers.clear()  # Clear any existing handlers
     trading_logger.addHandler(trading_file_handler)
     trading_logger.setLevel(log_level)
-    trading_logger.propagate = False  # CRITICAL: Don't propagate to root logger
+    trading_logger.propagate = False  # Prevent propagation to root logger
     _all_handlers.append(trading_file_handler)
     
-    # Pipeline log - ISOLATED (no propagation to root logger)
+    # Pipeline operations isolated logger
     pipeline_log_file = f"logs/pipeline_{datetime.now().strftime('%Y%m%d')}.log"
     pipeline_file_handler = logging.handlers.RotatingFileHandler(
         pipeline_log_file,
@@ -85,19 +86,18 @@ def setup_logging(log_level=logging.INFO):
     pipeline_file_handler.setLevel(log_level)
     pipeline_file_handler.setFormatter(detailed_formatter)
     
-    # Create isolated pipeline logger (doesn't propagate to root)
     pipeline_logger = logging.getLogger('stock_pipeline')
-    pipeline_logger.handlers.clear()  # Clear any existing handlers
+    pipeline_logger.handlers.clear()
     pipeline_logger.addHandler(pipeline_file_handler)
     pipeline_logger.setLevel(log_level)
-    pipeline_logger.propagate = False  # CRITICAL: Don't propagate to root logger
+    pipeline_logger.propagate = False  # Prevent propagation to root logger
     _all_handlers.append(pipeline_file_handler)
     
     # Suppress matplotlib font manager logs
     logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
     
-    # Register cleanup function
+    # Register cleanup for application exit
     atexit.register(cleanup_logging)
     
     print(f"Logging initialized. Logs will be written to:")
@@ -105,14 +105,13 @@ def setup_logging(log_level=logging.INFO):
     print(f"  Trading: {trading_log_file}")
     print(f"  Pipeline: {pipeline_log_file}")
 
+
 def cleanup_logging():
-    """
-    Properly close and flush all logging handlers.
-    """
+    """Properly close and flush all logging handlers during application shutdown."""
 
     print("Cleaning up logging handlers...")
     
-    # Flush and close all handlers
+    # Flush and close all tracked handlers
     for handler in _all_handlers:
         try:
             handler.flush()
@@ -120,10 +119,9 @@ def cleanup_logging():
         except Exception as e:
             print(f"Error closing handler {handler}: {e}")
     
-    # Clear the list
     _all_handlers.clear()
     
-    # Force flush all loggers
+    # Force cleanup of any remaining handlers
     for logger_name in logging.Logger.manager.loggerDict:
         logger = logging.getLogger(logger_name)
         for handler in logger.handlers:
@@ -133,10 +131,9 @@ def cleanup_logging():
             except:
                 pass
 
+
 def force_log_flush():
-    """
-    Force flush all log handlers immediately.
-    """
+    """Force flush all log handlers immediately."""
     
     for handler in _all_handlers:
         try:
@@ -144,7 +141,7 @@ def force_log_flush():
         except Exception as e:
             print(f"Error flushing handler {handler}: {e}")
     
-    # Also flush all other loggers
+    # Flush all other active loggers
     for logger_name in logging.Logger.manager.loggerDict:
         logger = logging.getLogger(logger_name)
         for handler in logger.handlers:
@@ -153,35 +150,34 @@ def force_log_flush():
             except:
                 pass
 
+
 def get_logger(name):
-    """
-    Get a logger with the specified name.
-    """
+    """Get a logger with the specified name."""
     return logging.getLogger(name)
+
 
 def get_isolated_logger(name, log_file_prefix=None, level=logging.INFO):
     """
-    Get an isolated logger that only writes to its own file.
+    Create an isolated logger that writes only to its dedicated log file.
     
     Args:
-        name: Logger name
-        log_file_prefix: Custom log file prefix (defaults to name)
-        level: Logging level
+    - name: Logger name/identifier
+    - log_file_prefix: Custom prefix for log file (defaults to logger name)
+    - level: Logging level for this logger
     
     Returns:
-        Logger that only writes to its dedicated file
+    - Isolated logger instance that doesn't propagate to root logger
     """
+
     if log_file_prefix is None:
         log_file_prefix = name
     
-    # Create logs directory
+    # Ensure logs directory exists
     if not os.path.exists('logs'):
         os.makedirs('logs')
     
-    # Create logger
+    # Create and configure logger
     logger = logging.getLogger(name)
-    
-    # Clear any existing handlers
     logger.handlers.clear()
     
     # Create dedicated file handler

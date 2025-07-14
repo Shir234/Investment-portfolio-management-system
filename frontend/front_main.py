@@ -1,9 +1,14 @@
+# front_main.py
+"""
+Main entry point for the SharpSight Investment Portfolio Management System.
+Handles application initialization, file selection, theme setup, and window management.
+"""
 import sys
 import os
 import logging
 from logging_config import setup_logging, get_logger
 
-# Configure logging with FileHandler
+# Initialize logging
 log_dir = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')), 'logs')
 os.makedirs(log_dir, exist_ok=True)  # Ensure logs directory exists
 log_file = os.path.join(log_dir, 'app.log')
@@ -11,10 +16,10 @@ setup_logging()
 logger = get_logger(__name__)
 logger.info("Logging initialized")
 
-# Suppress matplotlib and NumExpr logs
+# Environment configuration
 os.environ["NUMEXPR_MAX_THREADS"] = "8"
 
-# Add parent and backend directories to sys.path
+# Path setup for imports
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(base_dir)
 sys.path.append(os.path.join(base_dir, 'backend'))
@@ -25,7 +30,7 @@ from PyQt6.QtWidgets import (QApplication, QFileDialog, QDialog, QVBoxLayout, QL
 from PyQt6.QtGui import QPalette, QColor, QIcon
 from PyQt6.QtCore import Qt
 
-# Import our modules
+# Import application modules
 try:
     from frontend.gui.main_window import MainWindow
     from frontend.gui.splash_screen import SplashScreen
@@ -36,6 +41,7 @@ except ImportError as e:
     print(f"Import error: {e}")
     sys.exit(1)
 
+
 def resource_path(relative_path):
     """Get absolute path to resources, works for dev and PyInstaller."""
     try:
@@ -44,26 +50,25 @@ def resource_path(relative_path):
         base_path = os.path.abspath(os.path.dirname(__file__))
     return os.path.join(base_path, relative_path)
 
+
 def set_modern_theme(app):
-    """Apply modern theme styling to the application."""
+    """Configure the application with modern dark theme styling and color palette."""
     logger.info("Setting modern theme")
     
     # Set the complete modern style (default to dark mode)
     style = ModernStyles.get_complete_style(is_dark=True)
     app.setStyleSheet(style)
     
-    # Set modern palette for better theme consistency
+    # Set modern palette for theme consistency
     colors = ModernStyles.COLORS['dark']
     palette = QPalette()
     
-    # Window colors
+    # Window and base colors
     palette.setColor(QPalette.ColorRole.Window, QColor(colors['primary']))
-    palette.setColor(QPalette.ColorRole.WindowText, QColor(colors['text_primary']))
-    
-    # Base colors (for input fields, etc.)
+    palette.setColor(QPalette.ColorRole.WindowText, QColor(colors['text_primary']))   
     palette.setColor(QPalette.ColorRole.Base, QColor(colors['surface']))
     palette.setColor(QPalette.ColorRole.AlternateBase, QColor(colors['secondary']))
-    
+   
     # Text colors
     palette.setColor(QPalette.ColorRole.Text, QColor(colors['text_primary']))
     palette.setColor(QPalette.ColorRole.BrightText, QColor(colors['text_primary']))
@@ -93,7 +98,9 @@ def set_modern_theme(app):
     
     app.setPalette(palette)
 
+
 class HelpDialog(QDialog):
+    """Dialog showing CSV file format requirements with example data table."""
     def __init__(self):
         super().__init__()
         self.setWindowTitle("CSV File Help")
@@ -151,7 +158,7 @@ class HelpDialog(QDialog):
             "Actual_Sharpe", "Best_Prediction"
         ])
         
-        # Populate example row with truncated values for long numbers
+        # Example data row
         example_data = [
             "2021-10-14", "WBD", "25.26", "-1.0", "-1.0", 
             "-2.7896", "-1.8321"  # Truncated for display
@@ -169,6 +176,8 @@ class HelpDialog(QDialog):
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         table.horizontalHeader().setMaximumSectionSize(100)  # Cap column width
         table.verticalHeader().setVisible(False)
+
+        # Table styling
         table.setStyleSheet(f"""
             QTableWidget {{
                 background-color: {ModernStyles.COLORS['dark']['surface']};
@@ -194,7 +203,9 @@ class HelpDialog(QDialog):
         
         layout.addWidget(table)
 
+
 class StarterDialog(QDialog):
+    """Welcome dialog that prompts user to select the CSV file to begin analysis."""
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Welcome to SharpSight")
@@ -206,12 +217,13 @@ class StarterDialog(QDialog):
         self.activateWindow()
 
     def setup_ui(self):
-        """Set up the UI for the StarterDialog."""
+        """Set up the welcome dialog UI with title, subtitle, and action buttons."""
         logger.info("Setting up StarterDialog")
         layout = QVBoxLayout(self)
         layout.setSpacing(20)
         layout.setContentsMargins(30, 30, 30, 30)
 
+        # Title and subtitle
         title = QLabel("Welcome to SharpSight")
         title.setProperty("class", "title")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -223,15 +235,18 @@ class StarterDialog(QDialog):
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
+        # File selection prompt
         prompt = QLabel("Please select 'all_tickers_results.csv' to begin.")
         prompt.setProperty("class", "prompt")
         prompt.setAlignment(Qt.AlignmentFlag.AlignCenter)
         prompt.setWordWrap(True)
         layout.addWidget(prompt)
 
+        # Action buttons
         button_layout = QHBoxLayout()
         button_layout.addStretch()
         
+        # Help button
         help_button = QToolButton()
         help_button.setText("?")
         help_button.setFixedSize(32, 32)
@@ -239,6 +254,7 @@ class StarterDialog(QDialog):
         help_button.clicked.connect(self.show_help)
         button_layout.addWidget(help_button)
 
+        # File selection button
         select_button = QPushButton("Select CSV File")
         select_button.clicked.connect(self.accept)
         button_layout.addWidget(select_button)
@@ -250,7 +266,7 @@ class StarterDialog(QDialog):
             colors = ModernStyles.COLORS['dark']
             style = ModernStyles.get_complete_style(is_dark=True)
             
-            # Add specific styling for this dialog
+            # Dialog-specific styling
             dialog_style = f"""
                 QDialog {{
                     background-color: {colors['primary']};
@@ -305,10 +321,11 @@ class StarterDialog(QDialog):
         self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
 
     def show_help(self):
-        """Show the HelpDialog for CSV file requirements."""
+        """Display the CSV file requirements help dialog."""
         logger.info("Help button clicked")
         help_dialog = HelpDialog()
         help_dialog.exec()
+
 
 def show_modern_message_box(icon, title, text, buttons=QMessageBox.StandardButton.Ok):
     """Show a modern styled message box."""
@@ -321,7 +338,7 @@ def show_modern_message_box(icon, title, text, buttons=QMessageBox.StandardButto
     # Force message box to appear on top of splash screen
     msg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
     
-    # Apply modern styling if available
+    # Apply modern styling
     try:
         colors = ModernStyles.COLORS['dark']
         msg.setStyleSheet(f"""
@@ -362,6 +379,7 @@ def show_modern_message_box(icon, title, text, buttons=QMessageBox.StandardButto
     
     return msg.exec()
 
+
 def force_window_to_front(window):
     """Force a window to appear in front and be activated."""
     window.show()
@@ -379,6 +397,7 @@ def force_window_to_front(window):
             ctypes.windll.user32.BringWindowToTop(hwnd)
         except Exception:
             pass  # Fallback if ctypes fails
+
 
 def main():
     """Main function to initialize and run the application."""
@@ -408,7 +427,7 @@ def main():
     except Exception as e:
         logger.warning(f"Could not apply modern theme: {e}")
     
-    # Show starter dialog
+    # Show welcome dialog
     starter = StarterDialog()
     logger.info("StarterDialog created")
     if starter.exec() != QDialog.DialogCode.Accepted:
@@ -441,14 +460,13 @@ def main():
     except Exception as e:
         logger.warning(f"Could not create splash screen: {e}")
 
-    # Initialize data manager
+    # Initialize data manager with selected CSV
     try:
         data_manager = DataManager(csv_path=csv_path)
         logger.info("DataManager initialized")
     except Exception as e:
         error_msg = f"Failed to initialize DataManager: {e}"
         logger.error(error_msg)
-        # Hide splash before showing error
         if splash:
             splash.hide()
         show_modern_message_box(
@@ -459,9 +477,9 @@ def main():
         )
         sys.exit(1)
     
+    # Validate loaded data
     if data_manager.data is None or data_manager.data.empty:
         error_msg = f"Failed to load CSV: {data_manager.csv_path}"
-        # Hide splash before showing error
         if splash:
             splash.hide()
         show_modern_message_box(
@@ -503,6 +521,7 @@ def main():
             QMessageBox.StandardButton.Ok
         )
         sys.exit(1)
+
 
 if __name__ == '__main__':
     main()

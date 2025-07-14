@@ -8,12 +8,9 @@ def extract_ticker_names(base_directory, date_folder, output_file=None):
     and save them to a text file in the same folder.
 
     Parameters:
-    base_directory (str): Path to the base results directory (e.g., 'results')
-    date_folder (str): Name of the specific date subfolder (e.g., '20250402')
-    output_file (str): Name of the output text file (default: '<date_folder>_tickers.txt')
-
-    Returns:
-    None
+    - base_directory (str): Path to the base results directory (e.g., 'results')
+    - date_folder (str): Name of the specific date subfolder (e.g., '20250402')
+    - output_file (str): Name of the output text file (default: '<date_folder>_tickers.txt')
     """
     # Build the complete path to the date folder
     date_path = os.path.join(base_directory, date_folder)

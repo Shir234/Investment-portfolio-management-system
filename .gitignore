@@ -16,8 +16,8 @@ result/
 !backend/results/20250513/
 !backend/results/20250527/
 # Allow specific files in the backend results folders (example files)
-!backend/results/20250513/*.csv
-!backend/results/20250527/*.csv
+# !backend/results/20250513/*.csv
+# !backend/results/20250527/*.csv
 
 
 # Python bytecode and CPython files

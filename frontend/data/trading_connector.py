@@ -1,22 +1,45 @@
+# trading_connector.py
+"""
+Frontend-backend bridge for trading strategy execution and order management.
+Handles communication between the GUI and the core trading logic engine.
+"""
 import sys
 import os
+
+# Add backend directory to path for trading logic imports
 backend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
 sys.path.append(backend_path)
-print(f"Added to sys.path: {backend_path}")  # Debug print
+
 import pandas as pd
 import logging
-
 from backend.trading_logic_new import run_trading_strategy, get_orders, get_portfolio_history, validate_prediction_quality
 from frontend.logging_config import get_logger
-logger = get_logger(__name__)
 
-# Use centralized logger
 logger = get_logger('trading_logic')  # Align with logging_config.py logger name
 logger.setLevel(logging.INFO)
 
-#def execute_trading_strategy(investment_amount, risk_level, start_date, end_date, data_manager, mode="automatic", reset_state=True, selected_orders=None):
+
 def execute_trading_strategy(investment_amount, risk_level, start_date, end_date, data_manager, mode="automatic", reset_state=True, selected_orders=None, current_cash=None, current_holdings=None):
-    """Execute the trading strategy with user inputs from the frontend."""
+    """
+    Execute trading strategy with user inputs from the frontend.
+
+    Supports both automatic and semi-automatic trading modes with flexible
+    state management and order execution capabilities.
+    
+    Args:
+    - investment_amount: Initial capital for investment
+    - risk_level: Risk tolerance setting for position sizing
+    - start_date, end_date: Analysis period boundaries
+    - data_manager: Data source with validated financial data
+    - mode: "automatic" (full execution) or "semi-automatic" (suggestion mode)
+    - reset_state: Whether to reset portfolio state before execution
+    - selected_orders: Pre-selected orders for semi-automatic mode
+    - current_cash, current_holdings: Current portfolio state
+        
+    Returns:
+    - (success_bool, results_dict) containing orders, portfolio data, and metrics
+    """
+    
     logger.info("="*50)
     logger.info("EXECUTE TRADING STRATEGY CALLED")
     logger.info("="*50)
@@ -50,6 +73,7 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
         logger.info(f"  Reset State: {reset_state}")
         logger.info(f"  Selected Orders: {len(selected_orders) if selected_orders else 'None'}")
 
+        # Execute trading strategy
         result = run_trading_strategy(
             merged_data=merged_data,
             investment_amount=investment_amount,
@@ -63,11 +87,11 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
             current_holdings=current_holdings
         )
 
+        # Process results based on mode
         portfolio_history = get_portfolio_history()
         cash = portfolio_history[-1].get('cash', investment_amount) if portfolio_history else investment_amount
         portfolio_value = portfolio_history[-1].get('value', investment_amount) if portfolio_history else investment_amount
-
-        
+ 
         if mode == "semi-automatic":
             if selected_orders:
                 # Executing selected orders - expect 4 values
@@ -78,6 +102,7 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
                 orders, warning_message = result
             logger.info(f"Semi-automatic mode completed - {len(orders)} orders")
         else:
+            # Automatic mode
             orders, portfolio_history, portfolio_value, warning_message = result
             cash = portfolio_history[-1].get('cash', investment_amount) if portfolio_history else investment_amount
             logger.info(f"Automatic mode completed:")
@@ -87,6 +112,7 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
 
         logger.info(f"Orders returned: {len(orders)}")
 
+        # Calculate performance
         if portfolio_history:
             initial_value = investment_amount
             final_value = portfolio_value
@@ -139,8 +165,17 @@ def execute_trading_strategy(investment_amount, risk_level, start_date, end_date
             'sell_hit_rate': 0.0
         }
 
+
 def get_order_history_df():
-    """Return the order history as a DataFrame."""
+    """
+    Convert order history to DataFrame with consistent column structure.
+    
+    Retrieves all trading orders and formats them into a standardized
+    DataFrame for display and analysis purposes.
+    
+    Returns:
+    - DataFrame with order history or empty DataFrame if no orders/error
+    """
     logger.debug("Retrieving order history...")
 
     try:
@@ -174,6 +209,7 @@ def get_order_history_df():
         logger.error(f"Error generating order history DataFrame: {e}", exc_info=True)
         return pd.DataFrame()
 
+
 def log_trading_orders():
     """Log a summary of current trading orders."""
     try:
@@ -185,22 +221,26 @@ def log_trading_orders():
         logger.info(f"Total orders in history: {len(orders)}")
         
         if orders:
+            # Order type breakdown
             buy_orders = [o for o in orders if o.get('action') == 'buy']
             sell_orders = [o for o in orders if o.get('action') == 'sell']
             
             logger.info(f"  Buy orders: {len(buy_orders)}")
             logger.info(f"  Sell orders: {len(sell_orders)}")
             
+            # Ticker analysis
             tickers = sorted(set(o.get('ticker', 'Unknown') for o in orders))
             logger.info(f"  Unique tickers traded: {len(tickers)}")
             logger.info(f"  Tickers: {tickers}")
             
+            # Financial summary
             total_investment = sum(o.get('investment_amount', 0) for o in buy_orders)
             total_sales = sum(o.get('investment_amount', 0) for o in sell_orders)
             
             logger.info(f"  Total invested: ${total_investment:,.2f}")
             logger.info(f"  Total sales: ${total_sales:,.2f}")
         
+        # Portfolio state summary
         portfolio_history = get_portfolio_history()
         logger.info(f"Portfolio history entries: {len(portfolio_history)}")
         

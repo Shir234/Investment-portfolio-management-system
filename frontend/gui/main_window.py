@@ -1,6 +1,6 @@
-import os
-import sys
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QThread, QObject, pyqtSignal, QTimer
+# main_window.py
+
+from PyQt6.QtCore import Qt, QThread, QObject, pyqtSignal, QTimer
 from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QApplication, QFrame, QLabel
 from PyQt6.QtGui import QIcon
 from frontend.utils import resource_path
@@ -54,6 +54,7 @@ class ThemeWorker(QObject):
             logger.error(f"Error in theme worker: {e}")
             self.finished.emit()
 
+
 class MainWindow(QMainWindow):
     # Signals for thread-safe UI updates
     apply_style_signal = pyqtSignal(str)
@@ -63,8 +64,8 @@ class MainWindow(QMainWindow):
         """Initialize the modern main window with enhanced styling."""
         super().__init__(parent)
         self.data_manager = data_manager
-        self.is_dark_mode = True  # Default to dark mode
-        self.theme_changing = False  # Flag to prevent multiple theme changes
+        self.is_dark_mode = True        # Default to dark mode
+        self.theme_changing = False     # Flag to prevent multiple theme changes
         
         # Connect signals for thread-safe updates
         self.apply_style_signal.connect(self.apply_style_safely)
@@ -72,8 +73,8 @@ class MainWindow(QMainWindow):
         
         # Window setup
         self.setWindowTitle("SharpSight Investment System")
-        self.setGeometry(100, 100, 1200, 800)  # Larger default size
-        self.setMinimumSize(1000, 700)  # Minimum size for better UX
+        self.setGeometry(100, 100, 1200, 800) 
+        self.setMinimumSize(1000, 700) 
 
        # Set window icon
         try:
@@ -101,8 +102,8 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(16, 16, 16, 16)  # Reduced from (20, 20, 20, 20)
-        main_layout.setSpacing(12)  # Reduced from 16
+        main_layout.setContentsMargins(16, 16, 16, 16) 
+        main_layout.setSpacing(12)  
         
         # Create header with title and theme toggle
         self.create_header(main_layout)
@@ -116,13 +117,13 @@ class MainWindow(QMainWindow):
     def create_header(self, main_layout):
         """Create a modern header with title and controls."""
         header_frame = QFrame()
-        header_frame.setFixedHeight(60)  # Reduced from 80
+        header_frame.setFixedHeight(60) 
         header_layout = QHBoxLayout(header_frame)
         header_layout.setContentsMargins(0, 0, 0, 0)
 
         # App title and subtitle
         title_layout = QVBoxLayout()
-        title_layout.setSpacing(2)  # Reduced from 4
+        title_layout.setSpacing(2) 
         
         self.title_label = QLabel("SharpSight")
         self.title_label.setProperty("class", "title")
@@ -137,10 +138,10 @@ class MainWindow(QMainWindow):
         header_layout.addLayout(title_layout)
         header_layout.addStretch()
         
-        # Theme toggle button (no emoji)
-        self.theme_button = QPushButton("Light Mode")  # Start with "Light Mode" since we default to dark
+        # Theme toggle button
+        self.theme_button = QPushButton("Light Mode")
         self.theme_button.setProperty("class", "theme-toggle")
-        self.theme_button.setFixedSize(100, 32)  # Reduced from (120, 40)
+        self.theme_button.setFixedSize(100, 32) 
         self.theme_button.clicked.connect(self.toggle_theme)
 
         # Try to load theme toggle icon
@@ -163,7 +164,6 @@ class MainWindow(QMainWindow):
         self.tabs.setMovable(False)
         self.tabs.setTabsClosable(False)
         
-        # Add some padding around tab content
         tab_frame = QFrame()
         tab_layout = QVBoxLayout(tab_frame)
         tab_layout.setContentsMargins(0, 0, 0, 0)
@@ -210,7 +210,10 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(0)
         
     def set_date_constraints(self):
-        """Set date constraints based on available data in the CSV file."""
+        """
+        Synchronize date range constraints across all panels based on available data.
+        Maintains consistency between input validation and visualization ranges.
+        """
         if self.data_manager and self.data_manager.data is not None:
             try:
                 # Get date range from data
@@ -275,7 +278,10 @@ class MainWindow(QMainWindow):
             """)
         
     def toggle_theme(self):
-        """Toggle between light and dark mode using worker thread."""
+        """
+        Switch between light and dark themes using background processing.
+        Prevents multiple simultaneous changes and provides smooth transitions.
+        """
         # Prevent multiple theme changes at once
         if self.theme_changing:
             return
@@ -402,7 +408,10 @@ class MainWindow(QMainWindow):
         self._current_theme_colors = colors
             
     def update_dashboard(self):
-        """Refresh the dashboard and recommendations."""
+        """
+        Coordinate dashboard updates across all panels after trading activity.
+        Ensures data consistency and fresh visualizations.
+        """
         if hasattr(self.dashboard_panel, 'update_dashboard'):
             self.dashboard_panel.update_dashboard()
         if hasattr(self.recommendation_panel, 'update_recommendations'):
@@ -416,7 +425,7 @@ class MainWindow(QMainWindow):
     def show_success_message(self, title, message):
         """Show a success message with modern styling."""
         from PyQt6.QtWidgets import QMessageBox
-        msg = QMessageBox(self)  # Set parent
+        msg = QMessageBox(self)  
         msg.setIcon(QMessageBox.Icon.Information)
         msg.setWindowTitle(title)
         msg.setText(message)

@@ -1,9 +1,11 @@
+# splash_screen.py
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QFrame, QApplication, QGraphicsOpacityEffect
-from PyQt6.QtGui import QPixmap, QFont, QColor
-from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QPoint
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, QPropertyAnimation, QPoint
 from frontend.gui.styles import ModernStyles
 
 class SplashScreen(QWidget):
+
     def __init__(self):
         super().__init__()
         # Remove window frame and stay on top
@@ -81,7 +83,10 @@ class SplashScreen(QWidget):
         self.activateWindow()
         
     def apply_modern_style(self, is_dark=True):
-        """Apply modern styling to the splash screen."""
+        """
+        Apply modern styling  to the splash screen.
+        Ensures visual consistency with the main application theme system.
+        """
         colors = ModernStyles.COLORS['dark'] if is_dark else ModernStyles.COLORS['light']
         
         # Container styling with modern design
@@ -112,7 +117,6 @@ class SplashScreen(QWidget):
                 margin: 10px 0;
             }}
         """)
-        
         self.subtitle_label.setStyleSheet(f"""
             QLabel {{
                 color: {colors['text_secondary']};
@@ -121,7 +125,6 @@ class SplashScreen(QWidget):
                 margin: 5px 0;
             }}
         """)
-        
         self.loading_label.setStyleSheet(f"""
             QLabel {{
                 color: {colors['accent']};
@@ -132,12 +135,15 @@ class SplashScreen(QWidget):
         """)
         
     def fade_out(self, next_window):
-        """Create a fade out animation with modern easing"""
+        """
+        Execute smooth opacity fade animation transitioning to the main application window.
+        Uses property animation for 2-second transition effect.
+        """
         self.opacity_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.opacity_effect)
         
         self.animation = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.animation.setDuration(2000)  # Smooth 1.5 second fade
+        self.animation.setDuration(2000) 
         self.animation.setStartValue(1)
         self.animation.setEndValue(0)
         self.animation.finished.connect(lambda: self.finish_fade(next_window))
@@ -149,7 +155,10 @@ class SplashScreen(QWidget):
         next_window.show()
 
     def finish(self, window):
-        """Initiate fade-out transition to the main window"""
+        """
+        Initiate fade-out transition from splash screen to main window.
+        Coordinates animation start and window handoff for seamless user experience.
+        """
         self.fade_out(window)
 
     def set_theme(self, is_dark_mode):
