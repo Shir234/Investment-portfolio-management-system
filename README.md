@@ -130,25 +130,25 @@ Test Results: Detailed logs saved to tests/logs/ with timestamped execution repo
 
 ## Key Components
 ### Critical Files
-- setup.py - Automated environment setup and dependency management
-- backend/main.py - ML pipeline orchestrator and execution entry point
-- backend/trading_logic_new.py - Core trading engine and frontend-backend interface
-- frontend/front_main.py - Desktop application entry point and GUI initialization
+- [setup.py](setup.py) - Automated environment setup and dependency management
+- [backend/main.py](backend/main.py) - ML pipeline orchestrator and execution entry point
+- [backend/trading_logic_new.py](backend/trading_logic_new.py) - Core trading engine and frontend-backend interface
+- [frontend/front_main.py](frontend/front_main.py) - Desktop application entry point and GUI initialization
 
 ### Data Pipeline
-- backend/Data_Cleaning_Pipelines.py - Data preprocessing and technical indicators
-- backend/Models_Creation_and_Training.py - Multi-model ML training engine
-- backend/Feature_Selection_and_Optimization.py - PCA-based feature optimization
-- backend/Ensembles.py - Advanced ensemble methods and meta-learning
+- [backend/Data_Cleaning_Pipelines.py](backend/Data_Cleaning_Pipelines.py) - Data preprocessing and technical indicators
+- [backend/Models_Creation_and_Training.py](backend/Models_Creation_and_Training.py) - Multi-model ML training engine
+- [backend/Feature_Selection_and_Optimization.py](backend/Feature_Selection_and_Optimization.py) - PCA-based feature optimization
+- [backend/Ensembles.py](backend/Ensembles.py) - Advanced ensemble methods and meta-learning
 
 ### Trading System
-- backend/standalone_trading_runner.py - Complete trading system wrapper
-- frontend/gui/input_panel.py - Strategy configuration and execution control
-- frontend/gui/analysis_dashboard.py - Performance visualization and analytics
+- [backend/standalone_trading_runner.py](backend/standalone_trading_runner.py) - Complete trading system wrapper
+- [frontend/gui/input_panel.py](frontend/gui/input_panel.py) - Strategy configuration and execution control
+- [frontend/gui/analysis_dashboard.py](frontend/gui/analysis_dashboard.py) - Performance visualization and analytics
 
 ### Testing Framework
-- tests/test_backend_accuracy.py - ML accuracy and trading profitability validation
-- tests/test_frontend.py - UI performance and responsiveness testing
+- [tests/test_backend_accuracy.py](tests/test_backend_accuracy.py) - ML accuracy and trading profitability validation
+- [tests/test_frontend.py](tests/test_frontend.py) - UI performance and responsiveness testing
 
 
 ## Documentation
