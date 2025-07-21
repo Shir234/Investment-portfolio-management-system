@@ -1,6 +1,18 @@
 # Investment Portfolio Management System
 A sophisticated machine learning system that generates daily Sharpe ratio predictions and uses them to make trading decisions for S&P 500 stocks.
 
+## Table of Contents
+- [Features](#Features)
+- [Installation & Setup](#Installation-&-Setup)
+- [Usage](#Usage)
+- [Data Requirements](#Data-Requirements)
+- [Trading Logic Overview](#Trading-Logic-Overview)
+- [Testing & Validation](#Testing-&-Validation)
+- [Key Components](#Key-Components)
+- [Backend Documentation](#Backend-Documentation)
+- [Frontend Documentation](#Frontend-Documentation)
+
+
 ## Features
 ### Data Preparation & Filtering
 - Financial data fetching, preprocessing, and cleaning
@@ -23,16 +35,6 @@ A sophisticated machine learning system that generates daily Sharpe ratio predic
 - Interactive charts and performance visualization
 - Portfolio management with live tracking
 
-## Table of Contents
-- Installation & Setup
-- [Usage](#Usage)
-- Data Requirements
-- Trading Logic Overview
-- Testing & Validation
-- Key Components
-- Backend Documentation
-- Frontend Documentation
-
 
 ## Installation & Setup
 ### Quick Start
@@ -46,135 +48,121 @@ A sophisticated machine learning system that generates daily Sharpe ratio predic
 > Linux/Mac:
 - source venv/bin/activate
 
-
 ### Requirements
 - Python 3.8+
 - Alpha Vantage API key (premium)
 - Insider trading data CSV file
 
+
 ## Usage
+### Backend Pipeline (Data → Predictions)
+Run complete ML pipeline
+1. cd backend
+2. python Pre_filtering_and_scoring.py
+3. python Filter_S&P500_Tickers.py
+4. python Fetch_and_Clean_Data.py
+5. python main.py
+6. python ticker_combiner.py
+
+### Frontend Application (Trading Interface)
+Launch desktop application
+1. python frontend/front_main.py
+2. Select your all_tickers_results.csv file
+3. Configure strategy and execute trades
 
 
-Insider Trading Module: Scores stakeholder transactions using rule-based weights to optimize share allocations in trading strategies.
-Data Pipeline Module: Fetches historical stock data, computes technical indicators (e.g., PSAR, MFI, MVP), generates trading signals, and ensures data quality through cleaning.
-Prediction Module: Trains six machine learning models and integrates them via three ensemble methods for precise Sharpe ratio forecasts.
-Portfolio & Interface Module: Executes user-driven or automated trading strategies via a PyQt5-based GUI, providing performance visualizations and trade history.
+## Data Requirements
+### Input Files
+- InsiderTrading_sharp.csv - Insider trading transactions (place in backend/ directory)
+- Alpha Vantage API Key - Set in Filter_S&P500_Tickers.py (line 185) and Fetch_and_Clean_Data.py (line 237)
+
+### Output Files
+- data/all_tickers_results.csv - Consolidated ML predictions (required for frontend)
+- Contains: Date, Ticker, Close, Buy, Sell, Actual_Sharpe, Best_Prediction
 
 
+## Trading Logic Overview
+The system implements a Sharpe ratio-based trading strategy:
+1. Signal Generation - ML models predict daily Sharpe ratios for each stock
+2. Risk Assessment - Insider trading confidence scores influence position sizing
+3. Trade Execution - Buy signals (positive Sharpe) trigger purchases, sell signals (negative Sharpe) trigger sales
+4. Portfolio Management - Dynamic risk management with configurable risk levels (0-10 scale)
+5. Performance Tracking - P&L analysis with 70% win rate target
+
+### Key Trading Features:
+- Automatic Mode - Full strategy execution without intervention
+- Semi-Automatic Mode - Windowed trading with user approval (3-7 day windows)
+- Risk Management - Position sizing based on available capital and risk tolerance
+- Portfolio Persistence - JSON-based state management across sessions
 
 
-Prerequisites
+## Testing & Validation
+Our system undergoes comprehensive testing to ensure both functional accuracy and non-functional performance requirements.
+### Non-Functional Requirements Testing
+**Backend Accuracy Tests validate core ML and trading performance:**
+- Sharpe Prediction Accuracy - R² ≥ 0.6, RMSE ≤ 2.0 for ML model predictions
+- Trading Profitability - ≥70% win rate achieved in at least one tested scenario
+- Multiple Scenarios - Tests across 1-month, 3-month, 6-month, and 1-year periods
 
-Python 3.8+
-Libraries: pandas, numpy, scikit-learn, yfinance, matplotlib, seaborn, tensorflow, xgboost, lightgbm, PyQt5
-Input: Historical stock data (CSV or fetched via yfinance)
-Environment: Local or virtual setup with sufficient memory for ML training
+**Frontend Performance Tests ensure responsive user experience:**
+- Trading Execution Speed - 95% of trades complete within 45 seconds
+- Input Validation Speed - 95% of validation errors appear within 30 seconds
+- UI Responsiveness - Background processing prevents interface blocking
 
-Installation
+### Running Tests
+tests folder [here](tests)
+> Prerequisites: Ensure data/all_tickers_results.csv exists
+>
+**Backend accuracy tests**
+- run: pytest tests/test_backend_accuracy.py -v -s
 
-Clone the repository:git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
+**Frontend performance tests**
+- run: pytest tests/test_frontend.py -v -s
 
+**Run specific test categories**
+- pytest tests/ -v -k "sharpe"     # ML prediction accuracy
+- pytest tests/ -v -k "profit"     # Trading profitability  
+- pytest tests/ -v -k "timing"     # Execution speed
+- pytest tests/ -v -k "validation" # Input validation speed
 
-Create and activate a virtual environment:python -m venv venv
-
-
-Windows: venv\Scripts\activate
-macOS/Linux: source venv/bin/activate
-
-
-Install dependencies:pip install -r requirements.txt
-
-If requirements.txt is unavailable, install manually:pip install pandas numpy scikit-learn yfinance matplotlib seaborn tensorflow xgboost lightgbm PyQt5
-
-
-
-Usage
-
-Backend Execution:
-
-Run the main backend script:python main.py
-
-
-This processes data, trains models, and generates predictions.
+Test Results: Detailed logs saved to tests/logs/ with timestamped execution reports and compliance analysis.
 
 
-Frontend Execution:
+## Key Components
+### Critical Files
+- setup.py - Automated environment setup and dependency management
+- backend/main.py - ML pipeline orchestrator and execution entry point
+- backend/trading_logic_new.py - Core trading engine and frontend-backend interface
+- frontend/front_main.py - Desktop application entry point and GUI initialization
 
-Run the GUI application:python front_main.py
+### Data Pipeline
+- backend/Data_Cleaning_Pipelines.py - Data preprocessing and technical indicators
+- backend/Models_Creation_and_Training.py - Multi-model ML training engine
+- backend/Feature_Selection_and_Optimization.py - PCA-based feature optimization
+- backend/Ensembles.py - Advanced ensemble methods and meta-learning
 
+### Trading System
+- backend/standalone_trading_runner.py - Complete trading system wrapper
+- frontend/gui/input_panel.py - Strategy configuration and execution control
+- frontend/gui/analysis_dashboard.py - Performance visualization and analytics
 
-Select a CSV file with stock data (format: Date, Ticker, Close, Best_Prediction, optional Actual_Sharpe).
-Configure portfolio settings (investment amount, risk level, date range) in the "Portfolio Setup" tab.
-Click "Execute Trading Strategy" to generate recommendations.
-View results in the "Recommendations" and "Dashboard" tabs.
-
-
-Outputs:
-
-Data: Processed stock data with technical indicators and predictions.
-Visualizations: Charts for portfolio value, Sharpe ratios, trade actions, and performance metrics.
-Recommendations: Trading suggestions (buy, sell, short, cover) based on model outputs.
-Logs: Trade history and performance metrics stored for analysis.
-
-
-
-Data Format
-The system expects stock data in CSV format with:
-
-Date: YYYY-MM-DD
-Ticker: Stock symbol
-Close: Closing price
-Best_Prediction: Predicted Sharpe ratio
-Optional: Actual_Sharpe (defaults to -1.0 if unavailable)
-
-Data is fetched from Yahoo Finance via yfinance or provided as a CSV in the data directory.
-Methodology
-
-Data Pipeline:
-
-Fetch historical stock data using yfinance.
-Compute technical indicators: Parabolic SAR (PSAR), Money Flow Index (MFI), Moving Volatility Pattern (MVP).
-Clean data by removing outliers and handling missing values.
-Generate trading signals based on indicators and insider transaction scores.
+### Testing Framework
+- tests/test_backend_accuracy.py - ML accuracy and trading profitability validation
+- tests/test_frontend.py - UI performance and responsiveness testing
 
 
-Insider Trading Scoring:
+## Documentation
+### Backend Documentation
+[Backend README](backend/README.md)- Complete ML pipeline documentation
+- Data preparation and filtering workflows
+- Model training and ensemble creation
+- Trading logic implementation
+- File organization and execution order
 
-Apply rule-based weights to stakeholder transactions (e.g., volume, timing) to score trading opportunities.
-Integrate scores into trading strategy optimization.
+### Frontend Documentation
+[Frontend README](frontend/README.md) - Desktop application documentation
+- PyQt6 interface overview
+- Trading modes and configuration
+- Analytics and visualization features
+- User interaction workflows
 
-
-Prediction:
-
-Train six models: Support Vector Regression (SVR), XGBoost, LightGBM, Random Forest, Gradient Boosting, LSTM.
-Combine predictions using three ensemble methods: linearly weighted, equal weighted, Gradient Boosting Decision Tree (GBDT).
-Output: Predicted modified Sharpe ratios for trading decisions.
-
-
-Portfolio Management:
-
-Execute trades (automated or semi-automated) based on user inputs and model predictions.
-Visualize performance via PyQt GUI, including portfolio value, Sharpe ratios, and trade breakdowns.
-
-
-
-Key Results
-
-Data Quality:  pipeline ensures clean, reliable stock data with computed indicators.
-Prediction Accuracy: Ensemble methods improve Sharpe ratio forecasts
-Trading Performance: System optimizes profit-to-risk-to-time ratio, with GUI enabling user-driven strategy adjustments.
-User Experience: Intuitive PyQt interface provides clear visualizations and actionable recommendations.
-
-Limitations
-
-Relies on historical data from Yahoo Finance, which may have gaps or inaccuracies.
-Model performance depends on data quality and market conditions.
-Insider trading scores are rule-based and may not capture all market dynamics.
-
-Future Work
-
-Integrate real-time data feeds for dynamic trading.
-Add advanced models (e.g., Transformer-based) for improved predictions.
-Enhance GUI 
-Incorporate alternative data sources (e.g., news sentiment, social media) for richer insights.
