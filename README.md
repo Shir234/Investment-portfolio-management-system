@@ -107,7 +107,7 @@ Our system undergoes comprehensive testing to ensure both functional accuracy an
 **Frontend Performance Tests ensure responsive user experience:**
 - Trading Execution Speed - 95% of trades complete within 45 seconds
 - Input Validation Speed - 95% of validation errors appear within 30 seconds
-- UI Responsiveness - Background processing prevents interface blocking
+
 
 ### Running Tests
 tests folder [here](tests)
